@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  api:
+    image: jainsight-api:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - JWT_SECRET=super_secret_docker_key_123
+      - DB_SYNC=true
+      # Add database credentials if using external DB
+    networks:
+      - jainsight-offline
+    restart: always
+
+  web:
+    image: jainsight-web:latest
+    ports:
+      - "4200:4200"
+    environment:
+      # This points to the internal docker service 'api' on port 3000
+      - API_URL=http://api:3000
+      - PORT=4200
+    networks:
+      - jainsight-offline
+    depends_on:
+      - api
+    restart: always
+
+networks:
+  jainsight-offline:
+    driver: bridge

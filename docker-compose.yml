@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - JWT_SECRET=super_secret_docker_key_123
+      - DB_SYNC=true
+    networks:
+      - jainsight-network
+    restart: always
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "4200:4200"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:3000
+    networks:
+      - jainsight-network
+    depends_on:
+      - api
+    restart: always
+
+networks:
+  jainsight-network:
+    driver: bridge
