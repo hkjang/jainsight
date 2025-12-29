@@ -20,12 +20,31 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { SqlApiModule } from './sql-api/sql-api.module';
 import { HealthModule } from './health/health.module';
+
+// New Enterprise Admin Modules
+import { OrganizationsModule } from './organizations/organizations.module';
+import { GroupsModule } from './groups/groups.module';
+import { RbacModule } from './rbac/rbac.module';
+import { QueryPoliciesModule } from './query-policies/query-policies.module';
+import { ApiKeysModule } from './api-keys/api-keys.module';
+
+// Entities
 import { User } from './users/entities/user.entity';
 import { Connection } from './connections/entities/connection.entity';
 import { SqlTemplate } from './sql-api/entities/sql-template.entity';
 import { AuditLog } from './audit/entities/audit-log.entity';
 import { SavedQuery } from './saved-queries/entities/saved-query.entity';
+import { QueryVersion } from './saved-queries/entities/query-version.entity';
 import { AiProvider, AiModel, PromptTemplate, AiExecutionLog, Nl2SqlPolicy } from './ai-admin/entities';
+
+// New Enterprise Entities
+import { Organization } from './organizations/entities/organization.entity';
+import { Group } from './groups/entities/group.entity';
+import { UserGroup } from './groups/entities/user-group.entity';
+import { GroupHistory } from './groups/entities/group-history.entity';
+import { Role, Permission, RbacPolicy, UserRole, GroupRole, RoleResource } from './rbac/entities';
+import { QueryRiskPolicy, QueryExecution } from './query-policies/entities';
+import { ApiKey, ApiKeyUsage } from './api-keys/entities';
 
 
 @Module({
@@ -39,7 +58,17 @@ import { AiProvider, AiModel, PromptTemplate, AiExecutionLog, Nl2SqlPolicy } fro
     TypeOrmModule.forRoot({
       type: 'sqlite',
       database: 'jainsight.db',
-      entities: [User, Connection, SqlTemplate, AuditLog, SavedQuery, AiProvider, AiModel, PromptTemplate, AiExecutionLog, Nl2SqlPolicy],
+      entities: [
+        // Existing entities
+        User, Connection, SqlTemplate, AuditLog, SavedQuery, QueryVersion,
+        AiProvider, AiModel, PromptTemplate, AiExecutionLog, Nl2SqlPolicy,
+        // New enterprise entities
+        Organization,
+        Group, UserGroup, GroupHistory,
+        Role, Permission, RbacPolicy, UserRole, GroupRole, RoleResource,
+        QueryRiskPolicy, QueryExecution,
+        ApiKey, ApiKeyUsage,
+      ],
       synchronize: true, // Auto-create tables in dev
     }),
     DatabaseConnectorModule,
@@ -55,6 +84,12 @@ import { AiProvider, AiModel, PromptTemplate, AiExecutionLog, Nl2SqlPolicy } fro
     UsersModule,
     SqlApiModule,
     HealthModule,
+    // New Enterprise Admin Modules
+    OrganizationsModule,
+    GroupsModule,
+    RbacModule,
+    QueryPoliciesModule,
+    ApiKeysModule,
   ],
   controllers: [AppController],
   providers: [
