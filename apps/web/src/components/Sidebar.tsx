@@ -43,7 +43,9 @@ const menuGroups: MenuGroup[] = [
             { name: 'RBAC 관리', path: '/admin/rbac', icon: '🔐', adminOnly: true },
             { name: '쿼리 정책', path: '/admin/queries', icon: '📋', adminOnly: true },
             { name: 'API 키', path: '/admin/api-keys', icon: '🔑', adminOnly: true },
+            { name: '감사 로그', path: '/admin/audit', icon: '📜', adminOnly: true },
             { name: '운영 리포트', path: '/admin/reports', icon: '📊', adminOnly: true },
+            { name: '시스템 설정', path: '/admin/settings', icon: '⚙️', adminOnly: true },
         ]
     },
     {

@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useAdminShortcuts, exportToCSV, useAutoRefresh, ConfirmDialog } from '../../../components/admin/AdminUtils';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_URL = '/api';
 
 interface User {
     id: string;
@@ -40,6 +41,8 @@ export default function UsersAdminPage() {
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [inviteEmail, setInviteEmail] = useState('');
     const [inviteName, setInviteName] = useState('');
+    const [autoRefresh, setAutoRefresh] = useState(false);
+    const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean; title: string; message: string; onConfirm: () => void; isDangerous?: boolean }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
     const fetchUsers = useCallback(async () => {
         try {
