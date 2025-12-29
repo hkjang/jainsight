@@ -12,6 +12,8 @@ import compression from 'compression';
 import { AppModule } from './app/app.module';
 import { AllExceptionsFilter } from './app/common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './app/common/interceptors/logging.interceptor';
+import { TimeoutInterceptor } from './app/common/interceptors/timeout.interceptor';
+import { MetricsService } from './app/metrics/metrics.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -53,8 +55,14 @@ async function bootstrap() {
   // Global exception filter
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  // Global logging interceptor
-  app.useGlobalInterceptors(new LoggingInterceptor());
+  // Get MetricsService from application context
+  const metricsService = app.get(MetricsService);
+
+  // Global logging interceptor (with metrics)
+  app.useGlobalInterceptors(
+    new LoggingInterceptor(metricsService),
+    new TimeoutInterceptor(30000), // 30 second timeout
+  );
 
   // CORS configuration
   const corsOrigins = process.env.CORS_ORIGINS?.split(',') || [
@@ -104,6 +112,7 @@ async function bootstrap() {
       'JWT-auth',
     )
     .addTag('Health', 'Health check endpoints')
+    .addTag('Metrics', 'Prometheus metrics endpoints')
     .addTag('Auth', 'Authentication endpoints')
     .addTag('Users', 'User management')
     .addTag('Connections', 'Database connection management')
@@ -123,6 +132,9 @@ async function bootstrap() {
     customSiteTitle: 'JAInsight API Docs',
   });
 
+  // Enable graceful shutdown
+  app.enableShutdownHooks();
+
   // Start server
   const port = process.env.PORT || 3333;
   await app.listen(port);
@@ -130,6 +142,19 @@ async function bootstrap() {
   Logger.log(`🚀 Application is running on: http://localhost:${port}/${globalPrefix}`);
   Logger.log(`📚 API Documentation: http://localhost:${port}/${globalPrefix}/docs`);
   Logger.log(`💚 Health Check: http://localhost:${port}/${globalPrefix}/health`);
+  Logger.log(`📊 Metrics: http://localhost:${port}/${globalPrefix}/metrics`);
 }
 
-bootstrap();
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+  Logger.log('SIGTERM received. Shutting down gracefully...');
+});
+
+process.on('SIGINT', () => {
+  Logger.log('SIGINT received. Shutting down gracefully...');
+});
+
+bootstrap().catch((err) => {
+  Logger.error('Failed to start application', err);
+  process.exit(1);
+});

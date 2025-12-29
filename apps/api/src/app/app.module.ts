@@ -1,9 +1,12 @@
-import { Module } from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { CacheModule } from '@nestjs/cache-manager';
+
+// Metrics Module
+import { MetricsModule } from './metrics';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -23,6 +26,9 @@ import { HealthModule } from './health/health.module';
 
 // Config Module
 import { AppConfigModule } from './config';
+
+// Middleware
+import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 
 // New Enterprise Admin Modules
 import { OrganizationsModule } from './organizations/organizations.module';
@@ -88,6 +94,7 @@ import { ApiKey, ApiKeyUsage } from './api-keys/entities';
     UsersModule,
     SqlApiModule,
     HealthModule,
+    MetricsModule,
     // New Enterprise Admin Modules
     OrganizationsModule,
     GroupsModule,
@@ -104,4 +111,8 @@ import { ApiKey, ApiKeyUsage } from './api-keys/entities';
     },
   ],
 })
-export class AppModule { }
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+  }
+}
