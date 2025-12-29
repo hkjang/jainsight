@@ -2,6 +2,132 @@
 
 import { useState, useCallback, useEffect, createContext, useContext, ReactNode } from 'react';
 
+// Dark Theme Color Constants
+export const darkTheme = {
+    // Backgrounds
+    bgPrimary: '#0f172a',
+    bgSecondary: '#1e293b',
+    bgCard: 'rgba(30, 41, 59, 0.8)',
+    bgCardHover: 'rgba(51, 65, 85, 0.9)',
+    bgInput: 'rgba(15, 23, 42, 0.6)',
+    bgOverlay: 'rgba(0, 0, 0, 0.7)',
+    
+    // Text
+    textPrimary: '#e2e8f0',
+    textSecondary: '#94a3b8',
+    textMuted: '#64748b',
+    
+    // Borders
+    border: 'rgba(148, 163, 184, 0.2)',
+    borderLight: 'rgba(148, 163, 184, 0.1)',
+    
+    // Accent Colors
+    accentBlue: '#3b82f6',
+    accentGreen: '#10b981',
+    accentRed: '#ef4444',
+    accentYellow: '#f59e0b',
+    accentPurple: '#8b5cf6',
+    accentCyan: '#06b6d4',
+    
+    // Gradients
+    gradient: 'linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%)',
+    cardGradient: 'linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(51, 65, 85, 0.8) 100%)',
+};
+
+// Common Dark Styles
+export const darkStyles = {
+    container: {
+        padding: '24px',
+        maxWidth: '1600px',
+        margin: '0 auto',
+        minHeight: '100vh',
+    } as React.CSSProperties,
+    
+    card: {
+        background: darkTheme.cardGradient,
+        borderRadius: '12px',
+        border: `1px solid ${darkTheme.border}`,
+        backdropFilter: 'blur(10px)',
+        overflow: 'hidden',
+    } as React.CSSProperties,
+    
+    input: {
+        padding: '10px 14px',
+        background: darkTheme.bgInput,
+        border: `1px solid ${darkTheme.border}`,
+        borderRadius: '8px',
+        fontSize: '14px',
+        color: darkTheme.textPrimary,
+        outline: 'none',
+    } as React.CSSProperties,
+    
+    button: {
+        padding: '10px 20px',
+        background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+        color: 'white',
+        border: 'none',
+        borderRadius: '8px',
+        fontSize: '14px',
+        fontWeight: '500',
+        cursor: 'pointer',
+    } as React.CSSProperties,
+    
+    buttonSecondary: {
+        padding: '10px 20px',
+        background: 'rgba(51, 65, 85, 0.5)',
+        color: darkTheme.textPrimary,
+        border: `1px solid ${darkTheme.border}`,
+        borderRadius: '8px',
+        fontSize: '14px',
+        cursor: 'pointer',
+    } as React.CSSProperties,
+    
+    table: {
+        width: '100%',
+        borderCollapse: 'collapse' as const,
+    },
+    
+    th: {
+        padding: '12px 16px',
+        background: 'rgba(15, 23, 42, 0.6)',
+        color: darkTheme.textSecondary,
+        fontSize: '12px',
+        fontWeight: '600',
+        textAlign: 'left' as const,
+        borderBottom: `1px solid ${darkTheme.border}`,
+    } as React.CSSProperties,
+    
+    td: {
+        padding: '14px 16px',
+        borderBottom: `1px solid ${darkTheme.borderLight}`,
+        color: darkTheme.textPrimary,
+    } as React.CSSProperties,
+    
+    modalOverlay: {
+        position: 'fixed' as const,
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: darkTheme.bgOverlay,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        backdropFilter: 'blur(4px)',
+    } as React.CSSProperties,
+    
+    modal: {
+        background: darkTheme.cardGradient,
+        borderRadius: '16px',
+        padding: '24px',
+        width: '100%',
+        maxWidth: '500px',
+        border: `1px solid ${darkTheme.border}`,
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+    } as React.CSSProperties,
+};
+
 interface Toast {
     id: string;
     type: 'success' | 'error' | 'warning' | 'info';

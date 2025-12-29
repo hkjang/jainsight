@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { darkTheme, darkStyles } from '../../../components/admin/AdminUtils';
 
 const API_URL = '/api';
 
@@ -49,7 +50,6 @@ export default function GroupsAdminPage() {
     const [members, setMembers] = useState<GroupMember[]>([]);
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
     
-    // Create form state
     const [newGroupName, setNewGroupName] = useState('');
     const [newGroupType, setNewGroupType] = useState<'organization' | 'project' | 'task'>('project');
     const [newGroupDescription, setNewGroupDescription] = useState('');
@@ -64,13 +64,10 @@ export default function GroupsAdminPage() {
                 const data = await response.json();
                 setGroups(data);
             } else {
-                // Fallback mock data
                 setGroups([
                     { id: '1', name: '개발팀', type: 'organization', isAutoGroup: false, memberCount: 15, createdAt: new Date().toISOString() },
                     { id: '2', name: 'AI 프로젝트', type: 'project', parentId: '1', isAutoGroup: false, memberCount: 8, createdAt: new Date().toISOString() },
                     { id: '3', name: 'DB 최적화', type: 'task', parentId: '2', isAutoGroup: false, memberCount: 3, createdAt: new Date().toISOString() },
-                    { id: '4', name: '운영팀', type: 'organization', isAutoGroup: false, memberCount: 10, createdAt: new Date().toISOString() },
-                    { id: '5', name: '@dev.com 사용자', description: '이메일에 @dev.com 포함', type: 'project', isAutoGroup: true, memberCount: 25, createdAt: new Date().toISOString() },
                 ]);
             }
         } catch (error) {
@@ -88,24 +85,18 @@ export default function GroupsAdminPage() {
                 const data = await response.json();
                 setMembers(data);
             } else {
-                // Mock members
                 setMembers([
                     { id: '1', userId: 'u1', userName: 'John Doe', userEmail: 'john@example.com', role: 'member', addedAt: new Date().toISOString() },
                     { id: '2', userId: 'u2', userName: 'Jane Smith', userEmail: 'jane@example.com', role: 'admin', addedAt: new Date().toISOString() },
                 ]);
             }
-        } catch (error) {
-            console.error('Failed to fetch members:', error);
-        }
+        } catch (error) { console.error('Failed to fetch members:', error); }
     }, []);
 
-    useEffect(() => {
-        fetchGroups();
-    }, [fetchGroups]);
+    useEffect(() => { fetchGroups(); }, [fetchGroups]);
 
     const handleCreateGroup = async () => {
         if (!newGroupName) return;
-        
         try {
             const response = await fetch(`${API_URL}/groups`, {
                 method: 'POST',
@@ -119,39 +110,23 @@ export default function GroupsAdminPage() {
                     autoGroupCondition: isAutoGroup && autoCondition ? JSON.parse(autoCondition) : undefined
                 })
             });
-            
-            if (response.ok) {
-                fetchGroups();
-                setShowCreateModal(false);
-                resetForm();
-            }
-        } catch (error) {
-            console.error('Failed to create group:', error);
-        }
+            if (response.ok) { fetchGroups(); setShowCreateModal(false); resetForm(); }
+        } catch (error) { console.error('Failed to create group:', error); }
     };
 
     const handleDeleteGroup = async (groupId: string) => {
         if (!confirm('그룹을 삭제하시겠습니까?')) return;
-        
         try {
             const response = await fetch(`${API_URL}/groups/${groupId}`, { method: 'DELETE' });
-            if (response.ok) {
-                fetchGroups();
-            }
-        } catch (error) {
-            console.error('Failed to delete group:', error);
-        }
+            if (response.ok) fetchGroups();
+        } catch (error) { console.error('Failed to delete group:', error); }
     };
 
     const handleRemoveMember = async (groupId: string, userId: string) => {
         try {
             const response = await fetch(`${API_URL}/groups/${groupId}/members/${userId}`, { method: 'DELETE' });
-            if (response.ok) {
-                fetchMembers(groupId);
-            }
-        } catch (error) {
-            console.error('Failed to remove member:', error);
-        }
+            if (response.ok) fetchMembers(groupId);
+        } catch (error) { console.error('Failed to remove member:', error); }
     };
 
     const handleOpenMembers = async (group: Group) => {
@@ -161,24 +136,16 @@ export default function GroupsAdminPage() {
     };
 
     const resetForm = () => {
-        setNewGroupName('');
-        setNewGroupType('project');
-        setNewGroupDescription('');
-        setNewGroupParent('');
-        setIsAutoGroup(false);
-        setAutoCondition('');
+        setNewGroupName(''); setNewGroupType('project'); setNewGroupDescription('');
+        setNewGroupParent(''); setIsAutoGroup(false); setAutoCondition('');
     };
 
     const getChildren = (parentId: string): Group[] => groups.filter(g => g.parentId === parentId);
     const getRootGroups = (): Group[] => groups.filter(g => !g.parentId);
-
     const toggleExpand = (groupId: string) => {
         const newExpanded = new Set(expandedGroups);
-        if (newExpanded.has(groupId)) {
-            newExpanded.delete(groupId);
-        } else {
-            newExpanded.add(groupId);
-        }
+        if (newExpanded.has(groupId)) newExpanded.delete(groupId);
+        else newExpanded.add(groupId);
         setExpandedGroups(newExpanded);
     };
 
@@ -187,63 +154,6 @@ export default function GroupsAdminPage() {
         const matchesType = typeFilter === 'all' || group.type === typeFilter;
         return matchesSearch && matchesType;
     });
-
-    const containerStyle: React.CSSProperties = {
-        padding: '24px',
-        maxWidth: '1400px',
-        margin: '0 auto'
-    };
-
-    const cardStyle: React.CSSProperties = {
-        background: 'white',
-        borderRadius: '12px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-        overflow: 'hidden'
-    };
-
-    const inputStyle: React.CSSProperties = {
-        padding: '10px 12px',
-        border: '1px solid #D1D5DB',
-        borderRadius: '8px',
-        fontSize: '14px',
-        outline: 'none',
-        width: '100%'
-    };
-
-    const buttonStyle: React.CSSProperties = {
-        padding: '8px 16px',
-        borderRadius: '8px',
-        fontSize: '14px',
-        fontWeight: '500',
-        cursor: 'pointer',
-        border: 'none',
-        background: 'linear-gradient(135deg, #3B82F6, #2563EB)',
-        color: 'white'
-    };
-
-    const modalOverlayStyle: React.CSSProperties = {
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000
-    };
-
-    const modalStyle: React.CSSProperties = {
-        background: 'white',
-        borderRadius: '16px',
-        padding: '24px',
-        width: '100%',
-        maxWidth: '500px',
-        maxHeight: '80vh',
-        overflow: 'auto',
-        boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'
-    };
 
     const GroupNode = ({ group, depth = 0 }: { group: Group; depth?: number }) => {
         const children = getChildren(group.id);
@@ -254,118 +164,55 @@ export default function GroupsAdminPage() {
             <div>
                 <div 
                     style={{ 
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: '12px 16px',
+                        display: 'flex', alignItems: 'center', padding: '12px 16px',
                         paddingLeft: `${16 + depth * 24}px`,
-                        borderBottom: '1px solid #E5E7EB',
-                        background: depth > 0 ? '#FAFAFA' : 'white',
+                        borderBottom: `1px solid ${darkTheme.borderLight}`,
+                        background: depth > 0 ? 'rgba(15, 23, 42, 0.3)' : 'transparent',
                         transition: 'background 0.2s',
                         cursor: hasChildren ? 'pointer' : 'default'
                     }}
                     onClick={() => hasChildren && toggleExpand(group.id)}
+                    onMouseEnter={e => (e.currentTarget.style.background = darkTheme.bgCardHover)}
+                    onMouseLeave={e => (e.currentTarget.style.background = depth > 0 ? 'rgba(15, 23, 42, 0.3)' : 'transparent')}
                 >
-                    <span style={{ width: '24px', marginRight: '8px', color: '#9CA3AF' }}>
+                    <span style={{ width: '24px', marginRight: '8px', color: darkTheme.textMuted }}>
                         {hasChildren ? (isExpanded ? '▼' : '▶') : '•'}
                     </span>
-                    <div style={{ 
-                        width: '8px', 
-                        height: '8px', 
-                        borderRadius: '2px',
-                        background: typeColors[group.type],
-                        marginRight: '12px'
-                    }} />
+                    <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: typeColors[group.type], marginRight: '12px', boxShadow: `0 0 8px ${typeColors[group.type]}50` }} />
                     <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontWeight: '500' }}>{group.name}</span>
+                            <span style={{ fontWeight: '500', color: darkTheme.textPrimary }}>{group.name}</span>
                             {group.isAutoGroup && (
-                                <span style={{
-                                    padding: '2px 6px',
-                                    background: '#FEF3C7',
-                                    color: '#D97706',
-                                    fontSize: '10px',
-                                    borderRadius: '4px',
-                                    fontWeight: '500'
-                                }}>
-                                    자동
-                                </span>
+                                <span style={{ padding: '2px 6px', background: `${darkTheme.accentYellow}20`, color: darkTheme.accentYellow, fontSize: '10px', borderRadius: '4px', fontWeight: '500' }}>자동</span>
                             )}
                         </div>
-                        {group.description && (
-                            <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '2px' }}>
-                                {group.description}
-                            </div>
-                        )}
+                        {group.description && (<div style={{ fontSize: '12px', color: darkTheme.textMuted, marginTop: '2px' }}>{group.description}</div>)}
                     </div>
-                    <span style={{
-                        padding: '4px 8px',
-                        background: `${typeColors[group.type]}15`,
-                        color: typeColors[group.type],
-                        fontSize: '12px',
-                        borderRadius: '4px',
-                        marginRight: '16px'
-                    }}>
-                        {typeLabels[group.type]}
-                    </span>
-                    <span style={{ fontSize: '14px', color: '#6B7280', width: '80px' }}>
-                        👥 {group.memberCount || 0}
-                    </span>
+                    <span style={{ padding: '4px 8px', background: `${typeColors[group.type]}20`, color: typeColors[group.type], fontSize: '12px', borderRadius: '4px', marginRight: '16px' }}>{typeLabels[group.type]}</span>
+                    <span style={{ fontSize: '14px', color: darkTheme.textSecondary, width: '80px' }}>👥 {group.memberCount || 0}</span>
                     <div style={{ display: 'flex', gap: '8px' }} onClick={e => e.stopPropagation()}>
-                        <button
-                            onClick={() => handleOpenMembers(group)}
-                            style={{
-                                padding: '4px 12px',
-                                background: '#EEF2FF',
-                                color: '#4F46E5',
-                                border: 'none',
-                                borderRadius: '6px',
-                                fontSize: '12px',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            멤버
-                        </button>
-                        <button
-                            onClick={() => handleDeleteGroup(group.id)}
-                            style={{
-                                padding: '4px 12px',
-                                background: '#FEE2E2',
-                                color: '#DC2626',
-                                border: 'none',
-                                borderRadius: '6px',
-                                fontSize: '12px',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            삭제
-                        </button>
+                        <button onClick={() => handleOpenMembers(group)} style={{ padding: '4px 12px', background: `${darkTheme.accentPurple}20`, color: darkTheme.accentPurple, border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>멤버</button>
+                        <button onClick={() => handleDeleteGroup(group.id)} style={{ padding: '4px 12px', background: `${darkTheme.accentRed}20`, color: darkTheme.accentRed, border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>삭제</button>
                     </div>
                 </div>
-                {isExpanded && children.map(child => (
-                    <GroupNode key={child.id} group={child} depth={depth + 1} />
-                ))}
+                {isExpanded && children.map(child => (<GroupNode key={child.id} group={child} depth={depth + 1} />))}
             </div>
         );
     };
 
     if (loading) {
-        return (
-            <div style={{ ...containerStyle, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-                <div style={{ fontSize: '18px', color: '#6B7280' }}>로딩 중...</div>
-            </div>
-        );
+        return (<div style={{ ...darkStyles.container, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}><div style={{ fontSize: '18px', color: darkTheme.textSecondary }}>로딩 중...</div></div>);
     }
 
     return (
-        <div style={containerStyle}>
+        <div style={darkStyles.container}>
+            {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                 <div>
-                    <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1F2937' }}>🏢 그룹 관리</h1>
-                    <p style={{ color: '#6B7280', marginTop: '4px' }}>계층형 그룹 및 자동 그룹 관리</p>
+                    <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: darkTheme.textPrimary }}>🏢 그룹 관리</h1>
+                    <p style={{ color: darkTheme.textSecondary, marginTop: '4px' }}>계층형 그룹 및 자동 그룹 관리</p>
                 </div>
-                <button style={buttonStyle} onClick={() => setShowCreateModal(true)}>
-                    + 그룹 생성
-                </button>
+                <button style={darkStyles.button} onClick={() => setShowCreateModal(true)}>+ 그룹 생성</button>
             </div>
 
             {/* Stats */}
@@ -374,132 +221,58 @@ export default function GroupsAdminPage() {
                     const count = groups.filter(g => g.type === type).length;
                     const memberCount = groups.filter(g => g.type === type).reduce((sum, g) => sum + (g.memberCount || 0), 0);
                     return (
-                        <div key={type} style={{ ...cardStyle, padding: '20px' }}>
+                        <div key={type} style={{ ...darkStyles.card, padding: '20px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <div style={{
-                                    width: '40px',
-                                    height: '40px',
-                                    borderRadius: '10px',
-                                    background: `${typeColors[type]}15`,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '20px'
-                                }}>
+                                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: `${typeColors[type]}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>
                                     {type === 'organization' ? '🏢' : type === 'project' ? '📁' : '📋'}
                                 </div>
                                 <div>
-                                    <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#1F2937' }}>{count}개</div>
-                                    <div style={{ fontSize: '12px', color: '#6B7280' }}>{label} (👥 {memberCount})</div>
+                                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: typeColors[type] }}>{count}개</div>
+                                    <div style={{ fontSize: '12px', color: darkTheme.textSecondary }}>{label} (👥 {memberCount})</div>
                                 </div>
                             </div>
                         </div>
                     );
                 })}
-                <div style={{ ...cardStyle, padding: '20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{
-                            width: '40px',
-                            height: '40px',
-                            borderRadius: '10px',
-                            background: '#FEF3C715',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '20px'
-                        }}>
-                            ⚡
-                        </div>
-                        <div>
-                            <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#1F2937' }}>
-                                {groups.filter(g => g.isAutoGroup).length}개
-                            </div>
-                            <div style={{ fontSize: '12px', color: '#6B7280' }}>자동 그룹</div>
-                        </div>
-                    </div>
-                </div>
             </div>
 
-            <div style={cardStyle}>
-                <div style={{ display: 'flex', gap: '12px', padding: '16px', borderBottom: '1px solid #E5E7EB', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <input
-                        type="text"
-                        placeholder="🔍 그룹 검색..."
-                        style={{ ...inputStyle, minWidth: '200px', width: 'auto' }}
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                    <select
-                        style={{ ...inputStyle, minWidth: '120px', width: 'auto', cursor: 'pointer' }}
-                        value={typeFilter}
-                        onChange={(e) => setTypeFilter(e.target.value)}
-                    >
+            {/* Main Card */}
+            <div style={darkStyles.card}>
+                <div style={{ display: 'flex', gap: '12px', padding: '16px', borderBottom: `1px solid ${darkTheme.border}`, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <input type="text" placeholder="🔍 그룹 검색..." style={{ ...darkStyles.input, minWidth: '200px' }} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                    <select style={{ ...darkStyles.input, minWidth: '120px', cursor: 'pointer' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
                         <option value="all">모든 유형</option>
-                        {Object.entries(typeLabels).map(([type, label]) => (
-                            <option key={type} value={type}>{label}</option>
-                        ))}
+                        {Object.entries(typeLabels).map(([type, label]) => (<option key={type} value={type}>{label}</option>))}
                     </select>
                     <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-                        <button
-                            style={{ padding: '8px 16px', background: '#F3F4F6', border: 'none', borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}
-                            onClick={() => setExpandedGroups(new Set(groups.map(g => g.id)))}
-                        >
-                            모두 펼치기
-                        </button>
-                        <button
-                            style={{ padding: '8px 16px', background: '#F3F4F6', border: 'none', borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}
-                            onClick={() => setExpandedGroups(new Set())}
-                        >
-                            모두 접기
-                        </button>
+                        <button style={darkStyles.buttonSecondary} onClick={() => setExpandedGroups(new Set(groups.map(g => g.id)))}>모두 펼치기</button>
+                        <button style={darkStyles.buttonSecondary} onClick={() => setExpandedGroups(new Set())}>모두 접기</button>
                     </div>
                 </div>
 
                 {searchTerm || typeFilter !== 'all' ? (
-                    <div>
-                        {filteredGroups.map(group => (
-                            <GroupNode key={group.id} group={group} depth={0} />
-                        ))}
-                    </div>
+                    <div>{filteredGroups.map(group => (<GroupNode key={group.id} group={group} depth={0} />))}</div>
                 ) : (
-                    <div>
-                        {getRootGroups().map(group => (
-                            <GroupNode key={group.id} group={group} depth={0} />
-                        ))}
-                    </div>
+                    <div>{getRootGroups().map(group => (<GroupNode key={group.id} group={group} depth={0} />))}</div>
                 )}
 
-                {filteredGroups.length === 0 && (
-                    <div style={{ padding: '48px', textAlign: 'center', color: '#6B7280' }}>
-                        그룹이 없습니다
-                    </div>
-                )}
+                {filteredGroups.length === 0 && (<div style={{ padding: '48px', textAlign: 'center', color: darkTheme.textMuted }}>그룹이 없습니다</div>)}
             </div>
 
             {/* Create Modal */}
             {showCreateModal && (
-                <div style={modalOverlayStyle} onClick={() => setShowCreateModal(false)}>
-                    <div style={modalStyle} onClick={e => e.stopPropagation()}>
-                        <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '20px' }}>그룹 생성</h2>
+                <div style={darkStyles.modalOverlay} onClick={() => setShowCreateModal(false)}>
+                    <div style={{ ...darkStyles.modal, maxHeight: '80vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+                        <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '20px', color: darkTheme.textPrimary }}>그룹 생성</h2>
                         
                         <div style={{ marginBottom: '16px' }}>
-                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px' }}>그룹 이름 *</label>
-                            <input
-                                type="text"
-                                style={inputStyle}
-                                value={newGroupName}
-                                onChange={e => setNewGroupName(e.target.value)}
-                                placeholder="예: 개발팀"
-                            />
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>그룹 이름 *</label>
+                            <input type="text" style={{ ...darkStyles.input, width: '100%' }} value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="예: 개발팀" />
                         </div>
 
                         <div style={{ marginBottom: '16px' }}>
-                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px' }}>유형</label>
-                            <select
-                                style={inputStyle}
-                                value={newGroupType}
-                                onChange={e => setNewGroupType(e.target.value as 'organization' | 'project' | 'task')}
-                            >
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>유형</label>
+                            <select style={{ ...darkStyles.input, width: '100%' }} value={newGroupType} onChange={e => setNewGroupType(e.target.value as 'organization' | 'project' | 'task')}>
                                 <option value="organization">조직</option>
                                 <option value="project">프로젝트</option>
                                 <option value="task">업무</option>
@@ -507,63 +280,34 @@ export default function GroupsAdminPage() {
                         </div>
 
                         <div style={{ marginBottom: '16px' }}>
-                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px' }}>상위 그룹</label>
-                            <select
-                                style={inputStyle}
-                                value={newGroupParent}
-                                onChange={e => setNewGroupParent(e.target.value)}
-                            >
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>상위 그룹</label>
+                            <select style={{ ...darkStyles.input, width: '100%' }} value={newGroupParent} onChange={e => setNewGroupParent(e.target.value)}>
                                 <option value="">없음 (최상위)</option>
-                                {groups.map(g => (
-                                    <option key={g.id} value={g.id}>{g.name}</option>
-                                ))}
+                                {groups.map(g => (<option key={g.id} value={g.id}>{g.name}</option>))}
                             </select>
                         </div>
 
                         <div style={{ marginBottom: '16px' }}>
-                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px' }}>설명</label>
-                            <textarea
-                                style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }}
-                                value={newGroupDescription}
-                                onChange={e => setNewGroupDescription(e.target.value)}
-                                placeholder="그룹 설명 (선택)"
-                            />
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>설명</label>
+                            <textarea style={{ ...darkStyles.input, width: '100%', minHeight: '80px', resize: 'vertical' }} value={newGroupDescription} onChange={e => setNewGroupDescription(e.target.value)} placeholder="그룹 설명 (선택)" />
                         </div>
 
                         <div style={{ marginBottom: '16px' }}>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                                <input
-                                    type="checkbox"
-                                    checked={isAutoGroup}
-                                    onChange={e => setIsAutoGroup(e.target.checked)}
-                                />
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: darkTheme.textPrimary }}>
+                                <input type="checkbox" checked={isAutoGroup} onChange={e => setIsAutoGroup(e.target.checked)} />
                                 <span style={{ fontSize: '14px', fontWeight: '500' }}>자동 그룹</span>
                             </label>
                             {isAutoGroup && (
                                 <div style={{ marginTop: '12px' }}>
-                                    <label style={{ display: 'block', fontSize: '12px', color: '#6B7280', marginBottom: '6px' }}>
-                                        조건 (JSON 형식)
-                                    </label>
-                                    <textarea
-                                        style={{ ...inputStyle, fontFamily: 'monospace', fontSize: '12px' }}
-                                        value={autoCondition}
-                                        onChange={e => setAutoCondition(e.target.value)}
-                                        placeholder='{"emailDomain": "@dev.com"}'
-                                    />
+                                    <label style={{ display: 'block', fontSize: '12px', color: darkTheme.textMuted, marginBottom: '6px' }}>조건 (JSON 형식)</label>
+                                    <textarea style={{ ...darkStyles.input, width: '100%', fontFamily: 'monospace', fontSize: '12px' }} value={autoCondition} onChange={e => setAutoCondition(e.target.value)} placeholder='{"emailDomain": "@dev.com"}' />
                                 </div>
                             )}
                         </div>
 
                         <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                            <button
-                                style={{ ...buttonStyle, background: '#F3F4F6', color: '#374151' }}
-                                onClick={() => { setShowCreateModal(false); resetForm(); }}
-                            >
-                                취소
-                            </button>
-                            <button style={buttonStyle} onClick={handleCreateGroup}>
-                                생성
-                            </button>
+                            <button style={darkStyles.buttonSecondary} onClick={() => { setShowCreateModal(false); resetForm(); }}>취소</button>
+                            <button style={darkStyles.button} onClick={handleCreateGroup}>생성</button>
                         </div>
                     </div>
                 </div>
@@ -571,82 +315,38 @@ export default function GroupsAdminPage() {
 
             {/* Members Modal */}
             {showMembersModal && selectedGroup && (
-                <div style={modalOverlayStyle} onClick={() => setShowMembersModal(false)}>
-                    <div style={modalStyle} onClick={e => e.stopPropagation()}>
+                <div style={darkStyles.modalOverlay} onClick={() => setShowMembersModal(false)}>
+                    <div style={{ ...darkStyles.modal, maxHeight: '80vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                             <div>
-                                <h2 style={{ fontSize: '20px', fontWeight: 'bold' }}>{selectedGroup.name} 멤버</h2>
-                                <p style={{ fontSize: '14px', color: '#6B7280' }}>{members.length}명</p>
+                                <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: darkTheme.textPrimary }}>{selectedGroup.name} 멤버</h2>
+                                <p style={{ fontSize: '14px', color: darkTheme.textSecondary }}>{members.length}명</p>
                             </div>
-                            <button style={{ ...buttonStyle, padding: '6px 12px', fontSize: '12px' }}>
-                                + 멤버 추가
-                            </button>
+                            <button style={{ ...darkStyles.button, padding: '6px 12px', fontSize: '12px' }}>+ 멤버 추가</button>
                         </div>
 
                         <div style={{ maxHeight: '400px', overflow: 'auto' }}>
                             {members.map(member => (
-                                <div key={member.id} style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    padding: '12px',
-                                    borderBottom: '1px solid #E5E7EB'
-                                }}>
+                                <div key={member.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', borderBottom: `1px solid ${darkTheme.borderLight}` }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        <div style={{
-                                            width: '36px',
-                                            height: '36px',
-                                            borderRadius: '50%',
-                                            background: '#EEF2FF',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            color: '#4F46E5',
-                                            fontWeight: '600'
-                                        }}>
+                                        <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: `${darkTheme.accentPurple}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: darkTheme.accentPurple, fontWeight: '600' }}>
                                             {(member.userName || 'U')[0].toUpperCase()}
                                         </div>
                                         <div>
-                                            <div style={{ fontWeight: '500' }}>{member.userName || 'Unknown'}</div>
-                                            <div style={{ fontSize: '12px', color: '#6B7280' }}>{member.userEmail}</div>
+                                            <div style={{ fontWeight: '500', color: darkTheme.textPrimary }}>{member.userName || 'Unknown'}</div>
+                                            <div style={{ fontSize: '12px', color: darkTheme.textMuted }}>{member.userEmail}</div>
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        <span style={{
-                                            padding: '2px 8px',
-                                            background: member.role === 'admin' ? '#FEE2E2' : '#F3F4F6',
-                                            color: member.role === 'admin' ? '#DC2626' : '#374151',
-                                            fontSize: '11px',
-                                            borderRadius: '4px'
-                                        }}>
-                                            {member.role}
-                                        </span>
-                                        <button
-                                            onClick={() => handleRemoveMember(selectedGroup.id, member.userId)}
-                                            style={{
-                                                padding: '4px 8px',
-                                                background: '#FEE2E2',
-                                                color: '#DC2626',
-                                                border: 'none',
-                                                borderRadius: '4px',
-                                                fontSize: '11px',
-                                                cursor: 'pointer'
-                                            }}
-                                        >
-                                            제거
-                                        </button>
+                                        <span style={{ padding: '2px 8px', background: member.role === 'admin' ? `${darkTheme.accentRed}20` : `${darkTheme.textMuted}20`, color: member.role === 'admin' ? darkTheme.accentRed : darkTheme.textSecondary, fontSize: '11px', borderRadius: '4px' }}>{member.role}</span>
+                                        <button onClick={() => handleRemoveMember(selectedGroup.id, member.userId)} style={{ padding: '4px 8px', background: `${darkTheme.accentRed}20`, color: darkTheme.accentRed, border: 'none', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}>제거</button>
                                     </div>
                                 </div>
                             ))}
                         </div>
 
                         <div style={{ marginTop: '20px', textAlign: 'right' }}>
-                            <button
-                                style={{ ...buttonStyle, background: '#F3F4F6', color: '#374151' }}
-                                onClick={() => setShowMembersModal(false)}
-                            >
-                                닫기
-                            </button>
+                            <button style={darkStyles.buttonSecondary} onClick={() => setShowMembersModal(false)}>닫기</button>
                         </div>
                     </div>
                 </div>
