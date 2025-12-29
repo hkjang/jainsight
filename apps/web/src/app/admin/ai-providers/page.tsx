@@ -23,7 +23,7 @@ interface TestResult {
     testedAt?: string;
 }
 
-const API_BASE = 'http://localhost:3333/api';
+const API_BASE = '/api';
 
 const providerIcons: Record<string, string> = {
     vllm: '⚡',

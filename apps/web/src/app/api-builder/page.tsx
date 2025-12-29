@@ -49,14 +49,14 @@ export default function ApiBuilderPage() {
     }, [sql]);
 
     const fetchTemplates = async () => {
-        const res = await fetch('http://localhost:3000/api/sql-api', {
+        const res = await fetch('/api/sql-api', {
             headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
         });
         if (res.ok) setTemplates(await res.json());
     };
 
     const fetchConnections = async () => {
-        const res = await fetch('http://localhost:3000/api/connections', {
+        const res = await fetch('/api/connections', {
             headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
         });
         if (res.ok) setConnections(await res.json());
@@ -70,7 +70,7 @@ export default function ApiBuilderPage() {
             connectionId
         };
 
-        const res = await fetch('http://localhost:3000/api/sql-api', {
+        const res = await fetch('/api/sql-api', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -147,7 +147,7 @@ export default function ApiBuilderPage() {
                                     <p className="text-sm opacity-70 truncate">{t.sql}</p>
                                     <div className="badge badge-outline mt-2">{t.parameters?.length || 0} Params</div>
                                     <div className="card-actions justify-end mt-4">
-                                        <button className="btn btn-sm btn-ghost" onClick={() => window.open(`http://localhost:3000/api/sql-api/${t.id}/openapi`, '_blank')}>View Docs</button>
+                                        <button className="btn btn-sm btn-ghost" onClick={() => window.open(`/api/sql-api/${t.id}/openapi`, '_blank')}>View Docs</button>
                                         <button className="btn btn-sm btn-ghost" onClick={() => alert(`API Key: ${t.apiKey}`)}>Show Key</button>
                                         <button className="btn btn-sm" onClick={() => {
                                             // Pre-fill editor

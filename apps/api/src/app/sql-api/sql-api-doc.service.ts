@@ -42,7 +42,7 @@ export class SqlApiDocService {
                 version: '1.0.0'
             },
             servers: [
-                { url: 'http://localhost:3000', description: 'Local Server' }
+                { url: process.env.PUBLIC_URL || 'http://localhost:3000', description: 'API Server' }
             ],
             paths: {
                 '/api/sql-api/execute': {

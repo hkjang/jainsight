@@ -25,7 +25,7 @@ interface AiModel {
     createdAt: string;
 }
 
-const API_BASE = 'http://localhost:3333/api';
+const API_BASE = '/api';
 
 const purposeConfig: Record<string, { color: string; icon: string; label: string }> = {
     sql: { color: '#10b981', icon: '📊', label: 'SQL 생성' },

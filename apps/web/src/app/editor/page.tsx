@@ -389,7 +389,7 @@ export default function EditorPage() {
         setTestingConnection(true);
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch('http://localhost:3000/api/query/execute', {
+            const res = await fetch('/api/query/execute', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ connectionId: selectedConnection, query: 'SELECT 1' }),
@@ -581,7 +581,7 @@ export default function EditorPage() {
 
     const fetchConnections = async (token: string) => {
         try {
-            const res = await fetch('http://localhost:3000/api/connections', {
+            const res = await fetch('/api/connections', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.status === 401) { router.push('/login'); return; }
@@ -595,7 +595,7 @@ export default function EditorPage() {
 
     const fetchSavedQueries = async (token: string) => {
         try {
-            const res = await fetch('http://localhost:3000/api/queries', {
+            const res = await fetch('/api/queries', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
@@ -632,7 +632,7 @@ export default function EditorPage() {
         if (!token) return;
 
         try {
-            const res = await fetch('http://localhost:3000/api/query/execute', {
+            const res = await fetch('/api/query/execute', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ connectionId: selectedConnection, query }),
@@ -676,7 +676,7 @@ export default function EditorPage() {
         const token = localStorage.getItem('token');
         if (!token) return;
         try {
-            const res = await fetch('http://localhost:3000/api/queries', {
+            const res = await fetch('/api/queries', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ name: saveName, description: saveDescription, isPublic, query }),
@@ -699,7 +699,7 @@ export default function EditorPage() {
         const token = localStorage.getItem('token');
         if (!token) return;
         try {
-            await fetch(`http://localhost:3000/api/queries/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+            await fetch(`/api/queries/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
             fetchSavedQueries(token);
         } catch (e) {
             console.error('Failed to delete query', e);
@@ -713,7 +713,7 @@ export default function EditorPage() {
         const token = localStorage.getItem('token');
         if (!token) return;
         try {
-            const res = await fetch('http://localhost:3000/api/ai/generate', {
+            const res = await fetch('/api/ai/generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ connectionId: selectedConnection, prompt: aiPrompt }),

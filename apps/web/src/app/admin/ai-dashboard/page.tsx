@@ -25,7 +25,7 @@ interface DashboardStats {
     trends: { date: string; requests: number; successRate: number; avgLatency: number; tokens: number }[];
 }
 
-const API_BASE = 'http://localhost:3333/api';
+const API_BASE = '/api';
 
 export default function AiDashboardPage() {
     const [stats, setStats] = useState<DashboardStats | null>(null);

@@ -17,7 +17,7 @@ interface PromptTemplate {
     createdAt: string;
 }
 
-const API_BASE = 'http://localhost:3333/api';
+const API_BASE = '/api';
 
 const purposeConfig: Record<string, { icon: string; label: string; color: string }> = {
     nl2sql: { icon: '📊', label: 'NL2SQL', color: '#10b981' },

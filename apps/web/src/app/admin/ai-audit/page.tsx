@@ -20,7 +20,7 @@ interface AuditLog {
     createdAt: string;
 }
 
-const API_BASE = 'http://localhost:3333/api';
+const API_BASE = '/api';
 
 export default function AiAuditPage() {
     const [logs, setLogs] = useState<AuditLog[]>([]);
