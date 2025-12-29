@@ -1,6 +1,7 @@
 
 import './global.css';
 import { Sidebar } from '../components/Sidebar';
+import { ClientProviders } from '../components/ClientProviders';
 
 export const metadata = {
   title: 'Jainsight DB Hub',
@@ -29,7 +30,9 @@ export default function RootLayout({
           overflow: 'auto',
           background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 27, 75, 0.9) 100%)',
         }}>
-          {children}
+          <ClientProviders>
+            {children}
+          </ClientProviders>
         </main>
       </body>
     </html>
