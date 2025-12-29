@@ -32,6 +32,7 @@ export default function ApiBuilderPage() {
     const [showApiKey, setShowApiKey] = useState<string | null>(null);
 
     // Editor State
+    const [editingApiId, setEditingApiId] = useState<string | null>(null);
     const [name, setName] = useState('');
     const [sql, setSql] = useState('SELECT * FROM users WHERE id = :userId');
     const [params, setParams] = useState<any[]>([]);
@@ -109,8 +110,13 @@ export default function ApiBuilderPage() {
         setSaving(true);
 
         try {
-            const res = await fetch('/api/sql-api', {
-                method: 'POST',
+            const url = editingApiId 
+                ? `/api/sql-api/${editingApiId}`
+                : '/api/sql-api';
+            const method = editingApiId ? 'PUT' : 'POST';
+
+            const res = await fetch(url, {
+                method,
                 headers: {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${token}`
@@ -167,11 +173,21 @@ export default function ApiBuilderPage() {
     }, []);
 
     const resetEditor = () => {
+        setEditingApiId(null);
         setName('');
         setSql('SELECT * FROM users WHERE id = :userId');
         setParams([]);
         setConnectionId('');
         setTestResult(null);
+    };
+
+    const handleEditApi = (api: ApiTemplate) => {
+        setEditingApiId(api.id);
+        setName(api.name);
+        setSql(api.sql);
+        setParams(api.parameters || []);
+        setConnectionId(api.connectionId);
+        setView('editor');
     };
 
     const filteredTemplates = templates.filter(t =>
@@ -484,6 +500,22 @@ export default function ApiBuilderPage() {
                                             📄 Docs
                                         </button>
                                         <button
+                                            onClick={() => handleEditApi(t)}
+                                            title="수정"
+                                            style={{
+                                                padding: '10px 16px',
+                                                background: 'rgba(59, 130, 246, 0.1)',
+                                                border: '1px solid rgba(59, 130, 246, 0.2)',
+                                                borderRadius: '8px',
+                                                color: '#60a5fa',
+                                                cursor: 'pointer',
+                                                fontSize: '12px',
+                                                fontWeight: 500,
+                                            }}
+                                        >
+                                            ✏️
+                                        </button>
+                                        <button
                                             onClick={() => handleDelete(t.id)}
                                             style={{
                                                 padding: '10px 16px',
@@ -579,7 +611,7 @@ export default function ApiBuilderPage() {
                                 WebkitBackgroundClip: 'text',
                                 WebkitTextFillColor: 'transparent',
                             }}>
-                                새 API 생성
+                                {editingApiId ? 'API 수정' : '새 API 생성'}
                             </h1>
                         </div>
                         <button
