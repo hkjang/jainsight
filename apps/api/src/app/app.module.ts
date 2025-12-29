@@ -21,6 +21,9 @@ import { UsersModule } from './users/users.module';
 import { SqlApiModule } from './sql-api/sql-api.module';
 import { HealthModule } from './health/health.module';
 
+// Config Module
+import { AppConfigModule } from './config';
+
 // New Enterprise Admin Modules
 import { OrganizationsModule } from './organizations/organizations.module';
 import { GroupsModule } from './groups/groups.module';
@@ -50,6 +53,7 @@ import { ApiKey, ApiKeyUsage } from './api-keys/entities';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    AppConfigModule,
     ThrottlerModule.forRoot([{
       ttl: 60000,
       limit: 60,
