@@ -37,6 +37,10 @@ export default function ConnectionsPage() {
     const [selectedType, setSelectedType] = useState<string | null>(null);
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({});
     const [refreshing, setRefreshing] = useState(false);
+    const [editingConnection, setEditingConnection] = useState<Connection | null>(null);
+    const [editForm, setEditForm] = useState({ name: '', host: '', port: 0, database: '', username: '', password: '' });
+    const [showPassword, setShowPassword] = useState(false);
+    const [saving, setSaving] = useState(false);
     const router = useRouter();
 
     const fetchConnections = useCallback(async () => {
@@ -93,6 +97,13 @@ export default function ConnectionsPage() {
         fetchConnections();
     };
 
+    const handleTestAll = async () => {
+        for (const conn of connections) {
+            handleTestConnection(conn.id);
+            await new Promise(r => setTimeout(r, 300));
+        }
+    };
+
     const handleDelete = async (id: string) => {
         if (!confirm('정말 삭제하시겠습니까?')) return;
         const token = localStorage.getItem('token');
@@ -143,6 +154,53 @@ export default function ConnectionsPage() {
             }
         } catch (e) {
             console.error('Duplicate failed', e);
+        }
+    };
+
+    const handleEdit = (conn: Connection) => {
+        setEditingConnection(conn);
+        setEditForm({
+            name: conn.name,
+            host: conn.host,
+            port: conn.port,
+            database: conn.database,
+            username: '',
+            password: ''
+        });
+        setShowPassword(false);
+    };
+
+    const handleUpdate = async () => {
+        if (!editingConnection) return;
+        const token = localStorage.getItem('token');
+        setSaving(true);
+        try {
+            const res = await fetch(`/api/connections/${editingConnection.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: editForm.name,
+                    host: editForm.host,
+                    port: editForm.port,
+                    database: editForm.database,
+                    ...(editForm.username && { username: editForm.username }),
+                    ...(editForm.password && { password: editForm.password }),
+                })
+            });
+            if (res.ok) {
+                setEditingConnection(null);
+                fetchConnections();
+            } else {
+                alert('연결 수정에 실패했습니다');
+            }
+        } catch (e) {
+            console.error('Update failed', e);
+            alert('연결 수정 중 오류가 발생했습니다');
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -233,6 +291,25 @@ export default function ConnectionsPage() {
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: '10px' }}>
+                    <button
+                        onClick={handleTestAll}
+                        disabled={connections.length === 0}
+                        style={{
+                            padding: '10px 16px',
+                            background: 'rgba(251, 191, 36, 0.15)',
+                            border: '1px solid rgba(251, 191, 36, 0.3)',
+                            borderRadius: '10px',
+                            color: '#fbbf24',
+                            cursor: connections.length === 0 ? 'not-allowed' : 'pointer',
+                            fontSize: '14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            transition: 'all 0.2s',
+                        }}
+                    >
+                        🔌 전체 테스트
+                    </button>
                     <button
                         onClick={handleRefresh}
                         disabled={refreshing}
@@ -450,7 +527,7 @@ export default function ConnectionsPage() {
                 </div>
             ) : (
                 <div style={{ display: 'grid', gap: '16px' }}>
-                    {filteredConnections.map((conn) => {
+                    {filteredConnections.map((conn, idx) => {
                         const dbInfo = dbIcons[conn.type.toLowerCase()] || { icon: '🗄️', color: '#6366f1', gradient: 'linear-gradient(135deg, #6366f1, #8b5cf6)' };
                         const status = connectionStatus[conn.id] || 'unknown';
                         
@@ -465,9 +542,12 @@ export default function ConnectionsPage() {
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: '16px',
-                                    transition: 'all 0.3s ease',
+                                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                                     position: 'relative',
                                     overflow: 'hidden',
+                                    animation: 'fadeSlideUp 0.4s ease-out forwards',
+                                    animationDelay: `${idx * 0.05}s`,
+                                    opacity: 0,
                                 }}
                                 onMouseEnter={(e) => {
                                     e.currentTarget.style.background = 'rgba(30, 27, 75, 0.7)';
@@ -617,6 +697,23 @@ export default function ConnectionsPage() {
                                         📋
                                     </button>
                                     <button
+                                        onClick={() => handleEdit(conn)}
+                                        title="수정"
+                                        style={{
+                                            padding: '8px 12px',
+                                            background: 'rgba(59, 130, 246, 0.15)',
+                                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                                            borderRadius: '8px',
+                                            color: '#60a5fa',
+                                            cursor: 'pointer',
+                                            fontSize: '13px',
+                                            fontWeight: 500,
+                                            transition: 'all 0.2s',
+                                        }}
+                                    >
+                                        ✏️
+                                    </button>
+                                    <button
                                         onClick={() => handleDelete(conn.id)}
                                         title="삭제"
                                         style={{
@@ -647,8 +744,18 @@ export default function ConnectionsPage() {
                     to { transform: rotate(360deg); }
                 }
                 @keyframes pulse {
-                    0%, 100% { opacity: 1; }
-                    50% { opacity: 0.5; }
+                    0%, 100% { opacity: 1; transform: scale(1); }
+                    50% { opacity: 0.5; transform: scale(0.9); }
+                }
+                @keyframes fadeSlideUp {
+                    from {
+                        opacity: 0;
+                        transform: translateY(20px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
                 }
                 input::placeholder {
                     color: #64748b;
