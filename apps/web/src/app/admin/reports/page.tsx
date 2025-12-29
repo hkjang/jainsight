@@ -1,0 +1,299 @@
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import { 
+    exportToCSV, exportToJSON, useAutoRefresh, StatsCard, darkTheme, darkStyles,
+    AnimatedCard, MiniChart, ProgressRing, SearchInput, Pagination, TabGroup, Tooltip, StatusIndicator
+} from '../../../components/admin/AdminUtils';
+
+const API_URL = '/api';
+
+interface UserActivity { userId: string; userName: string; queryCount: number; lastActive: string; activeHours: number; trend: number[]; }
+interface GroupUsage { name: string; type: string; members: number; queries: number; avgRisk: number; }
+interface PermissionIssue { userId: string; userName: string; unusedRoles: number; lastActive: string; recommendation: string; severity: 'low' | 'medium' | 'high'; }
+interface QueryTrend { date: string; total: number; blocked: number; warned: number; }
+interface RiskEvent { id: string; type: 'blocked' | 'warned' | 'high_risk'; query: string; user: string; riskScore: number; timestamp: string; }
+
+export default function ReportsAdminPage() {
+    const [loading, setLoading] = useState(true);
+    const [activeReport, setActiveReport] = useState<'overview' | 'permissions' | 'activity' | 'risk'>('overview');
+    const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d'>('7d');
+    const [autoRefresh, setAutoRefresh] = useState(false);
+    const [overviewStats, setOverviewStats] = useState({ totalUsers: 85, activeUsers: 62, totalQueries: 15420, blockedQueries: 234, avgRiskScore: 32, apiCalls: 128500 });
+    const [queryTrends, setQueryTrends] = useState<QueryTrend[]>([]);
+    const [userActivities, setUserActivities] = useState<UserActivity[]>([]);
+    const [groupUsages, setGroupUsages] = useState<GroupUsage[]>([]);
+    const [permissionIssues, setPermissionIssues] = useState<PermissionIssue[]>([]);
+    const [riskEvents, setRiskEvents] = useState<RiskEvent[]>([]);
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 5;
+
+    const fetchReportData = useCallback(async () => {
+        const days = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : 90;
+        setOverviewStats({ totalUsers: 85, activeUsers: 62, totalQueries: 15420 + Math.floor(Math.random() * 100), blockedQueries: 234, avgRiskScore: 32, apiCalls: 128500 });
+        const trends: QueryTrend[] = []; const now = new Date();
+        for (let i = Math.min(days, 14) - 1; i >= 0; i--) { const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000); trends.push({ date: `${date.getMonth() + 1}/${date.getDate()}`, total: 800 + Math.floor(Math.random() * 400), blocked: 10 + Math.floor(Math.random() * 20), warned: 20 + Math.floor(Math.random() * 30) }); }
+        setQueryTrends(trends);
+        setUserActivities([
+            { userId: '1', userName: 'admin@example.com', queryCount: 1520, lastActive: '10분 전', activeHours: 8.5, trend: [120, 150, 180, 140, 200, 190, 220] },
+            { userId: '2', userName: 'analyst@example.com', queryCount: 1120, lastActive: '2시간 전', activeHours: 6.2, trend: [80, 100, 90, 120, 110, 130, 140] },
+            { userId: '3', userName: 'developer@example.com', queryCount: 890, lastActive: '30분 전', activeHours: 7.8, trend: [60, 70, 90, 80, 100, 120, 110] },
+            { userId: '4', userName: 'manager@example.com', queryCount: 650, lastActive: '1시간 전', activeHours: 5.2, trend: [40, 60, 50, 70, 80, 90, 85] },
+            { userId: '5', userName: 'guest@example.com', queryCount: 320, lastActive: '3일 전', activeHours: 2.1, trend: [30, 20, 40, 35, 25, 15, 20] },
+        ]);
+        setGroupUsages([
+            { name: '개발팀', type: 'organization', members: 25, queries: 5420, avgRisk: 28 },
+            { name: '데이터분석팀', type: 'project', members: 12, queries: 8920, avgRisk: 35 },
+            { name: 'DB 관리자', type: 'task', members: 3, queries: 920, avgRisk: 65 },
+            { name: '마케팅', type: 'department', members: 8, queries: 2100, avgRisk: 15 },
+        ]);
+        setPermissionIssues([
+            { userId: '1', userName: 'user1@example.com', unusedRoles: 3, lastActive: '30일 전', recommendation: '미사용 역할 제거 권장', severity: 'medium' },
+            { userId: '2', userName: 'user2@example.com', unusedRoles: 5, lastActive: '60일 전', recommendation: '계정 비활성화 검토', severity: 'high' },
+            { userId: '3', userName: 'user3@example.com', unusedRoles: 2, lastActive: '15일 전', recommendation: '역할 검토 필요', severity: 'low' },
+        ]);
+        setRiskEvents([
+            { id: '1', type: 'blocked', query: 'DROP TABLE users', user: 'unknown', riskScore: 100, timestamp: new Date().toISOString() },
+            { id: '2', type: 'high_risk', query: 'DELETE FROM orders WHERE 1=1', user: 'developer@example.com', riskScore: 95, timestamp: new Date(Date.now() - 3600000).toISOString() },
+            { id: '3', type: 'warned', query: 'UPDATE users SET role = "admin"', user: 'user@example.com', riskScore: 75, timestamp: new Date(Date.now() - 7200000).toISOString() },
+        ]);
+        setLoading(false);
+    }, [dateRange]);
+
+    useEffect(() => { fetchReportData(); }, [fetchReportData]);
+    useAutoRefresh(fetchReportData, 30000, autoRefresh);
+
+    const handleExport = (format: 'csv' | 'json') => {
+        const data = { generatedAt: new Date().toISOString(), dateRange, overview: overviewStats, queryTrends, userActivities, groupUsages, permissionIssues, riskEvents };
+        if (format === 'json') exportToJSON(data, 'admin_report');
+        else if (activeReport === 'activity') exportToCSV(userActivities, 'user_activities');
+        else if (activeReport === 'permissions') exportToCSV(permissionIssues, 'permission_issues');
+    };
+
+    const reports = [
+        { id: 'overview', label: '개요', icon: '📊' },
+        { id: 'activity', label: '활동 분석', icon: '📈' },
+        { id: 'permissions', label: '권한 분석', icon: '🔐' },
+        { id: 'risk', label: '위험 분석', icon: '⚠️', badge: riskEvents.length }
+    ] as const;
+
+    const severityColors = { low: darkTheme.accentGreen, medium: darkTheme.accentYellow, high: darkTheme.accentRed };
+
+    if (loading) {
+        return (
+            <div style={{ ...darkStyles.container, display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '16px' }}>
+                    {[1,2,3,4,5,6].map(i => <div key={i} style={{ ...darkStyles.card, height: '100px', background: 'linear-gradient(90deg, rgba(30,41,59,0.8) 0%, rgba(51,65,85,0.6) 50%, rgba(30,41,59,0.8) 100%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />)}
+                </div>
+                <div style={{ ...darkStyles.card, height: '400px', background: 'linear-gradient(90deg, rgba(30,41,59,0.8) 0%, rgba(51,65,85,0.6) 50%, rgba(30,41,59,0.8) 100%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />
+                <style>{`@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
+            </div>
+        );
+    }
+
+    return (
+        <div style={darkStyles.container}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <div>
+                    <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: darkTheme.textPrimary, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        📊 운영 리포트
+                        <StatusIndicator status={autoRefresh ? 'online' : 'offline'} label={autoRefresh ? '실시간' : '수동'} pulse={autoRefresh} />
+                    </h1>
+                    <p style={{ color: darkTheme.textSecondary, marginTop: '4px' }}>시스템 사용 현황 및 보안 분석</p>
+                </div>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: darkTheme.textSecondary, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} style={{ accentColor: darkTheme.accentBlue }} />자동 새로고침
+                    </label>
+                    <select style={darkStyles.input} value={dateRange} onChange={e => setDateRange(e.target.value as typeof dateRange)}>
+                        <option value="7d">최근 7일</option><option value="30d">최근 30일</option><option value="90d">최근 90일</option>
+                    </select>
+                    <Tooltip content="JSON으로 내보내기"><button style={darkStyles.button} onClick={() => handleExport('json')}>📥 내보내기</button></Tooltip>
+                </div>
+            </div>
+
+            {/* Stats Cards with enhanced visuals */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                {[
+                    { icon: '👥', label: '전체 사용자', value: overviewStats.totalUsers, color: darkTheme.accentBlue },
+                    { icon: '✅', label: '활성 사용자', value: overviewStats.activeUsers, color: darkTheme.accentGreen, progress: Math.round((overviewStats.activeUsers / overviewStats.totalUsers) * 100) },
+                    { icon: '📝', label: '총 쿼리', value: overviewStats.totalQueries.toLocaleString(), color: darkTheme.accentPurple },
+                    { icon: '🚫', label: '차단된 쿼리', value: overviewStats.blockedQueries, color: darkTheme.accentRed },
+                    { icon: '📈', label: '평균 위험도', value: `${overviewStats.avgRiskScore}%`, color: darkTheme.accentYellow, progress: overviewStats.avgRiskScore },
+                    { icon: '🔗', label: 'API 호출', value: `${(overviewStats.apiCalls / 1000).toFixed(1)}K`, color: '#06B6D4' }
+                ].map((stat, i) => (
+                    <AnimatedCard key={stat.label} delay={i * 0.08}>
+                        <div style={{ padding: '16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div>
+                                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: stat.color }}>{stat.value}</div>
+                                    <div style={{ fontSize: '12px', color: darkTheme.textSecondary, marginTop: '4px' }}>{stat.label}</div>
+                                </div>
+                                {stat.progress !== undefined ? (
+                                    <ProgressRing progress={stat.progress} size={50} color={stat.color} strokeWidth={5} />
+                                ) : (
+                                    <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: `${stat.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>{stat.icon}</div>
+                                )}
+                            </div>
+                        </div>
+                    </AnimatedCard>
+                ))}
+            </div>
+
+            {/* Tab Navigation */}
+            <div style={{ ...darkStyles.card, marginBottom: '24px' }}>
+                <div style={{ padding: '12px 16px' }}>
+                    <TabGroup tabs={reports.map(r => ({ id: r.id, label: r.label, icon: r.icon, badge: 'badge' in r ? r.badge : undefined }))} activeTab={activeReport} onChange={(id) => setActiveReport(id as typeof activeReport)} />
+                </div>
+            </div>
+
+            {/* Overview Tab */}
+            {activeReport === 'overview' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+                    <AnimatedCard delay={0.1}>
+                        <div style={{ padding: '16px 20px', borderBottom: `1px solid ${darkTheme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontWeight: '600', color: darkTheme.textPrimary }}>📈 쿼리 추이</span>
+                            <span style={{ fontSize: '12px', color: darkTheme.textMuted }}>최근 {queryTrends.length}일</span>
+                        </div>
+                        <div style={{ padding: '20px' }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-end', height: '200px', gap: '8px' }}>
+                                {queryTrends.map((d, i) => {
+                                    const maxTotal = Math.max(...queryTrends.map(t => t.total));
+                                    return (
+                                        <Tooltip key={i} content={`${d.date}: ${d.total}건 (차단: ${d.blocked})`}>
+                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer' }}>
+                                                <div style={{ width: '100%', height: `${(d.total / maxTotal) * 160}px`, background: `linear-gradient(180deg, ${darkTheme.accentBlue}, #60A5FA)`, borderRadius: '4px 4px 0 0', position: 'relative', transition: 'all 0.3s' }}
+                                                    onMouseEnter={e => { e.currentTarget.style.transform = 'scaleY(1.05)'; e.currentTarget.style.filter = 'brightness(1.2)'; }}
+                                                    onMouseLeave={e => { e.currentTarget.style.transform = 'scaleY(1)'; e.currentTarget.style.filter = 'brightness(1)'; }}>
+                                                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: `${(d.blocked / d.total) * 100}%`, background: darkTheme.accentRed, borderRadius: '0 0 0 0' }} />
+                                                </div>
+                                                <div style={{ fontSize: '10px', color: darkTheme.textMuted, marginTop: '8px' }}>{d.date}</div>
+                                            </div>
+                                        </Tooltip>
+                                    );
+                                })}
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginTop: '16px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: darkTheme.textSecondary }}><div style={{ width: '12px', height: '12px', background: darkTheme.accentBlue, borderRadius: '2px' }} />전체 쿼리</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: darkTheme.textSecondary }}><div style={{ width: '12px', height: '12px', background: darkTheme.accentRed, borderRadius: '2px' }} />차단됨</div>
+                            </div>
+                        </div>
+                    </AnimatedCard>
+
+                    <AnimatedCard delay={0.2}>
+                        <div style={{ padding: '16px 20px', borderBottom: `1px solid ${darkTheme.border}`, fontWeight: '600', color: darkTheme.textPrimary }}>👥 그룹별 사용량</div>
+                        <div style={{ maxHeight: '280px', overflow: 'auto' }}>
+                            {groupUsages.map((group, i) => (
+                                <div key={i} style={{ padding: '14px 20px', borderBottom: `1px solid ${darkTheme.borderLight}`, transition: 'background 0.2s' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = darkTheme.bgCardHover}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <span style={{ fontWeight: '500', color: darkTheme.textPrimary }}>{group.name}</span>
+                                        <span style={{ fontSize: '12px', color: darkTheme.textMuted }}>👥 {group.members} · 📝 {group.queries.toLocaleString()}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div style={{ flex: 1, height: '6px', background: darkTheme.bgSecondary, borderRadius: '3px', overflow: 'hidden' }}>
+                                            <div style={{ height: '100%', width: `${Math.min((group.queries / 10000) * 100, 100)}%`, background: group.avgRisk > 50 ? `linear-gradient(90deg, ${darkTheme.accentYellow}, ${darkTheme.accentRed})` : `linear-gradient(90deg, ${darkTheme.accentBlue}, ${darkTheme.accentPurple})`, borderRadius: '3px', transition: 'width 0.5s' }} />
+                                        </div>
+                                        <ProgressRing progress={group.avgRisk} size={32} strokeWidth={3} color={group.avgRisk > 50 ? darkTheme.accentRed : darkTheme.accentGreen} showLabel={false} />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </AnimatedCard>
+                </div>
+            )}
+
+            {/* Activity Tab */}
+            {activeReport === 'activity' && (
+                <AnimatedCard>
+                    <div style={{ padding: '16px 20px', borderBottom: `1px solid ${darkTheme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: '600', color: darkTheme.textPrimary }}>👤 사용자 활동 순위</span>
+                        <button onClick={() => exportToCSV(userActivities, 'user_activities')} style={darkStyles.buttonSecondary}>📥 CSV</button>
+                    </div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead><tr style={{ background: darkTheme.bgSecondary }}>
+                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: darkTheme.textMuted }}>순위</th>
+                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: darkTheme.textMuted }}>사용자</th>
+                            <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: darkTheme.textMuted }}>쿼리 수</th>
+                            <th style={{ padding: '12px 20px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: darkTheme.textMuted }}>추이</th>
+                            <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: darkTheme.textMuted }}>활동 시간</th>
+                            <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: darkTheme.textMuted }}>마지막 활동</th>
+                        </tr></thead>
+                        <tbody>
+                            {userActivities.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((user, i) => (
+                                <tr key={user.userId} style={{ borderBottom: `1px solid ${darkTheme.borderLight}`, animation: `fadeInUp 0.3s ease-out ${i * 0.05}s both` }}
+                                    onMouseEnter={e => e.currentTarget.style.background = darkTheme.bgCardHover}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                    <td style={{ padding: '16px 20px' }}>
+                                        <span style={{ width: '28px', height: '28px', borderRadius: '50%', background: i < 3 ? ['#FFD700', '#C0C0C0', '#CD7F32'][i] : darkTheme.bgSecondary, color: i < 3 ? '#1F2937' : darkTheme.textMuted, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '600' }}>{(currentPage - 1) * itemsPerPage + i + 1}</span>
+                                    </td>
+                                    <td style={{ padding: '16px 20px', fontWeight: '500', color: darkTheme.textPrimary }}>{user.userName}</td>
+                                    <td style={{ padding: '16px 20px', textAlign: 'right', fontWeight: '600', color: darkTheme.accentBlue }}>{user.queryCount.toLocaleString()}</td>
+                                    <td style={{ padding: '16px 20px', width: '100px' }}><MiniChart data={user.trend} color={darkTheme.accentBlue} height={25} /></td>
+                                    <td style={{ padding: '16px 20px', textAlign: 'right', color: darkTheme.textSecondary }}>{user.activeHours}h</td>
+                                    <td style={{ padding: '16px 20px', textAlign: 'right', fontSize: '13px', color: darkTheme.textMuted }}>{user.lastActive}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    <Pagination currentPage={currentPage} totalPages={Math.ceil(userActivities.length / itemsPerPage)} onPageChange={setCurrentPage} totalItems={userActivities.length} itemsPerPage={itemsPerPage} />
+                </AnimatedCard>
+            )}
+            <style>{`@keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+
+            {/* Permissions Tab */}
+            {activeReport === 'permissions' && (
+                <AnimatedCard>
+                    <div style={{ padding: '16px 20px', borderBottom: `1px solid ${darkTheme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div><span style={{ fontWeight: '600', color: darkTheme.textPrimary }}>🔒 과다 권한 사용자</span><span style={{ fontSize: '12px', color: darkTheme.textMuted, marginLeft: '12px' }}>{permissionIssues.length}건</span></div>
+                        <button onClick={() => exportToCSV(permissionIssues, 'permission_issues')} style={darkStyles.buttonSecondary}>📥 CSV</button>
+                    </div>
+                    {permissionIssues.map((issue, i) => (
+                        <div key={issue.userId} style={{ padding: '20px', borderBottom: `1px solid ${darkTheme.borderLight}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', animation: `fadeInUp 0.3s ease-out ${i * 0.1}s both` }}
+                            onMouseEnter={e => e.currentTarget.style.background = darkTheme.bgCardHover}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: `${severityColors[issue.severity]}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>👤</div>
+                                <div>
+                                    <div style={{ fontWeight: '500', color: darkTheme.textPrimary }}>{issue.userName}</div>
+                                    <div style={{ fontSize: '12px', color: darkTheme.textMuted }}>마지막 활동: {issue.lastActive}</div>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                <div style={{ padding: '6px 12px', background: `${severityColors[issue.severity]}20`, color: severityColors[issue.severity], borderRadius: '6px', fontSize: '13px', fontWeight: '500' }}>{issue.unusedRoles}개 미사용 역할</div>
+                                <div style={{ fontSize: '13px', color: darkTheme.textSecondary, maxWidth: '200px' }}>{issue.recommendation}</div>
+                                <button style={darkStyles.button}>권한 검토</button>
+                            </div>
+                        </div>
+                    ))}
+                </AnimatedCard>
+            )}
+
+            {/* Risk Tab */}
+            {activeReport === 'risk' && (
+                <AnimatedCard>
+                    <div style={{ padding: '16px 20px', borderBottom: `1px solid ${darkTheme.border}`, fontWeight: '600', color: darkTheme.textPrimary }}>⚠️ 최근 위험 이벤트</div>
+                    {riskEvents.map((event, i) => (
+                        <div key={event.id} style={{ padding: '16px 20px', borderBottom: `1px solid ${darkTheme.borderLight}`, animation: `fadeInUp 0.3s ease-out ${i * 0.1}s both` }}
+                            onMouseEnter={e => e.currentTarget.style.background = darkTheme.bgCardHover}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <span style={{ padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', background: event.type === 'blocked' ? `${darkTheme.accentRed}20` : `${darkTheme.accentYellow}20`, color: event.type === 'blocked' ? darkTheme.accentRed : darkTheme.accentYellow }}>{event.type === 'blocked' ? '🚫 차단됨' : event.type === 'high_risk' ? '⚠️ 고위험' : '⚡ 경고'}</span>
+                                    <span style={{ fontSize: '13px', color: darkTheme.textMuted }}>by {event.user}</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <ProgressRing progress={event.riskScore} size={36} strokeWidth={3} color={event.riskScore >= 80 ? darkTheme.accentRed : darkTheme.accentYellow} />
+                                    <span style={{ fontSize: '12px', color: darkTheme.textMuted }}>{new Date(event.timestamp).toLocaleString('ko-KR')}</span>
+                                </div>
+                            </div>
+                            <code style={{ display: 'block', padding: '10px 12px', background: darkTheme.bgInput, borderRadius: '6px', fontSize: '13px', fontFamily: 'monospace', color: event.type === 'blocked' ? darkTheme.accentRed : darkTheme.textPrimary }}>{event.query}</code>
+                        </div>
+                    ))}
+                </AnimatedCard>
+            )}
+        </div>
+    );
+}

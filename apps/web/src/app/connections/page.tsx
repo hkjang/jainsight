@@ -37,6 +37,10 @@ export default function ConnectionsPage() {
     const [selectedType, setSelectedType] = useState<string | null>(null);
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({});
     const [refreshing, setRefreshing] = useState(false);
+    const [editingConnection, setEditingConnection] = useState<Connection | null>(null);
+    const [editForm, setEditForm] = useState({ name: '', host: '', port: 0, database: '', username: '', password: '' });
+    const [showPassword, setShowPassword] = useState(false);
+    const [saving, setSaving] = useState(false);
     const router = useRouter();
 
     const fetchConnections = useCallback(async () => {
@@ -93,6 +97,13 @@ export default function ConnectionsPage() {
         fetchConnections();
     };
 
+    const handleTestAll = async () => {
+        for (const conn of connections) {
+            handleTestConnection(conn.id);
+            await new Promise(r => setTimeout(r, 300));
+        }
+    };
+
     const handleDelete = async (id: string) => {
         if (!confirm('정말 삭제하시겠습니까?')) return;
         const token = localStorage.getItem('token');
@@ -143,6 +154,53 @@ export default function ConnectionsPage() {
             }
         } catch (e) {
             console.error('Duplicate failed', e);
+        }
+    };
+
+    const handleEdit = (conn: Connection) => {
+        setEditingConnection(conn);
+        setEditForm({
+            name: conn.name,
+            host: conn.host,
+            port: conn.port,
+            database: conn.database,
+            username: '',
+            password: ''
+        });
+        setShowPassword(false);
+    };
+
+    const handleUpdate = async () => {
+        if (!editingConnection) return;
+        const token = localStorage.getItem('token');
+        setSaving(true);
+        try {
+            const res = await fetch(`/api/connections/${editingConnection.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: editForm.name,
+                    host: editForm.host,
+                    port: editForm.port,
+                    database: editForm.database,
+                    ...(editForm.username && { username: editForm.username }),
+                    ...(editForm.password && { password: editForm.password }),
+                })
+            });
+            if (res.ok) {
+                setEditingConnection(null);
+                fetchConnections();
+            } else {
+                alert('연결 수정에 실패했습니다');
+            }
+        } catch (e) {
+            console.error('Update failed', e);
+            alert('연결 수정 중 오류가 발생했습니다');
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -233,6 +291,25 @@ export default function ConnectionsPage() {
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: '10px' }}>
+                    <button
+                        onClick={handleTestAll}
+                        disabled={connections.length === 0}
+                        style={{
+                            padding: '10px 16px',
+                            background: 'rgba(251, 191, 36, 0.15)',
+                            border: '1px solid rgba(251, 191, 36, 0.3)',
+                            borderRadius: '10px',
+                            color: '#fbbf24',
+                            cursor: connections.length === 0 ? 'not-allowed' : 'pointer',
+                            fontSize: '14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            transition: 'all 0.2s',
+                        }}
+                    >
+                        🔌 전체 테스트
+                    </button>
                     <button
                         onClick={handleRefresh}
                         disabled={refreshing}
@@ -450,7 +527,7 @@ export default function ConnectionsPage() {
                 </div>
             ) : (
                 <div style={{ display: 'grid', gap: '16px' }}>
-                    {filteredConnections.map((conn) => {
+                    {filteredConnections.map((conn, idx) => {
                         const dbInfo = dbIcons[conn.type.toLowerCase()] || { icon: '🗄️', color: '#6366f1', gradient: 'linear-gradient(135deg, #6366f1, #8b5cf6)' };
                         const status = connectionStatus[conn.id] || 'unknown';
                         
@@ -465,9 +542,12 @@ export default function ConnectionsPage() {
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: '16px',
-                                    transition: 'all 0.3s ease',
+                                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                                     position: 'relative',
                                     overflow: 'hidden',
+                                    animation: 'fadeSlideUp 0.4s ease-out forwards',
+                                    animationDelay: `${idx * 0.05}s`,
+                                    opacity: 0,
                                 }}
                                 onMouseEnter={(e) => {
                                     e.currentTarget.style.background = 'rgba(30, 27, 75, 0.7)';
@@ -617,6 +697,23 @@ export default function ConnectionsPage() {
                                         📋
                                     </button>
                                     <button
+                                        onClick={() => handleEdit(conn)}
+                                        title="수정"
+                                        style={{
+                                            padding: '8px 12px',
+                                            background: 'rgba(59, 130, 246, 0.15)',
+                                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                                            borderRadius: '8px',
+                                            color: '#60a5fa',
+                                            cursor: 'pointer',
+                                            fontSize: '13px',
+                                            fontWeight: 500,
+                                            transition: 'all 0.2s',
+                                        }}
+                                    >
+                                        ✏️
+                                    </button>
+                                    <button
                                         onClick={() => handleDelete(conn.id)}
                                         title="삭제"
                                         style={{
@@ -647,8 +744,18 @@ export default function ConnectionsPage() {
                     to { transform: rotate(360deg); }
                 }
                 @keyframes pulse {
-                    0%, 100% { opacity: 1; }
-                    50% { opacity: 0.5; }
+                    0%, 100% { opacity: 1; transform: scale(1); }
+                    50% { opacity: 0.5; transform: scale(0.9); }
+                }
+                @keyframes fadeSlideUp {
+                    from {
+                        opacity: 0;
+                        transform: translateY(20px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
                 }
                 input::placeholder {
                     color: #64748b;
@@ -662,6 +769,281 @@ export default function ConnectionsPage() {
                 }
                 a:hover {
                     filter: brightness(1.1);
+                }
+            `}</style>
+
+            {/* Edit Modal */}
+            {editingConnection && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(4px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000,
+                    animation: 'fadeIn 0.2s ease-out',
+                }}
+                onClick={() => setEditingConnection(null)}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            background: 'linear-gradient(135deg, #1e1b4b, #0f172a)',
+                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                            borderRadius: '20px',
+                            padding: '28px',
+                            width: '100%',
+                            maxWidth: '500px',
+                            boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)',
+                            animation: 'slideUp 0.3s ease-out',
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '24px' }}>
+                            <div style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '12px',
+                                background: dbIcons[editingConnection.type.toLowerCase()]?.gradient || 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '24px',
+                            }}>
+                                {dbIcons[editingConnection.type.toLowerCase()]?.icon || '🗄️'}
+                            </div>
+                            <div>
+                                <h2 style={{ fontSize: '20px', fontWeight: 600, color: '#e2e8f0', margin: 0 }}>
+                                    연결 수정
+                                </h2>
+                                <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
+                                    {editingConnection.type.toUpperCase()}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setEditingConnection(null)}
+                                style={{
+                                    marginLeft: 'auto',
+                                    background: 'rgba(99, 102, 241, 0.1)',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    color: '#94a3b8',
+                                    cursor: 'pointer',
+                                    padding: '8px 12px',
+                                    fontSize: '16px',
+                                }}
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '6px', fontWeight: 500 }}>
+                                    연결 이름 *
+                                </label>
+                                <input
+                                    type="text"
+                                    value={editForm.name}
+                                    onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px 14px',
+                                        background: 'rgba(15, 23, 42, 0.6)',
+                                        border: '1px solid rgba(99, 102, 241, 0.2)',
+                                        borderRadius: '10px',
+                                        color: '#e2e8f0',
+                                        fontSize: '14px',
+                                        outline: 'none',
+                                    }}
+                                />
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '6px', fontWeight: 500 }}>
+                                        호스트 *
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={editForm.host}
+                                        onChange={(e) => setEditForm(prev => ({ ...prev, host: e.target.value }))}
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px 14px',
+                                            background: 'rgba(15, 23, 42, 0.6)',
+                                            border: '1px solid rgba(99, 102, 241, 0.2)',
+                                            borderRadius: '10px',
+                                            color: '#e2e8f0',
+                                            fontSize: '14px',
+                                            outline: 'none',
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '6px', fontWeight: 500 }}>
+                                        포트 *
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={editForm.port}
+                                        onChange={(e) => setEditForm(prev => ({ ...prev, port: parseInt(e.target.value) || 0 }))}
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px 14px',
+                                            background: 'rgba(15, 23, 42, 0.6)',
+                                            border: '1px solid rgba(99, 102, 241, 0.2)',
+                                            borderRadius: '10px',
+                                            color: '#e2e8f0',
+                                            fontSize: '14px',
+                                            outline: 'none',
+                                        }}
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '6px', fontWeight: 500 }}>
+                                    데이터베이스 *
+                                </label>
+                                <input
+                                    type="text"
+                                    value={editForm.database}
+                                    onChange={(e) => setEditForm(prev => ({ ...prev, database: e.target.value }))}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px 14px',
+                                        background: 'rgba(15, 23, 42, 0.6)',
+                                        border: '1px solid rgba(99, 102, 241, 0.2)',
+                                        borderRadius: '10px',
+                                        color: '#e2e8f0',
+                                        fontSize: '14px',
+                                        outline: 'none',
+                                    }}
+                                />
+                            </div>
+
+                            <div style={{ 
+                                padding: '14px',
+                                background: 'rgba(251, 191, 36, 0.1)',
+                                borderRadius: '10px',
+                                border: '1px solid rgba(251, 191, 36, 0.2)',
+                            }}>
+                                <div style={{ fontSize: '12px', color: '#fbbf24', marginBottom: '10px', fontWeight: 500 }}>
+                                    🔐 자격 증명 (선택사항 - 변경 시에만 입력)
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <input
+                                        type="text"
+                                        placeholder="사용자 이름"
+                                        value={editForm.username}
+                                        onChange={(e) => setEditForm(prev => ({ ...prev, username: e.target.value }))}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px 12px',
+                                            background: 'rgba(15, 23, 42, 0.6)',
+                                            border: '1px solid rgba(99, 102, 241, 0.2)',
+                                            borderRadius: '8px',
+                                            color: '#e2e8f0',
+                                            fontSize: '13px',
+                                            outline: 'none',
+                                        }}
+                                    />
+                                    <div style={{ position: 'relative' }}>
+                                        <input
+                                            type={showPassword ? 'text' : 'password'}
+                                            placeholder="비밀번호"
+                                            value={editForm.password}
+                                            onChange={(e) => setEditForm(prev => ({ ...prev, password: e.target.value }))}
+                                            style={{
+                                                width: '100%',
+                                                padding: '10px 36px 10px 12px',
+                                                background: 'rgba(15, 23, 42, 0.6)',
+                                                border: '1px solid rgba(99, 102, 241, 0.2)',
+                                                borderRadius: '8px',
+                                                color: '#e2e8f0',
+                                                fontSize: '13px',
+                                                outline: 'none',
+                                            }}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPassword(!showPassword)}
+                                            style={{
+                                                position: 'absolute',
+                                                right: '10px',
+                                                top: '50%',
+                                                transform: 'translateY(-50%)',
+                                                background: 'none',
+                                                border: 'none',
+                                                color: '#64748b',
+                                                cursor: 'pointer',
+                                                fontSize: '14px',
+                                            }}
+                                        >
+                                            {showPassword ? '🙈' : '👁️'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                            <button
+                                onClick={() => setEditingConnection(null)}
+                                style={{
+                                    padding: '12px 24px',
+                                    background: 'rgba(99, 102, 241, 0.1)',
+                                    border: '1px solid rgba(99, 102, 241, 0.2)',
+                                    borderRadius: '10px',
+                                    color: '#94a3b8',
+                                    cursor: 'pointer',
+                                    fontSize: '14px',
+                                    fontWeight: 500,
+                                }}
+                            >
+                                취소
+                            </button>
+                            <button
+                                onClick={handleUpdate}
+                                disabled={saving || !editForm.name || !editForm.host || !editForm.database}
+                                style={{
+                                    padding: '12px 28px',
+                                    background: (editForm.name && editForm.host && editForm.database) 
+                                        ? 'linear-gradient(90deg, #6366f1, #8b5cf6)'
+                                        : 'rgba(99, 102, 241, 0.3)',
+                                    border: 'none',
+                                    borderRadius: '10px',
+                                    color: '#fff',
+                                    cursor: (saving || !editForm.name || !editForm.host || !editForm.database) ? 'not-allowed' : 'pointer',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    boxShadow: (editForm.name && editForm.host && editForm.database) ? '0 4px 15px rgba(99, 102, 241, 0.3)' : 'none',
+                                }}
+                            >
+                                {saving ? (
+                                    <><span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⏳</span> 저장 중...</>
+                                ) : (
+                                    <>💾 저장</>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <style>{`
+                @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+                @keyframes slideUp {
+                    from { opacity: 0; transform: translateY(20px); }
+                    to { opacity: 1; transform: translateY(0); }
                 }
             `}</style>
         </div>
