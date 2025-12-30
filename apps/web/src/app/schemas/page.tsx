@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { translateColumnName } from '../../utils/columnTranslator';
+import { translateColumnName, translateTableName } from '../../utils/columnTranslator';
 
 interface Connection {
     id: string;
@@ -427,17 +427,27 @@ export default function SchemaExplorerPage() {
                                                 transition: 'transform 0.2s',
                                                 transform: selectedTable === table.name ? 'scale(1.2)' : 'scale(1)',
                                             }} />
-                                            <span style={{
-                                                flex: 1,
-                                                fontSize: '13px',
-                                                color: selectedTable === table.name ? '#e2e8f0' : '#94a3b8',
-                                                fontWeight: selectedTable === table.name ? 600 : 400,
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                whiteSpace: 'nowrap',
-                                            }}>
-                                                {table.name}
-                                            </span>
+                                            <div style={{ flex: 1, overflow: 'hidden' }}>
+                                                <span style={{
+                                                    display: 'block',
+                                                    fontSize: '13px',
+                                                    color: selectedTable === table.name ? '#e2e8f0' : '#94a3b8',
+                                                    fontWeight: selectedTable === table.name ? 600 : 400,
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap',
+                                                }}>
+                                                    {table.name}
+                                                </span>
+                                                <span style={{
+                                                    fontSize: '11px',
+                                                    color: '#6366f1',
+                                                    display: 'block',
+                                                    marginTop: '2px',
+                                                }}>
+                                                    {translateTableName(table.name) !== table.name ? translateTableName(table.name) : ''}
+                                                </span>
+                                            </div>
                                             <span style={{
                                                 fontSize: '10px',
                                                 padding: '3px 8px',

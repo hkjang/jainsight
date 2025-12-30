@@ -136,29 +136,114 @@ export function translateColumnName(columnName: string, comment?: string): strin
  */
 export function translateTableName(tableName: string): string {
     const TABLE_TRANSLATIONS: Record<string, string> = {
+        // 사용자/계정
         'users': '사용자',
         'user': '사용자',
         'accounts': '계정',
+        'account': '계정',
+        'members': '회원',
+        'member': '회원',
+        'profiles': '프로필',
+        'profile': '프로필',
+        
+        // 비즈니스
         'orders': '주문',
+        'order': '주문',
         'products': '상품',
+        'product': '상품',
         'categories': '카테고리',
+        'category': '카테고리',
         'customers': '고객',
+        'customer': '고객',
         'employees': '직원',
+        'employee': '직원',
         'departments': '부서',
+        'department': '부서',
         'payments': '결제',
+        'payment': '결제',
+        'invoices': '청구서',
+        'invoice': '청구서',
+        'salaries': '급여',
+        'salary': '급여',
+        'salaryitem': '급여항목',
+        'SalaryItem': '급여항목',
+        
+        // 시스템
         'logs': '로그',
+        'log': '로그',
         'settings': '설정',
+        'setting': '설정',
         'roles': '역할',
+        'role': '역할',
         'permissions': '권한',
+        'permission': '권한',
         'files': '파일',
+        'file': '파일',
+        'configs': '설정',
+        'config': '설정',
+        
+        // 콘텐츠
         'comments': '댓글',
+        'comment': '댓글',
         'posts': '게시글',
+        'post': '게시글',
         'notifications': '알림',
+        'notification': '알림',
         'messages': '메시지',
+        'message': '메시지',
+        'articles': '기사',
+        'article': '기사',
+        
+        // 조직
         'companies': '회사',
+        'company': '회사',
         'projects': '프로젝트',
+        'project': '프로젝트',
         'tasks': '작업',
+        'task': '작업',
+        'teams': '팀',
+        'team': '팀',
+        
+        // 데이터베이스/AI 관련
+        'connections': '연결',
+        'connection': '연결',
+        'queries': '쿼리',
+        'query': '쿼리',
+        'schemas': '스키마',
+        'schema': '스키마',
+        'tables': '테이블',
+        'table': '테이블',
+        'columns': '컬럼',
+        'column': '컬럼',
+        
+        // 크롤러/수집
+        'crawlers': '크롤러',
+        'crawler': '크롤러',
+        'crawl_results': '수집결과',
+        'requirements': '요구사항',
+        'requirement': '요구사항',
+        
+        // AI
+        'ai_providers': 'AI 프로바이더',
+        'ai_models': 'AI 모델',
+        'agents': '에이전트',
+        'agent': '에이전트',
+        'benchmarks': '벤치마크',
+        'benchmark': '벤치마크',
+        
+        // 기타
+        'sessions': '세션',
+        'session': '세션',
+        'tokens': '토큰',
+        'token': '토큰',
+        'history': '이력',
+        'histories': '이력',
+        'favorites': '즐겨찾기',
+        'favorite': '즐겨찾기',
+        'attachments': '첨부파일',
+        'attachment': '첨부파일',
     };
 
-    return TABLE_TRANSLATIONS[tableName.toLowerCase()] || tableName;
+    const lowerName = tableName.toLowerCase();
+    return TABLE_TRANSLATIONS[lowerName] || TABLE_TRANSLATIONS[tableName] || tableName;
 }
