@@ -979,7 +979,15 @@ export default function EditorPage() {
             if (res.status === 401) { router.push('/login'); return; }
             const data = await res.json();
             setConnections(data);
-            if (data.length > 0) setSelectedConnection(data[0].id);
+            
+            // Restore saved connection from localStorage, or use first if not found
+            const savedConnectionId = localStorage.getItem('editorSelectedConnection');
+            if (savedConnectionId && data.some((c: Connection) => c.id === savedConnectionId)) {
+                setSelectedConnection(savedConnectionId);
+                setConnectionStatus('connected');
+            } else if (data.length > 0) {
+                setSelectedConnection(data[0].id);
+            }
         } catch (e) {
             console.error('Failed to fetch connections', e);
         }
