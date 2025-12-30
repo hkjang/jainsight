@@ -17,4 +17,12 @@ export class Nl2SqlController {
     async suggestQuestions(@Param('connectionId') connectionId: string) {
         return this.pipelineService.generateSuggestedQuestions(connectionId);
     }
+
+    /**
+     * SQL 실행 오류 AI 분석
+     */
+    @Post('analyze-error')
+    async analyzeError(@Body() body: { connectionId: string; query: string; errorMessage: string }) {
+        return this.pipelineService.analyzeQueryError(body.connectionId, body.query, body.errorMessage);
+    }
 }

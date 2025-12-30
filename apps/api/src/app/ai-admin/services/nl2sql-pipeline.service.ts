@@ -386,4 +386,119 @@ ${variables.userQuery}
         }
         return undefined;
     }
+
+    /**
+     * SQL 실행 에러를 AI로 분석하여 원인과 해결 방법 제공
+     */
+    async analyzeQueryError(
+        connectionId: string,
+        query: string,
+        errorMessage: string,
+    ): Promise<{ cause: string; solution: string; correctedQuery?: string }> {
+        try {
+            // 스키마 정보 조회
+            const tables = await this.schemaService.getTables(connectionId);
+            let translations: Record<string, any> = {};
+            try {
+                translations = await this.translationService.getTranslationsMap(connectionId);
+            } catch {}
+
+            // 스키마 컨텍스트 구성
+            const tableInfo = tables.slice(0, 15).map(t => {
+                const korean = translations[t.name]?.koreanName || t.name;
+                return `${t.name} (${korean})`;
+            }).join(', ');
+
+            // AI 모델 선택
+            const routingContext: RoutingContext = { purpose: 'sql' };
+            const routedModel = await this.router.selectModel(routingContext);
+            
+            if (!routedModel) {
+                return this.getDefaultErrorAnalysis(errorMessage);
+            }
+
+            const client = this.providerService.createOpenAIClient(routedModel.model.provider);
+            
+            const prompt = `SQL 쿼리 실행 오류를 분석해주세요.
+
+## 오류 메시지
+${errorMessage}
+
+## 실행한 쿼리
+${query}
+
+## 데이터베이스 테이블 목록
+${tableInfo}
+
+## 응답 형식 (JSON으로 응답)
+{
+  "cause": "오류 원인 설명 (한국어, 1-2문장)",
+  "solution": "해결 방법 (한국어, 구체적인 조치)",
+  "correctedQuery": "수정된 쿼리 (있는 경우만)"
+}`;
+
+            const response = await client.chat.completions.create({
+                model: routedModel.model.modelId,
+                messages: [
+                    { role: 'system' as const, content: 'SQL 오류 분석 전문가입니다. 반드시 유효한 JSON 형식으로 응답하세요.' },
+                    { role: 'user' as const, content: prompt }
+                ],
+                max_tokens: 500,
+                temperature: 0.3,
+            });
+
+            const content = response.choices[0]?.message?.content || '';
+            
+            try {
+                // JSON 추출 시도
+                const jsonMatch = content.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    return {
+                        cause: parsed.cause || '알 수 없는 오류',
+                        solution: parsed.solution || '쿼리를 다시 확인해주세요',
+                        correctedQuery: parsed.correctedQuery || undefined,
+                    };
+                }
+            } catch {
+                // JSON 파싱 실패 시 텍스트 분석
+                this.logger.warn('Failed to parse AI error analysis as JSON');
+            }
+
+            return this.getDefaultErrorAnalysis(errorMessage);
+        } catch (error) {
+            this.logger.error(`Failed to analyze query error: ${error.message}`);
+            return this.getDefaultErrorAnalysis(errorMessage);
+        }
+    }
+
+    private getDefaultErrorAnalysis(errorMessage: string): { cause: string; solution: string } {
+        const lowerMsg = errorMessage.toLowerCase();
+        
+        if (lowerMsg.includes('not found') || lowerMsg.includes('does not exist')) {
+            return {
+                cause: '테이블이나 컬럼명이 존재하지 않거나 대소문자가 맞지 않습니다.',
+                solution: 'Schema Browser에서 정확한 테이블/컬럼명을 확인하세요. PostgreSQL의 경우 대소문자가 섞인 이름은 따옴표("")로 감싸야 합니다.',
+            };
+        }
+        
+        if (lowerMsg.includes('syntax')) {
+            return {
+                cause: 'SQL 문법 오류가 있습니다.',
+                solution: '쿼리의 키워드, 쉼표, 괄호 등을 확인하세요.',
+            };
+        }
+        
+        if (lowerMsg.includes('permission') || lowerMsg.includes('access denied')) {
+            return {
+                cause: '데이터베이스 접근 권한이 없습니다.',
+                solution: '데이터베이스 관리자에게 필요한 권한을 요청하세요.',
+            };
+        }
+
+        return {
+            cause: '쿼리 실행 중 오류가 발생했습니다.',
+            solution: '오류 메시지를 확인하고 쿼리를 수정해주세요.',
+        };
+    }
 }

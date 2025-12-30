@@ -210,6 +210,10 @@ export default function EditorPage() {
     const [error, setError] = useState('');
     const [executionTime, setExecutionTime] = useState<number | null>(null);
     
+    // AI Error Analysis
+    const [errorAnalysis, setErrorAnalysis] = useState<{ cause: string; solution: string; correctedQuery?: string } | null>(null);
+    const [analyzingError, setAnalyzingError] = useState(false);
+    
     // Pagination & Sorting
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
@@ -1220,6 +1224,7 @@ export default function EditorPage() {
             localStorage.setItem('queryHistory', JSON.stringify(newHistory));
         } catch (e: any) {
             setError(e.message);
+            setErrorAnalysis(null);
             showToast(`Query failed: ${e.message}`, 'error');
             const endTime = performance.now();
             setExecutionTime(endTime - startTime);
@@ -1227,6 +1232,26 @@ export default function EditorPage() {
             const newHistory = [historyItem, ...queryHistory.slice(0, 49)];
             setQueryHistory(newHistory);
             localStorage.setItem('queryHistory', JSON.stringify(newHistory));
+            
+            // AI 에러 분석 호출
+            if (selectedConnection) {
+                setAnalyzingError(true);
+                try {
+                    const analysisRes = await fetch('/api/ai/analyze-error', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ connectionId: selectedConnection, query, errorMessage: e.message }),
+                    });
+                    if (analysisRes.ok) {
+                        const analysis = await analysisRes.json();
+                        setErrorAnalysis(analysis);
+                    }
+                } catch (aiErr) {
+                    console.error('Failed to get AI error analysis', aiErr);
+                } finally {
+                    setAnalyzingError(false);
+                }
+            }
         } finally {
             setLoading(false);
             setQueryStartTime(null);
@@ -2360,6 +2385,100 @@ export default function EditorPage() {
                                     ))}
                                 </div>
                             )}
+                            
+                            {/* Error Display with AI Analysis */}
+                            {error && (
+                                <div style={{ padding: 20 }}>
+                                    <div style={{ 
+                                        backgroundColor: 'rgba(239, 68, 68, 0.1)', 
+                                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                                        borderRadius: 10, 
+                                        padding: 16,
+                                        marginBottom: 12,
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                                            <span style={{ fontSize: 20 }}>❌</span>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontWeight: 600, color: '#ef4444', marginBottom: 6 }}>쿼리 실행 실패</div>
+                                                <div style={{ fontSize: 13, color: theme.textSecondary, fontFamily: 'monospace' }}>{error}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* AI Analysis */}
+                                    {analyzingError && (
+                                        <div style={{ 
+                                            backgroundColor: 'rgba(99, 102, 241, 0.1)', 
+                                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                                            borderRadius: 10, 
+                                            padding: 16,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 12,
+                                        }}>
+                                            <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>🧠</span>
+                                            <span style={{ color: theme.textSecondary }}>AI가 오류를 분석하고 있습니다...</span>
+                                        </div>
+                                    )}
+                                    
+                                    {errorAnalysis && !analyzingError && (
+                                        <div style={{ 
+                                            backgroundColor: 'rgba(16, 185, 129, 0.1)', 
+                                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                                            borderRadius: 10, 
+                                            padding: 16,
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
+                                                <span style={{ fontSize: 20 }}>🧠</span>
+                                                <div style={{ flex: 1 }}>
+                                                    <div style={{ fontWeight: 600, color: '#10b981', marginBottom: 8 }}>AI 분석 결과</div>
+                                                    <div style={{ marginBottom: 10 }}>
+                                                        <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 4 }}>📍 원인</div>
+                                                        <div style={{ fontSize: 13, color: theme.text }}>{errorAnalysis.cause}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 4 }}>💡 해결 방법</div>
+                                                        <div style={{ fontSize: 13, color: theme.text }}>{errorAnalysis.solution}</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            {errorAnalysis.correctedQuery && (
+                                                <div style={{ 
+                                                    marginTop: 12, 
+                                                    paddingTop: 12, 
+                                                    borderTop: `1px solid rgba(16, 185, 129, 0.2)` 
+                                                }}>
+                                                    <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 8 }}>✨ 수정된 쿼리</div>
+                                                    <pre style={{ 
+                                                        backgroundColor: theme.bg, 
+                                                        padding: 12, 
+                                                        borderRadius: 6, 
+                                                        fontSize: 12, 
+                                                        overflow: 'auto',
+                                                        marginBottom: 10,
+                                                    }}>{errorAnalysis.correctedQuery}</pre>
+                                                    <button 
+                                                        onClick={() => {
+                                                            setQuery(errorAnalysis.correctedQuery!);
+                                                            showToast('수정된 쿼리가 적용되었습니다', 'success');
+                                                        }}
+                                                        style={{ 
+                                                            ...styles.btn, 
+                                                            background: 'linear-gradient(135deg, #10b981, #059669)',
+                                                            color: '#fff',
+                                                            fontSize: 12,
+                                                        }}
+                                                    >
+                                                        ✅ 수정된 쿼리 적용
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            
                             {!loading && !error && !results && (
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
                                     <div style={{ textAlign: 'center', color: theme.textMuted }}>
