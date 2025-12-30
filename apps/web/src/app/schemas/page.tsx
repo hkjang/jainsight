@@ -65,6 +65,16 @@ const getDataTypeStyle = (type: string) => {
     return { bg: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa' };
 };
 
+// 테이블 번역 정보 타입
+interface TableTranslation {
+    id: string;
+    tableName: string;
+    koreanName: string;
+    koreanDescription?: string;
+    columnTranslations?: Record<string, string>;
+    isAiGenerated: boolean;
+}
+
 export default function SchemaExplorerPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -79,6 +89,11 @@ export default function SchemaExplorerPage() {
     const [copiedColumn, setCopiedColumn] = useState<string | null>(null);
     const [hoveredTable, setHoveredTable] = useState<string | null>(null);
     const [viewType, setViewType] = useState<'ALL' | 'TABLE' | 'VIEW'>('ALL');
+    
+    // AI 번역 관련 상태
+    const [tableTranslations, setTableTranslations] = useState<Record<string, TableTranslation>>({});
+    const [isTranslating, setIsTranslating] = useState(false);
+    const [translationStatus, setTranslationStatus] = useState<string | null>(null);
 
     // Get connection from URL params
     useEffect(() => {
@@ -95,6 +110,7 @@ export default function SchemaExplorerPage() {
     useEffect(() => {
         if (selectedConnection) {
             fetchTables(selectedConnection);
+            fetchTranslations(selectedConnection);
             setSelectedTable('');
             setColumns([]);
         }
@@ -174,6 +190,81 @@ export default function SchemaExplorerPage() {
         } finally {
             setLoading(false);
         }
+    };
+
+    // 테이블 번역 조회
+    const fetchTranslations = async (connId: string) => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        try {
+            const res = await fetch(`/api/schema/${connId}/translations`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    const map: Record<string, TableTranslation> = {};
+                    data.forEach((t: TableTranslation) => {
+                        map[t.tableName] = t;
+                    });
+                    setTableTranslations(map);
+                }
+            }
+        } catch (e) {
+            console.error('Failed to fetch translations', e);
+        }
+    };
+
+    // AI 번역 생성
+    const generateTranslations = async () => {
+        const token = localStorage.getItem('token');
+        if (!token || !selectedConnection) return;
+
+        setIsTranslating(true);
+        setTranslationStatus('AI 번역 중...');
+        try {
+            const res = await fetch(`/api/schema/${selectedConnection}/translations/generate`, {
+                method: 'POST',
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await res.json();
+            if (data.success) {
+                setTranslationStatus(`✓ ${data.translated}개 번역 완료`);
+                fetchTranslations(selectedConnection); // 새로고침
+                setTimeout(() => setTranslationStatus(null), 3000);
+            } else {
+                setTranslationStatus('번역 실패');
+                setTimeout(() => setTranslationStatus(null), 3000);
+            }
+        } catch (e) {
+            console.error('Failed to generate translations', e);
+            setTranslationStatus('번역 오류');
+            setTimeout(() => setTranslationStatus(null), 3000);
+        } finally {
+            setIsTranslating(false);
+        }
+    };
+
+    // 테이블 한글명 가져오기 (저장된 번역 우선, 없으면 사전 번역)
+    const getTableKoreanName = (tableName: string): string => {
+        const saved = tableTranslations[tableName];
+        if (saved?.koreanName) {
+            return saved.koreanName;
+        }
+        return translateTableName(tableName);
+    };
+
+    // 컬럼 한글명 가져오기 (저장된 번역 우선)
+    const getColumnKoreanName = (tableName: string, columnName: string): string => {
+        const saved = tableTranslations[tableName];
+        if (saved?.columnTranslations?.[columnName]) {
+            return saved.columnTranslations[columnName];
+        }
+        return translateColumnName(columnName);
     };
 
     const handleCopyColumn = useCallback((colName: string) => {
@@ -338,6 +429,44 @@ export default function SchemaExplorerPage() {
                                 </div>
                             </div>
 
+                            {/* AI 번역 버튼 */}
+                            <button
+                                onClick={generateTranslations}
+                                disabled={isTranslating}
+                                style={{
+                                    width: '100%',
+                                    padding: '10px 16px',
+                                    marginBottom: '14px',
+                                    background: isTranslating 
+                                        ? 'rgba(99, 102, 241, 0.1)'
+                                        : 'linear-gradient(90deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.15))',
+                                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                                    borderRadius: '10px',
+                                    color: isTranslating ? '#94a3b8' : '#a5b4fc',
+                                    cursor: isTranslating ? 'not-allowed' : 'pointer',
+                                    fontSize: '13px',
+                                    fontWeight: 500,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px',
+                                    transition: 'all 0.2s',
+                                }}
+                            >
+                                {isTranslating ? (
+                                    <>
+                                        <span style={{ animation: 'pulse 1s infinite' }}>⏳</span>
+                                        {translationStatus || 'AI 번역 중...'}
+                                    </>
+                                ) : translationStatus ? (
+                                    <>{translationStatus}</>
+                                ) : (
+                                    <>
+                                        <span>🤖</span> AI 테이블 번역 생성
+                                    </>
+                                )}
+                            </button>
+
                             {/* Search */}
                             <div style={{ position: 'relative', marginBottom: '14px' }}>
                                 <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', fontSize: '14px' }}>🔍</span>
@@ -441,11 +570,16 @@ export default function SchemaExplorerPage() {
                                                 </span>
                                                 <span style={{
                                                     fontSize: '11px',
-                                                    color: '#6366f1',
+                                                    color: tableTranslations[table.name]?.isAiGenerated ? '#22c55e' : '#6366f1',
                                                     display: 'block',
                                                     marginTop: '2px',
                                                 }}>
-                                                    {translateTableName(table.name) !== table.name ? translateTableName(table.name) : ''}
+                                                    {getTableKoreanName(table.name) !== table.name ? (
+                                                        <>
+                                                            {getTableKoreanName(table.name)}
+                                                            {tableTranslations[table.name]?.isAiGenerated && ' 🤖'}
+                                                        </>
+                                                    ) : ''}
                                                 </span>
                                             </div>
                                             <span style={{

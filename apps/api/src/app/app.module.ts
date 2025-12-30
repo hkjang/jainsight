@@ -54,6 +54,7 @@ import { GroupHistory } from './groups/entities/group-history.entity';
 import { Role, Permission, RbacPolicy, UserRole, GroupRole, RoleResource } from './rbac/entities';
 import { QueryRiskPolicy, QueryExecution } from './query-policies/entities';
 import { ApiKey, ApiKeyUsage } from './api-keys/entities';
+import { TableTranslation } from './schema/entities/table-translation.entity';
 
 
 @Module({
@@ -78,6 +79,8 @@ import { ApiKey, ApiKeyUsage } from './api-keys/entities';
         Role, Permission, RbacPolicy, UserRole, GroupRole, RoleResource,
         QueryRiskPolicy, QueryExecution,
         ApiKey, ApiKeyUsage,
+        // Schema entities
+        TableTranslation,
       ],
       synchronize: true, // Auto-create tables in dev
     }),

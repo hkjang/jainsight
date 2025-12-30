@@ -61,7 +61,7 @@ async function bootstrap() {
   // Global logging interceptor (with metrics)
   app.useGlobalInterceptors(
     new LoggingInterceptor(metricsService),
-    new TimeoutInterceptor(30000), // 30 second timeout
+    new TimeoutInterceptor(300000), // 5 minute timeout for AI operations
   );
 
   // CORS configuration
