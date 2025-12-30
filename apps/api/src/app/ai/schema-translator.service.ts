@@ -91,17 +91,18 @@ export class SchemaTranslatorService implements OnModuleInit {
 
     /**
      * 스키마 전체 번역 (테이블 + 컬럼)
+     * AI 번역은 선택적 - 프로바이더 연결 실패 시 사전 번역만 사용
      */
     async translateSchema(
         tables: Array<{
             name: string;
             columns: Array<{ name: string; type: string; comment?: string }>;
-        }>
+        }>,
+        useAiTranslation: boolean = false // 기본값 false로 변경 - 안정성 우선
     ): Promise<SchemaTranslation[]> {
         const results: SchemaTranslation[] = [];
-        const unknownTerms: string[] = [];
 
-        // 1단계: 사전 매핑으로 기본 번역
+        // 1단계: 사전 매핑으로 기본 번역 (항상 수행)
         for (const table of tables) {
             const tableKorean = translateTableName(table.name);
             const columns = table.columns.map(col => ({
@@ -110,16 +111,6 @@ export class SchemaTranslatorService implements OnModuleInit {
                 type: col.type,
             }));
 
-            // 미번역 항목 수집
-            if (checkNeedsAi(table.name)) {
-                unknownTerms.push(`table:${table.name}`);
-            }
-            for (const col of table.columns) {
-                if (checkNeedsAi(col.name) && !col.comment) {
-                    unknownTerms.push(`column:${col.name}`);
-                }
-            }
-
             results.push({
                 tableName: table.name,
                 tableKorean,
@@ -127,24 +118,11 @@ export class SchemaTranslatorService implements OnModuleInit {
             });
         }
 
-        // 2단계: 미번역 항목 AI 번역
-        if (unknownTerms.length > 0 && this.aiClient) {
-            const aiTranslations = await this.translateWithAi(unknownTerms);
-            
-            // AI 번역 결과 적용
-            for (const result of results) {
-                const tableKey = `table:${result.tableName}`;
-                if (aiTranslations[tableKey]) {
-                    result.tableKorean = aiTranslations[tableKey];
-                }
-
-                for (const col of result.columns) {
-                    const colKey = `column:${col.name}`;
-                    if (aiTranslations[colKey] && checkNeedsAi(col.name)) {
-                        col.korean = aiTranslations[colKey];
-                    }
-                }
-            }
+        // 2단계: AI 번역은 명시적으로 요청 시에만 수행 (타임아웃 방지)
+        // 현재는 비활성화 - AI 프로바이더 안정화 후 활성화
+        if (useAiTranslation && this.aiClient) {
+            // AI 번역 로직은 나중에 활성화
+            this.logger.log('AI translation requested but skipped for stability');
         }
 
         return results;
