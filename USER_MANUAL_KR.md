@@ -21,7 +21,7 @@
 
 ### 1.1 메인 오버뷰
 
-![스크린샷: 대시보드 메인 화면 - 통계 및 위젯](docs/images/dashboard_overview.png)
+![스크린샷: 대시보드 메인 화면 - 통계 및 위젯](images/dashboard_overview.png)
 **설명:**
 
 - **상단 통계 카드**: 총 사용자 수, 활성 연결 수, 오늘 실행된 쿼리 수 등 핵심 지표를 보여줍니다.
@@ -37,7 +37,7 @@
 
 ### 2.1 에디터 인터페이스
 
-![스크린샷: SQL 에디터 전체 화면](docs/images/sql_editor_main.png)
+![스크린샷: SQL 에디터 전체 화면](images/sql_editor_main.png)
 **기능:**
 
 - **데이터베이스 선택**: 좌측 사이드바에서 사용할 데이터베이스 스키마를 선택합니다.
@@ -46,7 +46,7 @@
 
 ### 2.2 결과 그리드 및 히스토리
 
-![스크린샷: 쿼리 실행 결과 및 히스토리 탭](docs/images/sql_editor_results.png)
+![스크린샷: 쿼리 실행 결과 및 히스토리 탭](images/sql_editor_main.png)
 **CRUD 작업:**
 
 - **실행 (Execute)**: `Ctrl+Enter` 또는 실행 버튼을 눌러 쿼리를 실행합니다.
@@ -62,7 +62,7 @@
 
 ### 3.1 연결 관리 (Connections)
 
-![스크린샷: 데이터베이스 연결 목록 화면](docs/images/connections_list.png)
+![스크린샷: 데이터베이스 연결 목록 화면](images/connections_list.png)
 **CRUD 설명:**
 
 - **조회 (Read)**: 등록된 모든 데이터베이스 연결 상태(성공, 실패)를 확인합니다.
@@ -72,7 +72,7 @@
 
 ### 3.2 API 게이트웨이
 
-![스크린샷: API 게이트웨이 빌더 화면](docs/images/api_builder.png)
+![스크린샷: API 게이트웨이 빌더 화면](images/api_builder.png)
 **기능:**
 
 - **API 생성**: 저장된 SQL 쿼리를 기반으로 REST API 엔드포인트를 생성합니다.
@@ -87,7 +87,7 @@
 
 ### 4.1 사용자 목록
 
-![스크린샷: 사용자 목록 및 검색 화면](docs/images/users_list.png)
+![스크린샷: 사용자 목록 및 검색 화면](images/users_list.png)
 **CRUD 설명:**
 
 - **조회 (Read)**: 모든 사용자의 이름, 이메일, 소속 그룹, 상태를 확인합니다.
@@ -97,7 +97,7 @@
 
 ### 4.2 그룹 및 역할
 
-![스크린샷: 그룹 및 역할 권한 편집 화면](docs/images/rbac_roles.png)
+![스크린샷: 그룹 및 역할 권한 편집 화면](images/rbac_roles.png)
 **기능:**
 
 - **역할 정의**: 커스텀 역할(예: "데이터 분석가")을 생성하고 세부 권한(쿼리 실행, 설정 변경 등)을 부여합니다.
@@ -111,14 +111,14 @@
 
 ### 5.1 쿼리 정책
 
-![스크린샷: 쿼리 실행 정책 설정 화면](docs/images/query_policy.png)
+![스크린샷: 쿼리 실행 정책 설정 화면](images/query_policy.png)
 **CRUD 설명:**
 
 - **정책 설정 (Update)**: 최대 실행 시간, 최대 반환 행 수(Row Limit) 등을 설정하여 시스템 부하를 방지합니다.
 
 ### 5.2 API 키
 
-![스크린샷: API 키 발급 및 관리 화면](docs/images/api_keys.png)
+![스크린샷: API 키 발급 및 관리 화면](images/api_keys.png)
 **CRUD 설명:**
 
 - **생성 (Create)**: 외부 시스템 연동을 위한 API 키를 발급하고 스코프를 제한합니다.
@@ -132,7 +132,7 @@ LLM 공급자, 생성 모델 및 프롬프트 템플릿을 설정합니다.
 
 ### 6.1 공급자 및 모델
 
-![스크린샷: AI 공급자 및 모델 설정 화면](docs/images/ai_models.png)
+![스크린샷: AI 공급자 및 모델 설정 화면](images/ai_models.png)
 **CRUD 설명:**
 
 - **조회 (Read)**: OpenAI, Ollama, vLLM 등 연결된 AI 서비스의 상태를 모니터링합니다.
@@ -140,7 +140,7 @@ LLM 공급자, 생성 모델 및 프롬프트 템플릿을 설정합니다.
 
 ### 6.2 프롬프트 관리
 
-![스크린샷: 프롬프트 템플릿 에디터](docs/images/prompts_edit.png)
+![스크린샷: 프롬프트 템플릿 에디터](images/prompts_edit.png)
 **기능:**
 
 - **템플릿 수정**: 시스템 프롬프트를 수정하여 AI의 페르소나나 응답 형식을 변경합니다.
@@ -154,7 +154,7 @@ SQL 및 프롬프트 인젝션 방어, PII 보호 정책을 수립합니다.
 
 ### 7.1 NL2SQL 보안 정책
 
-![스크린샷: NL2SQL 보안 정책 설정 화면](docs/images/security_nl2sql.png)
+![스크린샷: NL2SQL 보안 정책 설정 화면](images/security_nl2sql.png)
 **기능:**
 
 - **DDL/DML 차단**: AI가 데이터베이스 스키마를 변경하거나 데이터를 삭제하는 SQL을 생성하지 못하도록 차단합니다.
@@ -168,7 +168,7 @@ AI 서비스의 사용량과 성능을 실시간으로 추적합니다.
 
 ### 8.1 AI 대시보드
 
-![스크린샷: AI 모니터링 대시보드](docs/images/ai_dashboard.png)
+![스크린샷: AI 모니터링 대시보드](images/ai_dashboard.png)
 **설명:**
 
 - **토큰 사용량**: 일별/월별 입력 및 출력 토큰 소비량을 확인하여 비용을 관리합니다.
@@ -176,7 +176,7 @@ AI 서비스의 사용량과 성능을 실시간으로 추적합니다.
 
 ### 8.2 감사 로그
 
-![스크린샷: 상세 감사 로그 조회 화면](docs/images/audit_logs_detail.png)
+![스크린샷: 상세 감사 로그 조회 화면](images/audit_logs_detail.png)
 **기능:**
 
 - **로그 조회**: 누가, 언제, 어떤 질문을 통해 어떤 SQL을 생성했는지 상세 내역을 추적합니다.
