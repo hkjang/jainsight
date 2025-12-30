@@ -43,8 +43,8 @@ export default function LoginPage() {
                 setIsRegister(false);
                 setError('success:회원가입 완료! 로그인해주세요.');
             } else {
-                localStorage.setItem('token', data.access_token);
-                document.cookie = `token=${data.access_token}; path=/`;
+                localStorage.setItem('token', data.accessToken);
+                document.cookie = `token=${data.accessToken}; path=/`;
                 router.push('/');
             }
         } catch (e: any) {

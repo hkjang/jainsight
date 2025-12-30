@@ -97,6 +97,32 @@ const QUERY_TEMPLATES = [
     { name: 'Database Size', icon: '💽', query: 'SELECT pg_database.datname,\n  pg_size_pretty(pg_database_size(pg_database.datname)) AS size\nFROM pg_database\nORDER BY pg_database_size(pg_database.datname) DESC;', category: 'Stats' },
 ];
 
+// SQL Snippets for quick insertion
+const SQL_SNIPPETS = [
+    { name: 'SELECT', snippet: 'SELECT column1, column2\nFROM table_name\nWHERE condition;', desc: 'Basic select query' },
+    { name: 'JOIN', snippet: 'SELECT a.*, b.*\nFROM table_a a\nINNER JOIN table_b b ON a.id = b.a_id;', desc: 'Inner join two tables' },
+    { name: 'LEFT JOIN', snippet: 'SELECT a.*, b.*\nFROM table_a a\nLEFT JOIN table_b b ON a.id = b.a_id;', desc: 'Left outer join' },
+    { name: 'GROUP BY', snippet: 'SELECT column, COUNT(*) as count\nFROM table_name\nGROUP BY column\nORDER BY count DESC;', desc: 'Aggregate with grouping' },
+    { name: 'SUBQUERY', snippet: 'SELECT *\nFROM table_name\nWHERE column IN (\n  SELECT column\n  FROM other_table\n  WHERE condition\n);', desc: 'Subquery example' },
+    { name: 'CTE', snippet: 'WITH cte_name AS (\n  SELECT column1, column2\n  FROM table_name\n  WHERE condition\n)\nSELECT * FROM cte_name;', desc: 'Common Table Expression' },
+    { name: 'INSERT', snippet: 'INSERT INTO table_name (column1, column2)\nVALUES (\'value1\', \'value2\');', desc: 'Insert new record' },
+    { name: 'UPDATE', snippet: 'UPDATE table_name\nSET column1 = \'new_value\'\nWHERE condition;', desc: 'Update existing records' },
+    { name: 'DELETE', snippet: 'DELETE FROM table_name\nWHERE condition;', desc: 'Delete records' },
+    { name: 'CASE', snippet: 'SELECT column,\n  CASE\n    WHEN condition1 THEN result1\n    WHEN condition2 THEN result2\n    ELSE default_result\n  END as alias\nFROM table_name;', desc: 'Conditional logic' },
+    { name: 'WINDOW', snippet: 'SELECT column,\n  ROW_NUMBER() OVER (PARTITION BY category ORDER BY value DESC) as rn\nFROM table_name;', desc: 'Window function' },
+    { name: 'LIMIT/OFFSET', snippet: 'SELECT *\nFROM table_name\nORDER BY created_at DESC\nLIMIT 10 OFFSET 0;', desc: 'Pagination' },
+];
+
+// Error suggestions mapping
+const ERROR_SUGGESTIONS: Record<string, { suggestion: string; quickFix?: string }> = {
+    'relation.*does not exist': { suggestion: 'Check table name spelling or verify you are connected to the correct database', quickFix: 'SELECT table_name FROM information_schema.tables WHERE table_schema = \'public\';' },
+    'column.*does not exist': { suggestion: 'Check column name spelling. Use schema browser to verify available columns.' },
+    'syntax error': { suggestion: 'Check for missing keywords, commas, or parentheses. Try formatting the query (Ctrl+Shift+F).' },
+    'permission denied': { suggestion: 'You may not have access to this table. Contact your database administrator.' },
+    'connection refused': { suggestion: 'Database server is not reachable. Check connection settings and network.' },
+    'timeout': { suggestion: 'Query took too long. Try adding LIMIT, filtering with WHERE, or adding indexes.' },
+};
+
 // ============================================================================
 // SQL FORMATTER
 // ============================================================================
@@ -239,6 +265,52 @@ export default function EditorPage() {
     const [aiPrompt, setAiPrompt] = useState('');
     const [aiLoading, setAiLoading] = useState(false);
     const [aiError, setAiError] = useState('');
+    
+    // Schema Browser State
+    const [showSchemaBrowser, setShowSchemaBrowser] = useState(false);
+    const [schemaLoading, setSchemaLoading] = useState(false);
+    const [schemaFilter, setSchemaFilter] = useState('');
+    
+    // Snippets Menu
+    const [showSnippets, setShowSnippets] = useState(false);
+    
+    // Explain Plan State
+    const [explainResult, setExplainResult] = useState<any>(null);
+    const [showExplainModal, setShowExplainModal] = useState(false);
+    const [explainLoading, setExplainLoading] = useState(false);
+    
+    // Page Jump
+    const [pageJumpValue, setPageJumpValue] = useState('');
+    
+    // Query Complexity Indicator
+    const [queryComplexity, setQueryComplexity] = useState<'low' | 'medium' | 'high'>('low');
+    
+    // Query Cancel
+    const [abortController, setAbortController] = useState<AbortController | null>(null);
+    
+    // Auto Refresh
+    const [autoRefresh, setAutoRefresh] = useState(false);
+    const [autoRefreshInterval, setAutoRefreshInterval] = useState(30);
+    const autoRefreshRef = useRef<NodeJS.Timeout | null>(null);
+    
+    // Chart Visualization
+    const [showChart, setShowChart] = useState(false);
+    const [chartType, setChartType] = useState<'bar' | 'pie' | 'line'>('bar');
+    const [chartField, setChartField] = useState<string | null>(null);
+    
+    // Column Stats Popup
+    const [statsPopupColumn, setStatsPopupColumn] = useState<string | null>(null);
+    const [statsPopupPosition, setStatsPopupPosition] = useState<{ x: number; y: number } | null>(null);
+    
+    // Pinned Results
+    const [pinnedResults, setPinnedResults] = useState<Array<{ id: string; query: string; results: any; timestamp: Date }>>([]);
+    
+    // Query History Undo
+    const [queryUndoStack, setQueryUndoStack] = useState<string[]>([]);
+    const [queryRedoStack, setQueryRedoStack] = useState<string[]>([]);
+    
+    // Multi-query execution
+    const [splitQueryResults, setSplitQueryResults] = useState<Array<{ query: string; results: any; error?: string }>>([]);
     
     // Editor State
     const [editorHeight, setEditorHeight] = useState(50);
@@ -425,6 +497,128 @@ export default function EditorPage() {
         }
     };
     
+    // Fetch Schema Data
+    const fetchSchemaData = async () => {
+        if (!selectedConnection) {
+            showToast('Please select a connection first', 'error');
+            return;
+        }
+        setSchemaLoading(true);
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        try {
+            const res = await fetch('/api/query/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ 
+                    connectionId: selectedConnection, 
+                    query: `SELECT table_name, column_name, data_type, is_nullable, column_default
+                            FROM information_schema.columns 
+                            WHERE table_schema = 'public' 
+                            ORDER BY table_name, ordinal_position` 
+                }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                const tables: string[] = [];
+                const columns: Record<string, Array<{ name: string; type: string; nullable: string }>> = {};
+                data.rows?.forEach((row: any) => {
+                    if (!tables.includes(row.table_name)) {
+                        tables.push(row.table_name);
+                        columns[row.table_name] = [];
+                    }
+                    columns[row.table_name].push({
+                        name: row.column_name,
+                        type: row.data_type,
+                        nullable: row.is_nullable
+                    });
+                });
+                setSchemaData({ tables, columns: columns as any });
+                setShowSchemaBrowser(true);
+            } else {
+                showToast('Failed to fetch schema', 'error');
+            }
+        } catch (e) {
+            showToast('Failed to fetch schema', 'error');
+        } finally {
+            setSchemaLoading(false);
+        }
+    };
+    
+    // Explain/Analyze Query
+    const handleExplainQuery = async () => {
+        if (!selectedConnection || !query.trim()) {
+            showToast('Please select a connection and enter a query', 'error');
+            return;
+        }
+        setExplainLoading(true);
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        try {
+            const res = await fetch('/api/query/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ 
+                    connectionId: selectedConnection, 
+                    query: `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${query}` 
+                }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setExplainResult(data.rows?.[0]?.['QUERY PLAN'] || data.rows);
+                setShowExplainModal(true);
+            } else {
+                const errorData = await res.json();
+                showToast(`Explain failed: ${errorData.message || 'Unknown error'}`, 'error');
+            }
+        } catch (e: any) {
+            showToast(`Explain failed: ${e.message}`, 'error');
+        } finally {
+            setExplainLoading(false);
+        }
+    };
+    
+    // Insert snippet at cursor
+    const insertSnippet = (snippet: string) => {
+        if (editorRef.current) {
+            const editor = editorRef.current;
+            const selection = editor.getSelection();
+            const range = new (window as any).monaco.Range(
+                selection.startLineNumber,
+                selection.startColumn,
+                selection.endLineNumber,
+                selection.endColumn
+            );
+            editor.executeEdits('snippet', [{ range, text: snippet, forceMoveMarkers: true }]);
+            editor.focus();
+        } else {
+            setQuery(query + '\n' + snippet);
+        }
+        setShowSnippets(false);
+        showToast('Snippet inserted', 'success');
+    };
+    
+    // Get error suggestion
+    const getErrorSuggestion = (errorMessage: string) => {
+        for (const [pattern, suggestion] of Object.entries(ERROR_SUGGESTIONS)) {
+            if (new RegExp(pattern, 'i').test(errorMessage)) {
+                return suggestion;
+            }
+        }
+        return null;
+    };
+    
+    // Page jump handler
+    const handlePageJump = () => {
+        const page = parseInt(pageJumpValue);
+        if (!isNaN(page) && page >= 1 && page <= totalPages) {
+            setCurrentPage(page);
+            setPageJumpValue('');
+        } else {
+            showToast(`Enter a page number between 1 and ${totalPages}`, 'error');
+        }
+    };
+    
     // Auto-save draft to localStorage
     const saveDraft = useCallback(() => {
         const draft = { 
@@ -483,6 +677,25 @@ export default function EditorPage() {
             t.id === activeTabId ? { ...t, query: newQuery, unsaved: true } : t
         ));
     }, [activeTabId]);
+
+    // Analyze query complexity
+    useEffect(() => {
+        const upperQuery = query.toUpperCase();
+        const hasJoin = /\bJOIN\b/.test(upperQuery);
+        const hasSubquery = /\(\s*SELECT\b/.test(upperQuery);
+        const hasMultipleJoins = (upperQuery.match(/\bJOIN\b/g) || []).length > 2;
+        const hasNoLimit = !/\bLIMIT\b/.test(upperQuery) && /\bSELECT\b/.test(upperQuery);
+        const hasGroupBy = /\bGROUP BY\b/.test(upperQuery);
+        const hasWindow = /\bOVER\s*\(/.test(upperQuery);
+        
+        if (hasMultipleJoins || (hasSubquery && hasJoin) || (hasWindow && hasGroupBy)) {
+            setQueryComplexity('high');
+        } else if (hasJoin || hasSubquery || hasGroupBy || hasWindow || hasNoLimit) {
+            setQueryComplexity('medium');
+        } else {
+            setQueryComplexity('low');
+        }
+    }, [query]);
 
     // ========================================================================
     // EFFECTS
@@ -1049,15 +1262,49 @@ export default function EditorPage() {
                                 </div>
                             )}
                         </div>
+                        {/* Snippets Dropdown */}
+                        <div style={{ position: 'relative' }}>
+                            <button onClick={() => setShowSnippets(!showSnippets)} style={{ ...styles.btn, ...styles.btnSecondary }}>
+                                ⚡ Snippets
+                            </button>
+                            {showSnippets && (
+                                <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 300, backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.25)', zIndex: 50, overflow: 'hidden', maxHeight: 400, overflowY: 'auto' }}>
+                                    <div style={{ padding: '8px 12px', borderBottom: `1px solid ${theme.border}`, fontSize: 12, fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase' }}>SQL Snippets</div>
+                                    {SQL_SNIPPETS.map((s, i) => (
+                                        <button key={i} onClick={() => insertSnippet(s.snippet)} 
+                                            style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', width: '100%', padding: '10px 12px', textAlign: 'left', border: 'none', backgroundColor: 'transparent', color: theme.text, cursor: 'pointer', borderBottom: `1px solid ${theme.border}20` }}>
+                                            <span style={{ fontWeight: 600, fontSize: 13 }}>{s.name}</span>
+                                            <span style={{ fontSize: 11, color: theme.textMuted }}>{s.desc}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                         <button onClick={() => setShowHistory(!showHistory)} style={styles.btnIcon} title="History">🕒</button>
+                        <button onClick={fetchSchemaData} disabled={schemaLoading} style={{ ...styles.btnIcon, opacity: schemaLoading ? 0.5 : 1 }} title="Schema Browser">
+                            {schemaLoading ? '⏳' : '🗄️'}
+                        </button>
                         <button onClick={handleFormatQuery} style={styles.btnIcon} title="Format SQL">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 10h16M4 14h10M4 18h6"/></svg>
                         </button>
                         <button onClick={handleCopyQuery} style={styles.btnIcon} title="Copy Query">📋</button>
                         <button onClick={handleShareQuery} style={styles.btnIcon} title="Share Query">🔗</button>
                         <button onClick={() => setWordWrap(!wordWrap)} style={{ ...styles.btnIcon, color: wordWrap ? theme.primary : theme.textSecondary }} title="Word Wrap">↩️</button>
+                        {/* Query Complexity Indicator */}
+                        <div style={{ 
+                            display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 4,
+                            backgroundColor: queryComplexity === 'high' ? `${theme.error}20` : queryComplexity === 'medium' ? `${theme.warning}20` : `${theme.success}20`,
+                            color: queryComplexity === 'high' ? theme.error : queryComplexity === 'medium' ? theme.warning : theme.success,
+                            fontSize: 11, fontWeight: 500
+                        }} title={`Query complexity: ${queryComplexity}. ${queryComplexity === 'high' ? 'Consider adding indexes or LIMIT.' : queryComplexity === 'medium' ? 'May be slow on large tables.' : 'Looks efficient!'}`}>
+                            <span>{queryComplexity === 'high' ? '🔴' : queryComplexity === 'medium' ? '🟡' : '🟢'}</span>
+                            <span>{queryComplexity.toUpperCase()}</span>
+                        </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button onClick={handleExplainQuery} disabled={explainLoading || !selectedConnection || !query.trim()} style={{ ...styles.btn, ...styles.btnSecondary, opacity: explainLoading || !selectedConnection ? 0.5 : 1 }}>
+                            {explainLoading ? '⏳' : '📊'} Explain
+                        </button>
                         <button onClick={() => setShowAiModal(true)} style={{ ...styles.btn, background: 'linear-gradient(135deg, #8b5cf6, #ec4899)', color: '#fff' }}>
                             ✨ AI Assist
                         </button>
@@ -1065,6 +1312,7 @@ export default function EditorPage() {
                             💾 Save
                         </button>
                         <button onClick={() => setIsDarkMode(!isDarkMode)} style={styles.btnIcon}>{isDarkMode ? '🌞' : '🌙'}</button>
+                        <button onClick={toggleFullscreen} style={styles.btnIcon} title="Fullscreen">{isFullscreen ? '🔳' : '⛶'}</button>
                         <button onClick={() => setShowShortcuts(true)} style={styles.btnIcon} title="Keyboard Shortcuts (F1)">⌨️</button>
                         <button onClick={handleExecute} disabled={loading || !selectedConnection} style={{ ...styles.btn, ...styles.btnPrimary, opacity: loading || !selectedConnection ? 0.5 : 1 }}>
                             {loading ? '⏳ Running...' : '▶ Execute'}
@@ -1220,7 +1468,23 @@ export default function EditorPage() {
                                         <span style={{ fontSize: 20 }}>⚠️</span>
                                         <span>Query Error</span>
                                     </div>
-                                    <pre style={{ color: theme.error, fontSize: 13, whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'monospace' }}>{error}</pre>
+                                    <pre style={{ color: theme.error, fontSize: 13, whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'monospace', marginBottom: 12 }}>{error}</pre>
+                                    {getErrorSuggestion(error) && (
+                                        <div style={{ padding: 12, backgroundColor: `${theme.warning}15`, border: `1px solid ${theme.warning}30`, borderRadius: 6, marginTop: 8 }}>
+                                            <div style={{ fontSize: 12, fontWeight: 600, color: theme.warning, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <span>💡</span> Suggestion
+                                            </div>
+                                            <div style={{ fontSize: 13, color: theme.textSecondary }}>{getErrorSuggestion(error)?.suggestion}</div>
+                                            {getErrorSuggestion(error)?.quickFix && (
+                                                <button 
+                                                    onClick={() => { setQuery(getErrorSuggestion(error)!.quickFix!); showToast('Quick fix query loaded', 'info'); }}
+                                                    style={{ ...styles.btn, ...styles.btnSecondary, marginTop: 8, fontSize: 12 }}
+                                                >
+                                                    🔧 Try: {getErrorSuggestion(error)?.quickFix?.substring(0, 40)}...
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                             {results && (
@@ -1291,6 +1555,20 @@ export default function EditorPage() {
                                 <span style={{ fontSize: 13, color: theme.textSecondary }}>Page {currentPage} of {totalPages}</span>
                                 <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={{ ...styles.btn, ...styles.btnSecondary, opacity: currentPage === totalPages ? 0.5 : 1 }}>›</button>
                                 <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} style={{ ...styles.btn, ...styles.btnSecondary, opacity: currentPage === totalPages ? 0.5 : 1 }}>»»</button>
+                                {totalPages > 10 && (
+                                    <>
+                                        <div style={{ height: 16, width: 1, backgroundColor: theme.border, margin: '0 4px' }} />
+                                        <input 
+                                            type="text" 
+                                            placeholder="Go to..." 
+                                            value={pageJumpValue}
+                                            onChange={(e) => setPageJumpValue(e.target.value)}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') handlePageJump(); }}
+                                            style={{ ...styles.input, width: 70, textAlign: 'center' }}
+                                        />
+                                        <button onClick={handlePageJump} style={{ ...styles.btn, ...styles.btnSecondary }}>Go</button>
+                                    </>
+                                )}
                             </div>
                         )}
                     </div>
@@ -1474,6 +1752,139 @@ export default function EditorPage() {
                                 </div>
                             ))}
                         </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* Schema Browser Panel */}
+            {showSchemaBrowser && (
+                <div style={{ 
+                    position: 'fixed', top: 100, right: 24, width: 320, maxHeight: 'calc(100vh - 150px)',
+                    backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12,
+                    boxShadow: '0 12px 40px rgba(0,0,0,0.4)', zIndex: 60, display: 'flex', flexDirection: 'column'
+                }}>
+                    <div style={{ padding: 16, borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 600, fontSize: 14 }}>🗄️ Schema Browser</span>
+                        <button onClick={() => setShowSchemaBrowser(false)} style={styles.btnIcon}>×</button>
+                    </div>
+                    <div style={{ padding: '8px 12px', borderBottom: `1px solid ${theme.border}` }}>
+                        <input 
+                            type="text" 
+                            placeholder="🔍 Filter tables..." 
+                            value={schemaFilter} 
+                            onChange={(e) => setSchemaFilter(e.target.value)}
+                            style={{ ...styles.input, width: '100%' }}
+                        />
+                    </div>
+                    <div style={{ flex: 1, overflow: 'auto', padding: 8 }}>
+                        {schemaData.tables
+                            .filter(t => !schemaFilter || t.toLowerCase().includes(schemaFilter.toLowerCase()))
+                            .map(table => (
+                                <div key={table} style={{ marginBottom: 4 }}>
+                                    <div 
+                                        onClick={() => setExpandedTables(prev => {
+                                            const next = new Set(prev);
+                                            if (next.has(table)) next.delete(table);
+                                            else next.add(table);
+                                            return next;
+                                        })}
+                                        style={{ 
+                                            padding: '8px 12px', borderRadius: 6, cursor: 'pointer', 
+                                            backgroundColor: expandedTables.has(table) ? theme.bgHover : 'transparent',
+                                            display: 'flex', alignItems: 'center', gap: 8, fontSize: 13
+                                        }}
+                                    >
+                                        <span>{expandedTables.has(table) ? '📂' : '📁'}</span>
+                                        <span style={{ fontWeight: 500 }}>{table}</span>
+                                        <span style={{ fontSize: 11, color: theme.textMuted, marginLeft: 'auto' }}>
+                                            {(schemaData.columns[table] || []).length} cols
+                                        </span>
+                                    </div>
+                                    {expandedTables.has(table) && (
+                                        <div style={{ marginLeft: 20, borderLeft: `2px solid ${theme.border}`, paddingLeft: 12 }}>
+                                            {(schemaData.columns[table] || []).map((col: any, ci: number) => (
+                                                <div 
+                                                    key={ci}
+                                                    onClick={() => { insertSnippet(col.name || col); }}
+                                                    style={{ 
+                                                        padding: '6px 8px', fontSize: 12, cursor: 'pointer', 
+                                                        borderRadius: 4, display: 'flex', alignItems: 'center', gap: 6
+                                                    }}
+                                                    title="Click to insert column name"
+                                                >
+                                                    <span style={{ color: theme.textMuted }}>└</span>
+                                                    <span style={{ color: theme.text }}>{col.name || col}</span>
+                                                    {col.type && <span style={{ fontSize: 10, color: theme.accent, marginLeft: 'auto' }}>{col.type}</span>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ))
+                        }
+                        {schemaData.tables.length === 0 && (
+                            <div style={{ padding: 24, textAlign: 'center', color: theme.textMuted, fontSize: 13 }}>
+                                No tables found. Click the Schema Browser button to load.
+                            </div>
+                        )}
+                    </div>
+                    <div style={{ padding: 8, borderTop: `1px solid ${theme.border}`, fontSize: 11, color: theme.textMuted, textAlign: 'center' }}>
+                        {schemaData.tables.length} tables • Click column to insert
+                    </div>
+                </div>
+            )}
+            
+            {/* Explain Plan Modal */}
+            {showExplainModal && (
+                <div style={styles.modal} onClick={() => setShowExplainModal(false)}>
+                    <div style={{ ...styles.modalContent, maxWidth: 800, maxHeight: '85vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                            <h3 style={{ margin: 0, fontSize: 18 }}>📊 Query Execution Plan</h3>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <button onClick={() => { navigator.clipboard.writeText(JSON.stringify(explainResult, null, 2)); showToast('Plan copied as JSON', 'success'); }} style={{ ...styles.btn, ...styles.btnSecondary }}>📋 Copy</button>
+                                <button onClick={() => setShowExplainModal(false)} style={styles.btnIcon}>×</button>
+                            </div>
+                        </div>
+                        {explainResult && (
+                            <div>
+                                {/* Summary Stats */}
+                                {Array.isArray(explainResult) && explainResult[0] && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
+                                        <div style={{ padding: 12, backgroundColor: theme.bgHover, borderRadius: 8, textAlign: 'center' }}>
+                                            <div style={{ fontSize: 20, fontWeight: 700, color: theme.primary }}>{explainResult[0]['Execution Time']?.toFixed(2) || '—'}ms</div>
+                                            <div style={{ fontSize: 11, color: theme.textMuted }}>Execution Time</div>
+                                        </div>
+                                        <div style={{ padding: 12, backgroundColor: theme.bgHover, borderRadius: 8, textAlign: 'center' }}>
+                                            <div style={{ fontSize: 20, fontWeight: 700, color: theme.accent }}>{explainResult[0]['Planning Time']?.toFixed(2) || '—'}ms</div>
+                                            <div style={{ fontSize: 11, color: theme.textMuted }}>Planning Time</div>
+                                        </div>
+                                        <div style={{ padding: 12, backgroundColor: theme.bgHover, borderRadius: 8, textAlign: 'center' }}>
+                                            <div style={{ fontSize: 20, fontWeight: 700, color: theme.success }}>{explainResult[0].Plan?.['Actual Rows'] || '—'}</div>
+                                            <div style={{ fontSize: 11, color: theme.textMuted }}>Actual Rows</div>
+                                        </div>
+                                        <div style={{ padding: 12, backgroundColor: theme.bgHover, borderRadius: 8, textAlign: 'center' }}>
+                                            <div style={{ fontSize: 20, fontWeight: 700, color: theme.warning }}>{explainResult[0].Plan?.['Total Cost']?.toFixed(0) || '—'}</div>
+                                            <div style={{ fontSize: 11, color: theme.textMuted }}>Total Cost</div>
+                                        </div>
+                                    </div>
+                                )}
+                                {/* Raw Plan */}
+                                <div style={{ padding: 12, backgroundColor: theme.bgHover, borderRadius: 8, overflow: 'auto' }}>
+                                    <pre style={{ margin: 0, fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+                                        {JSON.stringify(explainResult, null, 2)}
+                                    </pre>
+                                </div>
+                                {/* Tips */}
+                                <div style={{ padding: 12, backgroundColor: `${theme.primary}15`, borderRadius: 8, marginTop: 12, fontSize: 12 }}>
+                                    <div style={{ fontWeight: 600, marginBottom: 4, color: theme.primary }}>💡 Performance Tips</div>
+                                    <ul style={{ margin: 0, paddingLeft: 20, color: theme.textSecondary }}>
+                                        <li>Look for <strong>Seq Scan</strong> on large tables — consider adding an index</li>
+                                        <li>High <strong>Total Cost</strong> suggests optimization opportunities</li>
+                                        <li>Check if <strong>Actual Rows</strong> differs significantly from <strong>Plan Rows</strong></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
