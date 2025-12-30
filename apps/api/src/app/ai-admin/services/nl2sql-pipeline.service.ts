@@ -227,17 +227,33 @@ export class Nl2SqlPipelineService {
         try {
             // 1. 스키마 정보 조회
             const tables = await this.schemaService.getTables(connectionId);
-            const translations = await this.translationService.getTranslationsMap(connectionId);
+            let translations: Record<string, any> = {};
+            try {
+                translations = await this.translationService.getTranslationsMap(connectionId);
+            } catch (e) {
+                this.logger.warn(`Failed to get translations: ${e.message}`);
+            }
             
             if (tables.length === 0) {
                 return { questions: ['테이블 목록 조회', '데이터베이스 정보 확인'] };
             }
 
-            // 2. 주요 테이블 정보 요약
-            const tableInfo = tables.slice(0, 10).map(t => {
-                const translation = translations[t.name];
-                return `${t.name} (${translation?.koreanName || t.name})`;
-            }).join(', ');
+            // 2. 주요 테이블과 컬럼 정보 요약
+            const tableDetails: string[] = [];
+            for (const t of tables.slice(0, 8)) {
+                try {
+                    const columns = await this.schemaService.getColumns(connectionId, t.name);
+                    const translation = translations[t.name];
+                    const koreanName = translation?.koreanName || t.name;
+                    const columnNames = columns.slice(0, 5).map(c => {
+                        const colKorean = translation?.columnTranslations?.[c.name] || c.name;
+                        return `${c.name}(${colKorean})`;
+                    }).join(', ');
+                    tableDetails.push(`- ${t.name}(${koreanName}): ${columnNames}`);
+                } catch {
+                    tableDetails.push(`- ${t.name}`);
+                }
+            }
 
             // 3. AI 사용 가능한지 확인
             const routingContext: RoutingContext = { purpose: 'sql' };
@@ -251,41 +267,49 @@ export class Nl2SqlPipelineService {
             // 4. AI로 추천 질문 생성
             const client = this.providerService.createOpenAIClient(routedModel.model.provider);
             
-            const prompt = `다음 데이터베이스 테이블을 기반으로 한국어로 질문할 수 있는 예시 질문 5개를 생성해주세요.
-테이블 목록: ${tableInfo}
+            const prompt = `다음 데이터베이스 스키마를 분석하여 한국어 질문 예시 6개를 생성하세요.
 
-규칙:
-1. 간결한 한국어 질문으로 작성
-2. 실제 조회할 수 있는 실용적인 질문
-3. 각 질문은 한 줄로
-4. 번호 없이 질문만 작성
-5. 각 질문은 새 줄에 작성
+## 테이블 및 컬럼 정보
+${tableDetails.join('\n')}
 
-예시 형식:
-최근 가입한 사용자 목록
-이번 달 주문 통계`;
+## 규칙
+1. 간결한 한국어로 작성 (10~25자)
+2. 다양한 유형의 질문 포함:
+   - 전체 조회 ("~목록 보기")
+   - 조건 검색 ("~인 데이터")
+   - 최신순 조회 ("최근 ~")
+   - 통계/집계 ("~수", "~별 현황")
+   - TOP N ("상위 10개")
+3. 각 질문은 새 줄에 작성 (번호/기호 없이)
+4. 테이블명 대신 한글명 사용
+
+예시:
+최근 생성된 사용자 10명
+부서별 직원 수
+이번 달 등록된 주문`;
 
             const response = await client.chat.completions.create({
                 model: routedModel.model.modelId,
                 messages: [
-                    { role: 'system' as const, content: '데이터베이스 질문 생성 도우미입니다. 한국어로만 응답하세요.' },
+                    { role: 'system' as const, content: '데이터베이스 질문 예시를 생성하는 도우미입니다. 한국어로 간결하게 응답하세요.' },
                     { role: 'user' as const, content: prompt }
                 ],
-                max_tokens: 300,
-                temperature: 0.7,
+                max_tokens: 400,
+                temperature: 0.8,
             });
 
             const content = response.choices[0]?.message?.content || '';
             const questions = content
                 .split('\n')
-                .map(q => q.trim())
-                .filter(q => q.length > 3 && q.length < 50 && !q.startsWith('#'))
-                .slice(0, 5);
+                .map(q => q.trim().replace(/^[-•\d.)\]]+\s*/, '')) // 번호/기호 제거
+                .filter(q => q.length >= 5 && q.length < 40 && !q.startsWith('#') && !q.includes(':'))
+                .slice(0, 6);
 
             if (questions.length === 0) {
                 return this.getDefaultSuggestedQuestions(tables, translations);
             }
 
+            this.logger.log(`Generated ${questions.length} suggested questions`);
             return { questions };
         } catch (error) {
             this.logger.error(`Failed to generate suggested questions: ${error.message}`);

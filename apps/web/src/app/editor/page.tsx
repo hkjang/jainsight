@@ -1311,10 +1311,21 @@ export default function EditorPage() {
             if (!res.ok) throw new Error('Failed to generate SQL');
             const data = await res.json();
             if (data.success && data.sql) {
-                setQuery(data.sql);
+                // 새 탭 생성 (AI 프롬프트 기반 자동 이름)
+                const tabName = generateTabNameFromPrompt(aiPrompt);
+                const newTabId = `tab-${Date.now()}`;
+                const newTab: QueryTab = {
+                    id: newTabId,
+                    name: tabName,
+                    query: data.sql,
+                    unsaved: true,
+                };
+                setQueryTabs(prev => [...prev, newTab]);
+                setActiveTabId(newTabId);
+                
                 setShowAiModal(false);
                 setAiPrompt('');
-                showToast('SQL 쿼리가 생성되었습니다', 'success');
+                showToast(`AI 쿼리가 새 탭 "${tabName}"에 생성되었습니다`, 'success');
             } else {
                 throw new Error(data.error || 'SQL 생성 실패');
             }
@@ -1323,6 +1334,15 @@ export default function EditorPage() {
         } finally {
             setAiLoading(false);
         }
+    };
+
+    // AI 프롬프트에서 탭 이름 자동 생성
+    const generateTabNameFromPrompt = (prompt: string): string => {
+        const trimmed = prompt.trim();
+        // 너무 긴 경우 축약
+        if (trimmed.length <= 20) return trimmed;
+        // 첫 20자 + ...
+        return trimmed.substring(0, 18) + '..';
     };
 
     // ========================================================================
