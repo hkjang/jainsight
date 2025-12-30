@@ -1,11 +1,13 @@
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { SchemaService } from '../schema/schema.service';
 import { SchemaTranslatorService } from './schema-translator.service';
 import { translateColumnName, translateTableName } from './column-translator';
 
 @Injectable()
 export class AiService {
+    private readonly logger = new Logger(AiService.name);
+
     constructor(
         private readonly schemaService: SchemaService,
         private readonly schemaTranslator: SchemaTranslatorService,
@@ -18,19 +20,23 @@ export class AiService {
         // 1. Fetch Tables
         const tables = await this.schemaService.getTables(connectionId);
         
-        // 2. Fetch Columns for each table
+        // 2. Fetch Columns for each table with translations
         const schemaData: Array<{
             name: string;
-            columns: Array<{ name: string; type: string; comment?: string }>;
+            koreanName: string;
+            columns: Array<{ name: string; koreanName: string; type: string; comment?: string }>;
         }> = [];
 
         for (const table of tables.slice(0, 20)) {
             try {
                 const columns = await this.schemaService.getColumns(connectionId, table.name);
+                const koreanTableName = translateTableName(table.name);
                 schemaData.push({
                     name: table.name,
+                    koreanName: koreanTableName,
                     columns: columns.map(col => ({
                         name: col.name,
+                        koreanName: translateColumnName(col.name, col.comment),
                         type: col.type || 'unknown',
                         comment: col.comment,
                     })),
@@ -38,115 +44,154 @@ export class AiService {
             } catch {
                 schemaData.push({
                     name: table.name,
+                    koreanName: translateTableName(table.name),
                     columns: [],
                 });
             }
         }
 
-        // 3. AI 기반 스키마 번역 (미매핑 항목은 AI 모델로 번역)
-        let schemaContext: string;
-        try {
-            const translations = await this.schemaTranslator.translateSchema(schemaData);
-            schemaContext = this.schemaTranslator.buildSchemaContextForPrompt(translations);
-        } catch (e) {
-            // 폴백: 기본 사전 번역만 사용
-            schemaContext = this.buildFallbackSchemaContext(schemaData);
-        }
+        // 3. 스키마 컨텍스트 생성
+        const schemaContext = this.buildSchemaContext(schemaData);
 
-        // 4. 시스템 프롬프트 생성
-        const systemPrompt = this.buildSystemPrompt(schemaContext, prompt);
+        // 4. 로그
+        this.logger.log(`--- Schema Context (${schemaData.length} tables) ---`);
+        schemaData.forEach(t => this.logger.log(`  ${t.name} -> ${t.koreanName}`));
 
-        console.log('--- AI Prompt with Full Translation ---');
-        console.log(systemPrompt.substring(0, 800) + '...');
-        console.log('---------------------------------------');
-
-        // 5. Mock SQL 생성 (실제 AI 호출로 대체 가능)
-        const mockSql = this.generateContextAwareSql(prompt, schemaData);
+        // 5. 테이블 매칭 및 SQL 생성
+        const sql = this.generateContextAwareSql(prompt, schemaData);
 
         return {
-            sql: mockSql,
+            sql,
             explanation: `이 쿼리는 "${prompt}" 요청을 기반으로 생성되었습니다. ` +
-                        `스키마 분석: ${schemaData.length}개 테이블. AI 기반 한글 번역이 적용되었습니다.`,
+                        `스키마 분석: ${schemaData.length}개 테이블에서 한글 매칭 수행.`,
             schemaContext,
         };
     }
 
     /**
-     * 폴백: 사전 기반 스키마 컨텍스트 생성
+     * 스키마 컨텍스트 생성 (테이블명 + 컬럼명 한글 포함)
      */
-    private buildFallbackSchemaContext(schema: Array<{
+    private buildSchemaContext(schema: Array<{
         name: string;
-        columns: Array<{ name: string; type: string; comment?: string }>;
+        koreanName: string;
+        columns: Array<{ name: string; koreanName: string; type: string }>;
     }>): string {
-        const lines: string[] = ['[데이터베이스 스키마 (사전 번역)]'];
+        const lines: string[] = ['[데이터베이스 스키마 - 한글 번역]'];
+        lines.push('');
 
         for (const table of schema) {
-            const tableKorean = translateTableName(table.name);
-            lines.push(`\n📋 테이블: ${table.name} (${tableKorean})`);
+            lines.push(`📋 ${table.name} (${table.koreanName})`);
             
-            for (const col of table.columns.slice(0, 30)) {
-                const koreanName = translateColumnName(col.name, col.comment);
-                lines.push(`   - ${col.name} [${col.type}]: ${koreanName}`);
+            for (const col of table.columns.slice(0, 20)) {
+                lines.push(`   - ${col.name}: ${col.koreanName} [${col.type}]`);
             }
+            if (table.columns.length > 20) {
+                lines.push(`   ... 그 외 ${table.columns.length - 20}개 컬럼`);
+            }
+            lines.push('');
         }
 
         return lines.join('\n');
     }
 
     /**
-     * AI 시스템 프롬프트 생성
+     * 한글 키워드 기반 테이블 매칭
      */
-    private buildSystemPrompt(schemaContext: string, userPrompt: string): string {
-        return `당신은 SQL 전문가입니다. 사용자의 자연어 요청을 SQL 쿼리로 변환합니다.
+    private findMatchingTable(
+        prompt: string, 
+        schema: Array<{
+            name: string;
+            koreanName: string;
+            columns: Array<{ name: string; koreanName: string; type: string }>;
+        }>
+    ): typeof schema[0] | null {
+        const lowerPrompt = prompt.toLowerCase();
 
-규칙:
-1. 한글 요청에서 언급된 개념을 아래 스키마의 한글명과 정확히 매칭하세요.
-2. SELECT 쿼리는 항상 LIMIT을 포함하세요 (기본: 100).
-3. 테이블명과 컬럼명은 원본 영어 이름을 사용하세요.
-4. 날짜 필터는 created_at 또는 관련 날짜 컬럼을 사용하세요.
-5. 명확하지 않은 경우 가장 관련성 높은 테이블을 선택하세요.
+        // 1. 한글 테이블명 직접 매칭 (우선순위 높음)
+        const koreanKeywords = [
+            { keyword: '사용자', tables: ['user', 'users', 'member', 'members', 'account', 'accounts'] },
+            { keyword: '주문', tables: ['order', 'orders', 'purchase', 'purchases'] },
+            { keyword: '상품', tables: ['product', 'products', 'item', 'items'] },
+            { keyword: '고객', tables: ['customer', 'customers', 'client', 'clients'] },
+            { keyword: '결제', tables: ['payment', 'payments', 'transaction', 'transactions'] },
+            { keyword: '로그', tables: ['log', 'logs', 'audit', 'audit_log'] },
+            { keyword: '직원', tables: ['employee', 'employees', 'staff'] },
+            { keyword: '부서', tables: ['department', 'departments', 'dept'] },
+            { keyword: '게시글', tables: ['post', 'posts', 'article', 'articles'] },
+            { keyword: '댓글', tables: ['comment', 'comments', 'reply', 'replies'] },
+            { keyword: '알림', tables: ['notification', 'notifications', 'alert', 'alerts'] },
+            { keyword: '설정', tables: ['setting', 'settings', 'config', 'configuration'] },
+            { keyword: '연결', tables: ['connection', 'connections', 'db_connection'] },
+            { keyword: '크롤러', tables: ['crawler', 'crawlers'] },
+            { keyword: '요구사항', tables: ['requirement', 'requirements'] },
+            { keyword: '월급', tables: ['salary', 'salaryitem', 'salaries'] },
+            { keyword: '급여', tables: ['salary', 'salaryitem', 'salaries', 'payroll'] },
+        ];
 
-${schemaContext}
+        for (const { keyword, tables } of koreanKeywords) {
+            if (prompt.includes(keyword)) {
+                const match = schema.find(t => 
+                    tables.some(tbl => t.name.toLowerCase().includes(tbl))
+                );
+                if (match) {
+                    this.logger.log(`Matched table by keyword "${keyword}": ${match.name}`);
+                    return match;
+                }
+            }
+        }
 
-사용자 요청: "${userPrompt}"
+        // 2. 스키마의 한글 테이블명과 매칭
+        for (const table of schema) {
+            // 한글 테이블명이 프롬프트에 포함되어 있는지 확인
+            if (table.koreanName && prompt.includes(table.koreanName)) {
+                this.logger.log(`Matched table by Korean name: ${table.name} (${table.koreanName})`);
+                return table;
+            }
+        }
 
-위 스키마를 기반으로 SQL 쿼리를 생성하세요.`;
+        // 3. 영어 테이블명 직접 매칭
+        for (const table of schema) {
+            if (lowerPrompt.includes(table.name.toLowerCase())) {
+                this.logger.log(`Matched table by English name: ${table.name}`);
+                return table;
+            }
+        }
+
+        // 4. 컬럼 기반 매칭 (컬럼 한글명이 프롬프트에 있는 경우)
+        for (const table of schema) {
+            const hasMatchingColumn = table.columns.some(col => 
+                prompt.includes(col.koreanName) || lowerPrompt.includes(col.name.toLowerCase())
+            );
+            if (hasMatchingColumn) {
+                this.logger.log(`Matched table by column: ${table.name}`);
+                return table;
+            }
+        }
+
+        this.logger.warn(`No table match found for prompt: "${prompt}"`);
+        return null;
     }
 
     /**
      * 컨텍스트 인식 SQL 생성
      */
-    private generateContextAwareSql(prompt: string, schema: Array<{
-        name: string;
-        columns: Array<{ name: string; type: string }>;
-    }>): string {
+    private generateContextAwareSql(
+        prompt: string, 
+        schema: Array<{
+            name: string;
+            koreanName: string;
+            columns: Array<{ name: string; koreanName: string; type: string }>;
+        }>
+    ): string {
         const lowerPrompt = prompt.toLowerCase();
         
-        // 프롬프트에서 테이블 찾기
-        let matchedTable = schema.find(t => 
-            lowerPrompt.includes(t.name.toLowerCase()) ||
-            lowerPrompt.includes(translateTableName(t.name))
-        );
+        // 테이블 매칭
+        const matchedTable = this.findMatchingTable(prompt, schema);
 
         if (!matchedTable) {
-            for (const table of schema) {
-                const hasMatchingColumn = table.columns.some(col =>
-                    lowerPrompt.includes(col.name.toLowerCase()) ||
-                    lowerPrompt.includes(translateColumnName(col.name))
-                );
-                if (hasMatchingColumn) {
-                    matchedTable = table;
-                    break;
-                }
-            }
-        }
-
-        if (!matchedTable && schema.length > 0) {
-            matchedTable = schema[0];
-        }
-
-        if (!matchedTable) {
-            return `-- 테이블을 찾을 수 없습니다.\nSELECT 1;`;
+            // 매칭 실패 시 사용 가능한 테이블 목록 표시
+            const tableList = schema.slice(0, 10).map(t => `${t.name} (${t.koreanName})`).join(', ');
+            return `-- ⚠️ 요청 "${prompt}"에 맞는 테이블을 찾지 못했습니다.\n-- 사용 가능한 테이블: ${tableList}\n\nSELECT '테이블을 지정해주세요' as message;`;
         }
 
         const tableName = matchedTable.name;
@@ -154,28 +199,32 @@ ${schemaContext}
 
         // 키워드 기반 쿼리 생성
         if (lowerPrompt.includes('count') || lowerPrompt.includes('개수') || lowerPrompt.includes('몇')) {
-            return `SELECT COUNT(*) as total_count FROM ${tableName};`;
+            return `-- ${matchedTable.koreanName} 개수 조회\nSELECT COUNT(*) as total_count FROM ${tableName};`;
+        }
+
+        if (lowerPrompt.includes('목록') || lowerPrompt.includes('list') || lowerPrompt.includes('조회')) {
+            return `-- ${matchedTable.koreanName} 목록 조회\nSELECT *\nFROM ${tableName}\nLIMIT 100;`;
         }
 
         if (lowerPrompt.includes('최근') || lowerPrompt.includes('recent') || lowerPrompt.includes('latest')) {
             const dateCol = columns.find(c => 
-                c.name.includes('created') || c.name.includes('date')
-            )?.name || 'created_at';
-            return `SELECT *\nFROM ${tableName}\nORDER BY ${dateCol} DESC\nLIMIT 10;`;
+                c.name.toLowerCase().includes('created') || c.name.toLowerCase().includes('date')
+            )?.name || 'createdAt';
+            return `-- ${matchedTable.koreanName} 최근 데이터\nSELECT *\nFROM ${tableName}\nORDER BY ${dateCol} DESC\nLIMIT 10;`;
         }
 
-        if (lowerPrompt.includes('이번 주') || lowerPrompt.includes('지난 주') || lowerPrompt.includes('week')) {
+        if (lowerPrompt.includes('이번 주') || lowerPrompt.includes('지난 주') || lowerPrompt.includes('week') || lowerPrompt.includes('일주일')) {
             const dateCol = columns.find(c => 
-                c.name.includes('created') || c.name.includes('date')
-            )?.name || 'created_at';
-            return `SELECT *\nFROM ${tableName}\nWHERE ${dateCol} >= NOW() - INTERVAL '7 days'\nORDER BY ${dateCol} DESC\nLIMIT 100;`;
+                c.name.toLowerCase().includes('created') || c.name.toLowerCase().includes('date')
+            )?.name || 'createdAt';
+            return `-- ${matchedTable.koreanName} 최근 일주일 데이터\nSELECT *\nFROM ${tableName}\nWHERE ${dateCol} >= NOW() - INTERVAL '7 days'\nORDER BY ${dateCol} DESC\nLIMIT 100;`;
         }
 
         if (lowerPrompt.includes('이번 달') || lowerPrompt.includes('month')) {
             const dateCol = columns.find(c => 
-                c.name.includes('created') || c.name.includes('date')
-            )?.name || 'created_at';
-            return `SELECT *\nFROM ${tableName}\nWHERE ${dateCol} >= DATE_TRUNC('month', NOW())\nORDER BY ${dateCol} DESC\nLIMIT 100;`;
+                c.name.toLowerCase().includes('created') || c.name.toLowerCase().includes('date')
+            )?.name || 'createdAt';
+            return `-- ${matchedTable.koreanName} 이번 달 데이터\nSELECT *\nFROM ${tableName}\nWHERE ${dateCol} >= DATE_TRUNC('month', NOW())\nORDER BY ${dateCol} DESC\nLIMIT 100;`;
         }
 
         if (lowerPrompt.includes('통계') || lowerPrompt.includes('stats') || lowerPrompt.includes('summary')) {
@@ -186,17 +235,18 @@ ${schemaContext}
             );
             if (numericCols.length > 0) {
                 const col = numericCols[0].name;
-                return `SELECT \n  COUNT(*) as total_count,\n  AVG(${col}) as avg_${col},\n  MAX(${col}) as max_${col},\n  MIN(${col}) as min_${col}\nFROM ${tableName};`;
+                return `-- ${matchedTable.koreanName} 통계\nSELECT \n  COUNT(*) as total_count,\n  AVG(${col}) as avg_${col},\n  MAX(${col}) as max_${col},\n  MIN(${col}) as min_${col}\nFROM ${tableName};`;
             }
         }
 
         if (lowerPrompt.includes('그룹') || lowerPrompt.includes('group') || lowerPrompt.includes('별로')) {
             const groupCol = columns.find(c => 
-                c.name.includes('type') || c.name.includes('status') || c.name.includes('category')
+                c.name.toLowerCase().includes('type') || c.name.toLowerCase().includes('status') || c.name.toLowerCase().includes('category')
             )?.name || columns[0]?.name || 'id';
-            return `SELECT ${groupCol}, COUNT(*) as count\nFROM ${tableName}\nGROUP BY ${groupCol}\nORDER BY count DESC;`;
+            return `-- ${matchedTable.koreanName} 그룹별 통계\nSELECT ${groupCol}, COUNT(*) as count\nFROM ${tableName}\nGROUP BY ${groupCol}\nORDER BY count DESC;`;
         }
 
-        return `SELECT *\nFROM ${tableName}\nLIMIT 100;\n\n-- 요청: "${prompt}"`;
+        // 기본: 전체 조회
+        return `-- ${matchedTable.koreanName} 조회\nSELECT *\nFROM ${tableName}\nLIMIT 100;`;
     }
 }
