@@ -400,72 +400,229 @@ export function buildSchemaContextForAI(
 /**
  * 일반적인 비즈니스 테이블명 번역
  */
-export function translateTableName(tableName: string): string {
-    const TABLE_TRANSLATIONS: Record<string, string> = {
-        'users': '사용자',
-        'user': '사용자',
-        'accounts': '계정',
-        'account': '계정',
-        'orders': '주문',
-        'order': '주문',
-        'products': '상품',
-        'product': '상품',
-        'categories': '카테고리',
-        'category': '카테고리',
-        'customers': '고객',
-        'customer': '고객',
-        'employees': '직원',
-        'employee': '직원',
-        'departments': '부서',
-        'department': '부서',
-        'invoices': '송장',
-        'invoice': '송장',
-        'payments': '결제',
-        'payment': '결제',
-        'transactions': '거래',
-        'transaction': '거래',
-        'logs': '로그',
-        'log': '로그',
-        'settings': '설정',
-        'config': '설정',
-        'permissions': '권한',
-        'roles': '역할',
-        'sessions': '세션',
-        'tokens': '토큰',
-        'files': '파일',
-        'images': '이미지',
-        'comments': '댓글',
-        'posts': '게시글',
-        'articles': '기사',
-        'news': '뉴스',
-        'notifications': '알림',
-        'messages': '메시지',
-        'emails': '이메일',
-        'addresses': '주소',
-        'contacts': '연락처',
-        'companies': '회사',
-        'organizations': '조직',
-        'teams': '팀',
-        'projects': '프로젝트',
-        'tasks': '작업',
-        'events': '이벤트',
-        'schedules': '일정',
-        'bookings': '예약',
-        'reservations': '예약',
-        'reviews': '리뷰',
-        'ratings': '평점',
-        'favorites': '즐겨찾기',
-        'wishlist': '위시리스트',
-        'cart': '장바구니',
-        'checkout': '결제',
-        'shipping': '배송',
-        'delivery': '배달',
-        'inventory': '재고',
-        'stock': '재고',
-        'suppliers': '공급업체',
-        'vendors': '판매업체',
-    };
+const TABLE_TRANSLATIONS: Record<string, string> = {
+    'users': '사용자',
+    'user': '사용자',
+    'accounts': '계정',
+    'account': '계정',
+    'orders': '주문',
+    'order': '주문',
+    'products': '상품',
+    'product': '상품',
+    'categories': '카테고리',
+    'category': '카테고리',
+    'customers': '고객',
+    'customer': '고객',
+    'employees': '직원',
+    'employee': '직원',
+    'departments': '부서',
+    'department': '부서',
+    'invoices': '송장',
+    'invoice': '송장',
+    'payments': '결제',
+    'payment': '결제',
+    'transactions': '거래',
+    'transaction': '거래',
+    'logs': '로그',
+    'log': '로그',
+    'settings': '설정',
+    'config': '설정',
+    'configuration': '설정',
+    'permissions': '권한',
+    'permission': '권한',
+    'roles': '역할',
+    'role': '역할',
+    'sessions': '세션',
+    'session': '세션',
+    'tokens': '토큰',
+    'token': '토큰',
+    'files': '파일',
+    'file': '파일',
+    'images': '이미지',
+    'image': '이미지',
+    'comments': '댓글',
+    'posts': '게시글',
+    'post': '게시글',
+    'articles': '기사',
+    'article': '기사',
+    'news': '뉴스',
+    'notifications': '알림',
+    'notification': '알림',
+    'messages': '메시지',
+    'message': '메시지',
+    'emails': '이메일',
+    'email': '이메일',
+    'addresses': '주소',
+    'address': '주소',
+    'contacts': '연락처',
+    'contact': '연락처',
+    'companies': '회사',
+    'company': '회사',
+    'organizations': '조직',
+    'organization': '조직',
+    'teams': '팀',
+    'team': '팀',
+    'projects': '프로젝트',
+    'project': '프로젝트',
+    'tasks': '작업',
+    'task': '작업',
+    'events': '이벤트',
+    'event': '이벤트',
+    'schedules': '일정',
+    'schedule': '일정',
+    'bookings': '예약',
+    'booking': '예약',
+    'reservations': '예약',
+    'reservation': '예약',
+    'reviews': '리뷰',
+    'review': '리뷰',
+    'ratings': '평점',
+    'rating': '평점',
+    'favorites': '즐겨찾기',
+    'favorite': '즐겨찾기',
+    'wishlist': '위시리스트',
+    'cart': '장바구니',
+    'carts': '장바구니',
+    'checkout': '결제',
+    'shipping': '배송',
+    'delivery': '배달',
+    'inventory': '재고',
+    'stock': '재고',
+    'suppliers': '공급업체',
+    'supplier': '공급업체',
+    'vendors': '판매업체',
+    'vendor': '판매업체',
+    // 추가 테이블명
+    'connections': '연결',
+    'connection': '연결',
+    'queries': '쿼리',
+    'query': '쿼리',
+    'query_history': '쿼리 이력',
+    'query_log': '쿼리 로그',
+    'sql_template': 'SQL 템플릿',
+    'sql_templates': 'SQL 템플릿',
+    'templates': '템플릿',
+    'template': '템플릿',
+    'schemas': '스키마',
+    'schema': '스키마',
+    'databases': '데이터베이스',
+    'database': '데이터베이스',
+    'tables': '테이블',
+    'table': '테이블',
+    'columns': '컬럼',
+    'column': '컬럼',
+    'indexes': '인덱스',
+    'index': '인덱스',
+    'constraints': '제약조건',
+    'constraint': '제약조건',
+    'migrations': '마이그레이션',
+    'migration': '마이그레이션',
+    'backups': '백업',
+    'backup': '백업',
+    'audit': '감사',
+    'audit_log': '감사 로그',
+    'audit_logs': '감사 로그',
+    'activity': '활동',
+    'activities': '활동',
+    'metrics': '지표',
+    'metric': '지표',
+    'analytics': '분석',
+    'reports': '보고서',
+    'report': '보고서',
+    'dashboards': '대시보드',
+    'dashboard': '대시보드',
+    'widgets': '위젯',
+    'widget': '위젯',
+    'alerts': '알림',
+    'alert': '알림',
+    'monitors': '모니터',
+    'monitor': '모니터',
+    'jobs': '작업',
+    'job': '작업',
+    'queues': '큐',
+    'queue': '큐',
+    'workers': '워커',
+    'worker': '워커',
+    'agents': '에이전트',
+    'agent': '에이전트',
+    'crawlers': '크롤러',
+    'crawler': '크롤러',
+    'requirements': '요구사항',
+    'requirement': '요구사항',
+    'tags': '태그',
+    'labels': '라벨',
+    'label': '라벨',
+    'attachments': '첨부파일',
+    'attachment': '첨부파일',
+    'documents': '문서',
+    'providers': '프로바이더',
+    'provider': '프로바이더',
+    'ai_provider': 'AI 프로바이더',
+    'ai_providers': 'AI 프로바이더',
+    'ai_model': 'AI 모델',
+    'ai_models': 'AI 모델',
+    'execution_log': '실행 로그',
+    'execution_logs': '실행 로그',
+    'rag_trace': 'RAG 추적',
+    'rag_traces': 'RAG 추적',
+};
 
+export function translateTableName(tableName: string): string {
     const lowerName = tableName.toLowerCase();
-    return TABLE_TRANSLATIONS[lowerName] || formatReadable(tableName);
+    
+    // 직접 매핑 확인
+    if (TABLE_TRANSLATIONS[lowerName]) {
+        return TABLE_TRANSLATIONS[lowerName];
+    }
+
+    // 언더스코어 분리 후 각 부분 번역 시도
+    if (tableName.includes('_')) {
+        const parts = tableName.split('_');
+        const translatedParts = parts.map(part => {
+            const lower = part.toLowerCase();
+            return TABLE_TRANSLATIONS[lower] || COMMON_COLUMN_TRANSLATIONS[lower] || part;
+        });
+        
+        // 모든 부분이 번역되었으면 조합
+        const hasTranslation = translatedParts.some((p, i) => p !== parts[i]);
+        if (hasTranslation) {
+            return translatedParts.join(' ');
+        }
+    }
+
+    return formatReadable(tableName);
+}
+
+/**
+ * AI 번역이 필요한지 확인 (사전 매핑에 없는 경우)
+ */
+export function needsAiTranslation(name: string): boolean {
+    const lowerName = name.toLowerCase();
+    
+    // 직접 매핑에 있는지 확인
+    if (COMMON_COLUMN_TRANSLATIONS[lowerName]) {
+        return false;
+    }
+    if (TABLE_TRANSLATIONS[lowerName]) {
+        return false;
+    }
+
+    // 분리된 부분 모두 확인
+    const parts = splitColumnName(name);
+    const allPartsKnown = parts.every(part => {
+        const lower = part.toLowerCase();
+        return COMMON_COLUMN_TRANSLATIONS[lower] || TABLE_TRANSLATIONS[lower];
+    });
+
+    return !allPartsKnown;
+}
+
+/**
+ * 모든 매핑 사전의 키 목록 반환 (디버깅용)
+ */
+export function getAllKnownTerms(): string[] {
+    return [
+        ...Object.keys(COMMON_COLUMN_TRANSLATIONS),
+        ...Object.keys(TABLE_TRANSLATIONS),
+    ];
 }
