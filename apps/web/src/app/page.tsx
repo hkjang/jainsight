@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { QueryTooltip, CurrentTime, DurationBadge } from '../components/DashboardUtils';
 
 interface DashboardStats {
   connectionsCount: number;
@@ -373,7 +374,8 @@ export default function Dashboard() {
             </span>
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <CurrentTime />
           <Link href="/connections/create" style={{
             padding: '10px 20px',
             background: 'linear-gradient(90deg, #6366f1, #8b5cf6)',
@@ -520,19 +522,24 @@ export default function Dashboard() {
                     </span>
                   </td>
                   <td style={{ padding: '14px 24px', fontSize: '13px', color: '#94a3b8', fontFamily: 'monospace', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {log.query}
+                    <QueryTooltip query={log.query}>
+                      <span style={{ cursor: 'help' }}>{log.query}</span>
+                    </QueryTooltip>
                   </td>
                   <td style={{ padding: '14px 24px' }}>
-                    <span style={{
-                      padding: '4px 10px',
-                      borderRadius: '6px',
-                      fontSize: '12px',
-                      fontWeight: 500,
-                      background: log.status === 'SUCCESS' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                      color: log.status === 'SUCCESS' ? '#10b981' : '#ef4444',
-                    }}>
-                      {log.status === 'SUCCESS' ? '✓ 성공' : '✗ 실패'}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        background: log.status === 'SUCCESS' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        color: log.status === 'SUCCESS' ? '#10b981' : '#ef4444',
+                      }}>
+                        {log.status === 'SUCCESS' ? '✓ 성공' : '✗ 실패'}
+                      </span>
+                      {log.durationMs && <DurationBadge ms={log.durationMs} />}
+                    </div>
                   </td>
                   <td style={{ padding: '14px 24px', textAlign: 'center' }}>
                     <button
