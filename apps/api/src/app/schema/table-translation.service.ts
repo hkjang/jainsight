@@ -176,6 +176,111 @@ export class TableTranslationService {
     }
 
     /**
+     * 단일 테이블의 컬럼만 AI 번역
+     */
+    async translateSingleTable(connectionId: string, tableName: string): Promise<{ 
+        tableName: string; 
+        koreanName: string; 
+        columnsTranslated: number 
+    }> {
+        // 1. 컬럼 목록 가져오기
+        const columns = await this.schemaService.getColumns(connectionId, tableName);
+        
+        // 2. AI로 테이블 및 컬럼 번역
+        let tableKoreanName = translateTableName(tableName);
+        const columnTranslations: Record<string, string> = {};
+        
+        if (this.aiClient) {
+            try {
+                // 테이블명과 컬럼명을 한번에 AI 번역 요청
+                const terms = [tableName, ...columns.map(c => c.name)];
+                const termsList = terms.map(t => `- ${t}`).join('\n');
+                
+                const prompt = `아래 데이터베이스 용어들을 **반드시 한국어**로 번역해주세요.
+첫 번째 항목은 테이블명이고, 나머지는 컬럼명입니다.
+
+규칙:
+1. 간결하고 자연스러운 한국어 명사로 번역
+2. "영어명: 한글명" 형식으로 응답
+3. 한글만 사용 (영어, 중국어, 일본어 사용 금지)
+4. 추가 설명 없이 번역만
+
+번역할 용어:
+${termsList}`;
+
+                this.logger.log(`AI translating table ${tableName} and ${columns.length} columns...`);
+
+                const response = await this.aiClient.chat.completions.create({
+                    model: this.aiModel,
+                    messages: [
+                        {
+                            role: 'system',
+                            content: '당신은 IT 데이터베이스 전문 번역가입니다. 영어 용어를 간결하고 자연스러운 한국어로 번역합니다. 반드시 한글로만 응답하세요.',
+                        },
+                        { role: 'user', content: prompt }
+                    ],
+                    temperature: 0.2,
+                    max_tokens: 2000,
+                });
+
+                const content = response.choices[0]?.message?.content || '';
+                this.logger.log(`AI response for ${tableName}: ${content.substring(0, 200)}...`);
+                
+                // 응답 파싱
+                const lines = content.split('\n').filter(l => l.includes(':'));
+                for (const line of lines) {
+                    const match = line.match(/[-•]?\s*(\w+)\s*[:：]\s*(.+)/);
+                    if (match) {
+                        const [, englishName, koreanName] = match;
+                        if (englishName.toLowerCase() === tableName.toLowerCase()) {
+                            tableKoreanName = koreanName.trim();
+                        } else {
+                            const foundCol = columns.find(c => c.name.toLowerCase() === englishName.toLowerCase());
+                            if (foundCol) {
+                                columnTranslations[foundCol.name] = koreanName.trim();
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                this.logger.error(`AI translation failed for ${tableName}`, error);
+            }
+        }
+        
+        // 사전 번역으로 폴백
+        for (const col of columns) {
+            if (!columnTranslations[col.name]) {
+                columnTranslations[col.name] = translateColumnName(col.name, col.comment);
+            }
+        }
+        
+        // 3. 저장
+        const existingMap = await this.getTranslationsMap(connectionId);
+        const existing = existingMap[tableName];
+        
+        if (existing) {
+            existing.koreanName = tableKoreanName;
+            existing.columnTranslations = columnTranslations;
+            existing.isAiGenerated = true;
+            await this.translationRepo.save(existing);
+        } else {
+            await this.translationRepo.save({
+                connectionId,
+                tableName,
+                koreanName: tableKoreanName,
+                columnTranslations,
+                isAiGenerated: true,
+            });
+        }
+        
+        return {
+            tableName,
+            koreanName: tableKoreanName,
+            columnsTranslated: columns.length,
+        };
+    }
+
+    /**
      * AI로 테이블명 일괄 번역
      */
     private async translateTablesWithAi(tableNames: string[]): Promise<Record<string, string>> {
@@ -282,5 +387,83 @@ ${tableList}`;
         }
 
         return this.translationRepo.save(translation);
+    }
+
+    /**
+     * 사전 번역만 사용하여 단일 테이블 번역 (AI 폴백용)
+     */
+    async translateSingleTableWithDictionary(connectionId: string, tableName: string): Promise<{
+        tableName: string;
+        koreanName: string;
+        columnsTranslated: number
+    }> {
+        const columns = await this.schemaService.getColumns(connectionId, tableName);
+        
+        const tableKoreanName = translateTableName(tableName);
+        const columnTranslations: Record<string, string> = {};
+        
+        for (const col of columns) {
+            columnTranslations[col.name] = translateColumnName(col.name, col.comment);
+        }
+        
+        const existingMap = await this.getTranslationsMap(connectionId);
+        const existing = existingMap[tableName];
+        
+        if (existing) {
+            existing.koreanName = tableKoreanName;
+            existing.columnTranslations = columnTranslations;
+            existing.isAiGenerated = false;
+            await this.translationRepo.save(existing);
+        } else {
+            await this.translationRepo.save({
+                connectionId,
+                tableName,
+                koreanName: tableKoreanName,
+                columnTranslations,
+                isAiGenerated: false,
+            });
+        }
+        
+        return {
+            tableName,
+            koreanName: tableKoreanName,
+            columnsTranslated: columns.length,
+        };
+    }
+
+    /**
+     * 개별 컬럼 번역 수동 업데이트
+     */
+    async updateColumnTranslation(
+        connectionId: string,
+        tableName: string,
+        columnName: string,
+        koreanName: string
+    ): Promise<{ tableName: string; columnName: string; koreanName: string }> {
+        let translation = await this.translationRepo.findOne({
+            where: { connectionId, tableName }
+        });
+
+        if (translation) {
+            // 기존 컬럼 번역 업데이트
+            if (!translation.columnTranslations) {
+                translation.columnTranslations = {};
+            }
+            translation.columnTranslations[columnName] = koreanName;
+            translation.isAiGenerated = false;
+            await this.translationRepo.save(translation);
+        } else {
+            // 새로 생성
+            translation = this.translationRepo.create({
+                connectionId,
+                tableName,
+                koreanName: translateTableName(tableName),
+                columnTranslations: { [columnName]: koreanName },
+                isAiGenerated: false,
+            });
+            await this.translationRepo.save(translation);
+        }
+
+        return { tableName, columnName, koreanName };
     }
 }

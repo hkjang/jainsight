@@ -62,4 +62,55 @@ export class SchemaController {
             body.koreanDescription,
         );
     }
+
+    /**
+     * 단일 테이블의 컬럼만 AI 번역
+     */
+    @Post(':connectionId/translations/table/:tableName')
+    @UseInterceptors(new TimeoutInterceptor(300000)) // 5 minutes
+    async generateTableColumnTranslations(
+        @Param('connectionId') connectionId: string,
+        @Param('tableName') tableName: string,
+    ) {
+        try {
+            const result = await this.tableTranslationService.translateSingleTable(connectionId, tableName);
+            return {
+                success: true,
+                message: `${tableName} 테이블 컬럼 번역 완료`,
+                ...result,
+            };
+        } catch (error) {
+            // AI 실패 시에도 사전 번역 결과 반환
+            const fallbackResult = await this.tableTranslationService.translateSingleTableWithDictionary(connectionId, tableName);
+            return {
+                success: true,
+                message: `${tableName} 사전 번역 완료 (AI 사용 불가)`,
+                usedDictionary: true,
+                ...fallbackResult,
+            };
+        }
+    }
+
+    /**
+     * 컬럼 번역 수동 업데이트
+     */
+    @Patch(':connectionId/translations/:tableName/column/:columnName')
+    async updateColumnTranslation(
+        @Param('connectionId') connectionId: string,
+        @Param('tableName') tableName: string,
+        @Param('columnName') columnName: string,
+        @Body() body: { koreanName: string },
+    ) {
+        const result = await this.tableTranslationService.updateColumnTranslation(
+            connectionId, 
+            tableName, 
+            columnName,
+            body.koreanName,
+        );
+        return {
+            success: true,
+            message: `${columnName} 컬럼 번역이 '${body.koreanName}'으로 저장되었습니다`,
+            ...result,
+        };
+    }
 }

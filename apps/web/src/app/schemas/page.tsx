@@ -22,6 +22,7 @@ interface ColumnInfo {
     nullable: boolean;
     primaryKey: boolean;
     defaultValue?: string;
+    comment?: string;
 }
 
 const dbIcons: Record<string, { icon: string; color: string; gradient: string }> = {
@@ -249,6 +250,72 @@ export default function SchemaExplorerPage() {
         }
     };
 
+    // 선택된 테이블의 컬럼만 AI 번역
+    const [isColumnTranslating, setIsColumnTranslating] = useState(false);
+    const [columnTranslationStatus, setColumnTranslationStatus] = useState<string | null>(null);
+
+    const generateColumnTranslations = async () => {
+        const token = localStorage.getItem('token');
+        if (!token || !selectedConnection || !selectedTable) return;
+
+        setIsColumnTranslating(true);
+        setColumnTranslationStatus('AI 컬럼 번역 중...');
+        try {
+            const res = await fetch(`/api/schema/${selectedConnection}/translations/table/${selectedTable}`, {
+                method: 'POST',
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await res.json();
+            if (data.success) {
+                setColumnTranslationStatus(`✓ ${data.columnsTranslated || columns.length}개 컬럼 번역 완료`);
+                fetchTranslations(selectedConnection); // 새로고침
+                setTimeout(() => setColumnTranslationStatus(null), 3000);
+            } else {
+                setColumnTranslationStatus('번역 실패');
+                setTimeout(() => setColumnTranslationStatus(null), 3000);
+            }
+        } catch (e) {
+            console.error('Failed to generate column translations', e);
+            setColumnTranslationStatus('번역 오류');
+            setTimeout(() => setColumnTranslationStatus(null), 3000);
+        } finally {
+            setIsColumnTranslating(false);
+        }
+    };
+
+    // 컬럼 번역 수동 수정 상태
+    const [editingColumn, setEditingColumn] = useState<string | null>(null);
+    const [editingValue, setEditingValue] = useState('');
+
+    // 컬럼 번역 저장
+    const saveColumnTranslation = async (columnName: string) => {
+        const token = localStorage.getItem('token');
+        if (!token || !selectedConnection || !selectedTable || !editingValue.trim()) {
+            setEditingColumn(null);
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/schema/${selectedConnection}/translations/${selectedTable}/column/${columnName}`, {
+                method: 'PATCH',
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ koreanName: editingValue.trim() })
+            });
+            if (res.ok) {
+                fetchTranslations(selectedConnection);
+            }
+        } catch (e) {
+            console.error('Failed to save column translation', e);
+        }
+        setEditingColumn(null);
+    };
+
     // 테이블 한글명 가져오기 (저장된 번역 우선, 없으면 사전 번역)
     const getTableKoreanName = (tableName: string): string => {
         const saved = tableTranslations[tableName];
@@ -298,15 +365,33 @@ export default function SchemaExplorerPage() {
             result = result.filter(t => t.type === viewType);
         }
         if (tableSearch) {
-            result = result.filter(t => t.name.toLowerCase().includes(tableSearch.toLowerCase()));
+            const search = tableSearch.toLowerCase();
+            result = result.filter(t => {
+                // 영어 테이블명 검색
+                if (t.name.toLowerCase().includes(search)) return true;
+                // 한글 번역명 검색
+                const koreanName = getTableKoreanName(t.name);
+                if (koreanName.toLowerCase().includes(search)) return true;
+                return false;
+            });
         }
         return result;
-    }, [tables, tableSearch, viewType]);
+    }, [tables, tableSearch, viewType, tableTranslations]);
 
     const filteredColumns = useMemo(() => {
         if (!columnSearch) return columns;
-        return columns.filter(c => c.name.toLowerCase().includes(columnSearch.toLowerCase()));
-    }, [columns, columnSearch]);
+        const search = columnSearch.toLowerCase();
+        return columns.filter(c => {
+            // 영어 컬럼명 검색
+            if (c.name.toLowerCase().includes(search)) return true;
+            // 한글 번역명 검색
+            const koreanName = getColumnKoreanName(selectedTable, c.name);
+            if (koreanName.toLowerCase().includes(search)) return true;
+            // 코멘트 검색
+            if (c.comment && c.comment.toLowerCase().includes(search)) return true;
+            return false;
+        });
+    }, [columns, columnSearch, selectedTable, tableTranslations]);
 
     const tableCount = tables.filter(t => t.type === 'TABLE').length;
     const viewCount = tables.filter(t => t.type === 'VIEW').length;
@@ -723,6 +808,31 @@ export default function SchemaExplorerPage() {
                                 >
                                     {copiedColumn === '__QUERY__' ? '✓ 복사됨' : '📝 SELECT 생성'}
                                 </button>
+                                <button
+                                    onClick={generateColumnTranslations}
+                                    disabled={isColumnTranslating}
+                                    title="AI로 컬럼 한글 번역 생성"
+                                    style={{
+                                        padding: '10px 16px',
+                                        background: isColumnTranslating 
+                                            ? 'rgba(99, 102, 241, 0.1)'
+                                            : columnTranslationStatus?.includes('✓') 
+                                                ? 'rgba(16, 185, 129, 0.2)'
+                                                : 'rgba(99, 102, 241, 0.15)',
+                                        border: `1px solid ${columnTranslationStatus?.includes('✓') ? 'rgba(16, 185, 129, 0.4)' : 'rgba(99, 102, 241, 0.3)'}`,
+                                        borderRadius: '10px',
+                                        color: isColumnTranslating ? '#94a3b8' : columnTranslationStatus?.includes('✓') ? '#10b981' : '#a5b4fc',
+                                        cursor: isColumnTranslating ? 'not-allowed' : 'pointer',
+                                        fontSize: '13px',
+                                        fontWeight: 500,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        transition: 'all 0.2s',
+                                    }}
+                                >
+                                    {isColumnTranslating ? '⏳ 번역 중...' : columnTranslationStatus || '🤖 AI 컬럼 번역'}
+                                </button>
                                 <Link href={`/editor?connectionId=${selectedConnection}&table=${selectedTable}`} style={{
                                     padding: '10px 18px',
                                     background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.15))',
@@ -858,14 +968,51 @@ export default function SchemaExplorerPage() {
                                                             {col.name}
                                                         </span>
                                                     </td>
-                                                    <td style={{ padding: '14px 18px' }}>
-                                                        <span style={{
-                                                            fontSize: '13px',
-                                                            color: '#a5b4fc',
-                                                            fontStyle: 'normal',
-                                                        }}>
-                                                            {translateColumnName(col.name)}
-                                                        </span>
+                                                    <td 
+                                                        style={{ padding: '14px 18px', cursor: 'pointer' }}
+                                                        onClick={() => {
+                                                            if (selectedTable) {
+                                                                setEditingColumn(col.name);
+                                                                setEditingValue(getColumnKoreanName(selectedTable, col.name));
+                                                            }
+                                                        }}
+                                                        title="클릭하여 한글명 수정"
+                                                    >
+                                                        {editingColumn === col.name ? (
+                                                            <input
+                                                                type="text"
+                                                                value={editingValue}
+                                                                onChange={(e) => setEditingValue(e.target.value)}
+                                                                onBlur={() => saveColumnTranslation(col.name)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') saveColumnTranslation(col.name);
+                                                                    if (e.key === 'Escape') setEditingColumn(null);
+                                                                }}
+                                                                autoFocus
+                                                                style={{
+                                                                    padding: '4px 8px',
+                                                                    fontSize: '13px',
+                                                                    background: 'rgba(99, 102, 241, 0.2)',
+                                                                    border: '1px solid rgba(99, 102, 241, 0.4)',
+                                                                    borderRadius: '4px',
+                                                                    color: '#e2e8f0',
+                                                                    width: '100%',
+                                                                    outline: 'none',
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <span style={{
+                                                                fontSize: '13px',
+                                                                color: '#a5b4fc',
+                                                                fontStyle: 'normal',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '6px',
+                                                            }}>
+                                                                {selectedTable ? getColumnKoreanName(selectedTable, col.name) : translateColumnName(col.name)}
+                                                                <span style={{ fontSize: '10px', opacity: 0.5 }}>✏️</span>
+                                                            </span>
+                                                        )}
                                                     </td>
                                                     <td style={{ padding: '14px 18px' }}>
                                                         <span style={{
