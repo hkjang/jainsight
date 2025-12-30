@@ -238,14 +238,27 @@ export class Nl2SqlPipelineService {
                 return { questions: ['테이블 목록 조회', '데이터베이스 정보 확인'] };
             }
 
-            // 2. 주요 테이블과 컬럼 정보 요약
+            // 2. 전체 테이블 목록 + 10개 랜덤 테이블에 대한 상세 정보
+            const shuffledTables = [...tables].sort(() => Math.random() - 0.5);
             const tableDetails: string[] = [];
-            for (const t of tables.slice(0, 8)) {
+            
+            // 전체 테이블 목록 (간략히)
+            const allTableNames = tables.map(t => {
+                const translation = translations[t.name];
+                return translation?.koreanName || t.name;
+            }).join(', ');
+            tableDetails.push(`전체 테이블 (${tables.length}개): ${allTableNames}`);
+            tableDetails.push('');
+            tableDetails.push('### 상세 정보 (랜덤 선택):');
+            
+            // 상세 정보는 10개 테이블만
+            for (const t of shuffledTables.slice(0, 10)) {
                 try {
                     const columns = await this.schemaService.getColumns(connectionId, t.name);
                     const translation = translations[t.name];
                     const koreanName = translation?.koreanName || t.name;
-                    const columnNames = columns.slice(0, 5).map(c => {
+                    const shuffledColumns = [...columns].sort(() => Math.random() - 0.5);
+                    const columnNames = shuffledColumns.slice(0, 6).map(c => {
                         const colKorean = translation?.columnTranslations?.[c.name] || c.name;
                         return `${c.name}(${colKorean})`;
                     }).join(', ');
@@ -270,14 +283,15 @@ export class Nl2SqlPipelineService {
             // 랜덤 카테고리 선택
             const categories = [
                 '최근 데이터 조회', '통계/집계', '조건 검색', 'TOP N 조회',
-                '기간별 분석', '그룹별 현황', '특정 필드 검색', '정렬 조회'
+                '기간별 분석', '그룹별 현황', '특정 필드 검색', '정렬 조회',
+                '데이터 비교', '중복 확인', '널값 조회', '날짜 범위 검색'
             ];
             const selectedCategories = categories
                 .sort(() => Math.random() - 0.5)
-                .slice(0, 4)
+                .slice(0, 6)
                 .join(', ');
             
-            const prompt = `다음 데이터베이스 스키마를 분석하여 **새롭고 다양한** 한국어 질문 예시 6개를 생성하세요.
+            const prompt = `다음 데이터베이스 스키마를 분석하여 **새롭고 다양한** 한국어 질문 예시 15개를 생성하세요.
 
 ## 테이블 및 컬럼 정보
 ${tableDetails.join('\n')}
@@ -290,6 +304,7 @@ ${selectedCategories}
 2. 매번 다른 창의적인 질문 생성 (반복 금지!)
 3. 테이블명 대신 한글명 사용
 4. 각 질문은 새 줄에 (번호/기호 없이)
+5. 반드시 15개 질문 생성
 
 예시 형식:
 최근 경력이동 10건
@@ -302,8 +317,8 @@ ${selectedCategories}
                     { role: 'system' as const, content: '창의적인 데이터베이스 질문을 생성합니다. 매번 다른 새로운 질문을 만드세요.' },
                     { role: 'user' as const, content: prompt }
                 ],
-                max_tokens: 400,
-                temperature: 0.95, // 높은 온도로 다양성 증가
+                max_tokens: 800, // 15개 질문을 위해 증가
+                temperature: 0.95,
             });
 
             const content = response.choices[0]?.message?.content || '';
@@ -311,7 +326,7 @@ ${selectedCategories}
                 .split('\n')
                 .map(q => q.trim().replace(/^[-•\d.)\]]+\s*/, '')) // 번호/기호 제거
                 .filter(q => q.length >= 5 && q.length < 40 && !q.startsWith('#') && !q.includes(':'))
-                .slice(0, 6);
+                .slice(0, 15); // 15개로 증가
 
             if (questions.length === 0) {
                 return this.getDefaultSuggestedQuestions(tables, translations);
