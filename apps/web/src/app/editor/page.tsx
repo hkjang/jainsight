@@ -2484,62 +2484,103 @@ export default function EditorPage() {
             {/* AI Modal */}
             {showAiModal && (
                 <div style={styles.modal} onClick={() => setShowAiModal(false)}>
-                    <div style={{ ...styles.modalContent, maxWidth: 550 }} onClick={e => e.stopPropagation()}>
-                        <h3 style={{ margin: '0 0 16px', fontSize: 18, display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: 24 }}>✨</span> AI SQL 생성 어시스턴트
-                        </h3>
-                        <p style={{ fontSize: 13, color: theme.textSecondary, marginBottom: 12 }}>
-                            자연어로 요청하면 SQL 쿼리를 자동 생성합니다. <strong style={{ color: theme.accent }}>한글로 질문</strong>해도 컬럼을 자동 매핑합니다.
-                        </p>
+                    <div style={{ ...styles.modalContent, maxWidth: 600 }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                            <h3 style={{ margin: 0, fontSize: 18, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: 24 }}>✨</span> AI SQL 생성 어시스턴트
+                            </h3>
+                            <button onClick={() => setShowAiModal(false)} style={{ ...styles.btnIcon, fontSize: 18 }}>×</button>
+                        </div>
                         
-                        {/* Example prompts */}
+                        {/* Connection Info */}
                         <div style={{ 
-                            padding: 12, 
+                            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12,
+                            padding: '8px 12px', background: 'rgba(99, 102, 241, 0.08)', borderRadius: 8,
+                            fontSize: 12, color: theme.textMuted
+                        }}>
+                            <span>🔗</span>
+                            <span>연결: <strong style={{ color: theme.text }}>{connections.find(c => c.id === selectedConnection)?.name || 'Unknown'}</strong></span>
+                            <span style={{ opacity: 0.5 }}>|</span>
+                            <span>한글 매핑 활성화됨</span>
+                        </div>
+                        
+                        {/* Suggested Questions */}
+                        <div style={{ 
+                            padding: 14, 
                             backgroundColor: 'rgba(99, 102, 241, 0.1)', 
-                            borderRadius: 8, 
-                            marginBottom: 12,
+                            borderRadius: 10, 
+                            marginBottom: 14,
                             border: '1px solid rgba(99, 102, 241, 0.2)',
                         }}>
-                            <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 8, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span>💡</span> 
-                                {suggestionsLoading ? '추천 질문 생성 중...' : '이 DB에서 할 수 있는 질문 예시:'}
-                                {!suggestionsLoading && suggestedQuestions.length === 0 && (
-                                    <button 
-                                        onClick={fetchSuggestedQuestions}
-                                        style={{ marginLeft: 'auto', fontSize: 10, color: '#a5b4fc', background: 'none', border: 'none', cursor: 'pointer' }}
-                                    >
-                                        🔄 새로고침
-                                    </button>
-                                )}
+                            <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span>💡</span>
+                                <span style={{ flex: 1 }}>
+                                    {suggestionsLoading ? 'AI가 추천 질문 생성 중...' : '이 DB에서 할 수 있는 질문'}
+                                </span>
+                                <button 
+                                    onClick={fetchSuggestedQuestions}
+                                    disabled={suggestionsLoading}
+                                    style={{ 
+                                        fontSize: 11, 
+                                        color: suggestionsLoading ? theme.textMuted : '#a5b4fc', 
+                                        background: 'rgba(99, 102, 241, 0.15)', 
+                                        border: '1px solid rgba(99, 102, 241, 0.3)',
+                                        borderRadius: 4,
+                                        padding: '4px 8px',
+                                        cursor: suggestionsLoading ? 'not-allowed' : 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 4,
+                                    }}
+                                >
+                                    <span style={{ 
+                                        display: 'inline-block',
+                                        animation: suggestionsLoading ? 'spin 1s linear infinite' : 'none',
+                                    }}>🔄</span>
+                                    새로운 질문
+                                </button>
                             </div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                                 {suggestionsLoading ? (
-                                    <div style={{ fontSize: 12, color: theme.textMuted, padding: '8px 0' }}>⏳ AI가 질문을 생성하고 있습니다...</div>
+                                    // Skeleton loader
+                                    <>
+                                        {[1, 2, 3, 4, 5].map(i => (
+                                            <div key={i} style={{
+                                                padding: '8px 16px',
+                                                background: 'rgba(99, 102, 241, 0.08)',
+                                                borderRadius: 6,
+                                                width: `${60 + Math.random() * 80}px`,
+                                                height: 28,
+                                                animation: 'pulse 1.5s ease-in-out infinite',
+                                            }} />
+                                        ))}
+                                    </>
                                 ) : (suggestedQuestions.length > 0 ? suggestedQuestions : [
-                                    '최근 일주일간 가입한 사용자',
-                                    '이번 달 주문 통계',
-                                    '상품별 판매량 TOP 10',
-                                    '활성 사용자 수',
-                                    '부서별 직원 수',
+                                    '전체 데이터 조회',
+                                    '최근 데이터 확인',
+                                    '통계 조회',
                                 ]).map((example) => (
                                     <button
                                         key={example}
                                         onClick={() => setAiPrompt(example)}
                                         style={{
-                                            padding: '6px 10px',
-                                            fontSize: 12,
-                                            background: 'rgba(99, 102, 241, 0.15)',
-                                            border: '1px solid rgba(99, 102, 241, 0.3)',
-                                            borderRadius: 6,
-                                            color: '#a5b4fc',
+                                            padding: '8px 14px',
+                                            fontSize: 13,
+                                            background: aiPrompt === example ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.12)',
+                                            border: aiPrompt === example ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid rgba(99, 102, 241, 0.25)',
+                                            borderRadius: 8,
+                                            color: aiPrompt === example ? '#c4b5fd' : '#a5b4fc',
                                             cursor: 'pointer',
                                             transition: 'all 0.2s',
+                                            fontWeight: aiPrompt === example ? 600 : 400,
                                         }}
                                         onMouseEnter={(e) => {
                                             e.currentTarget.style.background = 'rgba(99, 102, 241, 0.25)';
+                                            e.currentTarget.style.transform = 'translateY(-1px)';
                                         }}
                                         onMouseLeave={(e) => {
-                                            e.currentTarget.style.background = 'rgba(99, 102, 241, 0.15)';
+                                            e.currentTarget.style.background = aiPrompt === example ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.12)';
+                                            e.currentTarget.style.transform = 'translateY(0)';
                                         }}
                                     >
                                         {example}
@@ -2548,42 +2589,114 @@ export default function EditorPage() {
                             </div>
                         </div>
 
-                        <textarea 
-                            value={aiPrompt} 
-                            onChange={(e) => setAiPrompt(e.target.value)} 
-                            style={{ 
-                                ...styles.input, 
-                                width: '100%', 
-                                height: 100, 
-                                resize: 'none', 
-                                fontFamily: 'inherit',
-                                fontSize: 14,
-                            }} 
-                            placeholder="예: 지난 주 생성된 모든 주문을 보여줘"
-                            autoFocus 
-                        />
+                        {/* Input Area */}
+                        <div style={{ position: 'relative' }}>
+                            <textarea 
+                                value={aiPrompt} 
+                                onChange={(e) => setAiPrompt(e.target.value)} 
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                        e.preventDefault();
+                                        handleAiGenerate();
+                                    }
+                                }}
+                                style={{ 
+                                    ...styles.input, 
+                                    width: '100%', 
+                                    height: 100, 
+                                    resize: 'none', 
+                                    fontFamily: 'inherit',
+                                    fontSize: 14,
+                                    paddingRight: 100,
+                                }} 
+                                placeholder="예: 최근 생성된 경력이동 데이터 10건 조회"
+                                autoFocus 
+                            />
+                            <div style={{ 
+                                position: 'absolute', 
+                                bottom: 10, 
+                                right: 10, 
+                                fontSize: 10, 
+                                color: theme.textMuted,
+                                background: theme.bg,
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                            }}>
+                                Ctrl+Enter로 생성
+                            </div>
+                        </div>
                         
-                        {aiError && <div style={{ color: theme.error, fontSize: 13, marginTop: 8 }}>{aiError}</div>}
+                        {aiError && (
+                            <div style={{ 
+                                color: theme.error, 
+                                fontSize: 13, 
+                                marginTop: 8,
+                                padding: '10px 12px',
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                borderRadius: 6,
+                                border: '1px solid rgba(239, 68, 68, 0.2)',
+                            }}>
+                                ⚠️ {aiError}
+                            </div>
+                        )}
                         
                         <div style={{ 
                             fontSize: 11, 
                             color: theme.textMuted, 
-                            marginTop: 8,
-                            padding: '8px 12px',
-                            background: 'rgba(16, 185, 129, 0.1)',
-                            borderRadius: 6,
-                            border: '1px solid rgba(16, 185, 129, 0.2)',
+                            marginTop: 10,
+                            padding: '10px 12px',
+                            background: 'rgba(16, 185, 129, 0.08)',
+                            borderRadius: 8,
+                            border: '1px solid rgba(16, 185, 129, 0.15)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
                         }}>
-                            🎯 <strong>Tip:</strong> 영어 컬럼명이 한글로 자동 번역되어 AI가 "사용자", "주문", "생성일시" 등의 키워드를 인식합니다.
+                            <span>🎯</span>
+                            <span><strong>Tip:</strong> 한글 컬럼명으로 질문하세요 - "사용자", "생성일시", "경력이동" 등</span>
                         </div>
                         
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-                            <button onClick={() => setShowAiModal(false)} style={{ ...styles.btn, ...styles.btnSecondary }}>취소</button>
-                            <button onClick={handleAiGenerate} disabled={aiLoading || !aiPrompt.trim()} style={{ ...styles.btn, background: 'linear-gradient(135deg, #8b5cf6, #ec4899)', color: '#fff', opacity: aiLoading || !aiPrompt.trim() ? 0.5 : 1 }}>
-                                {aiLoading ? '⏳ 생성 중...' : '✨ SQL 생성'}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+                            <button onClick={() => setShowAiModal(false)} style={{ ...styles.btn, ...styles.btnSecondary }}>
+                                취소
+                            </button>
+                            <button 
+                                onClick={handleAiGenerate} 
+                                disabled={aiLoading || !aiPrompt.trim()} 
+                                style={{ 
+                                    ...styles.btn, 
+                                    background: 'linear-gradient(135deg, #8b5cf6, #ec4899)', 
+                                    color: '#fff', 
+                                    opacity: aiLoading || !aiPrompt.trim() ? 0.5 : 1,
+                                    minWidth: 120,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 6,
+                                }}
+                            >
+                                {aiLoading ? (
+                                    <>
+                                        <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⏳</span>
+                                        생성 중...
+                                    </>
+                                ) : (
+                                    <>✨ SQL 생성</>
+                                )}
                             </button>
                         </div>
                     </div>
+                    
+                    <style>{`
+                        @keyframes spin {
+                            from { transform: rotate(0deg); }
+                            to { transform: rotate(360deg); }
+                        }
+                        @keyframes pulse {
+                            0%, 100% { opacity: 0.4; }
+                            50% { opacity: 0.8; }
+                        }
+                    `}</style>
                 </div>
             )}
 
