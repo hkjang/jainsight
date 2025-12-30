@@ -312,6 +312,12 @@ export default function EditorPage() {
     // Multi-query execution
     const [splitQueryResults, setSplitQueryResults] = useState<Array<{ query: string; results: any; error?: string }>>([]);
     
+    // Hidden Columns
+    const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
+    
+    // Column Selector Modal
+    const [showColumnSelector, setShowColumnSelector] = useState(false);
+    
     // Editor State
     const [editorHeight, setEditorHeight] = useState(50);
     const [wordWrap, setWordWrap] = useState(false);
