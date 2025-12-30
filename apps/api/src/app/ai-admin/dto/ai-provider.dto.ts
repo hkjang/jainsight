@@ -45,6 +45,10 @@ export class UpdateAiProviderDto {
     name?: string;
 
     @IsOptional()
+    @IsEnum(['vllm', 'ollama', 'openai'])
+    type?: 'vllm' | 'ollama' | 'openai';
+
+    @IsOptional()
     @IsString()
     endpoint?: string;
 
