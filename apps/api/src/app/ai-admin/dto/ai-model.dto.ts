@@ -63,6 +63,14 @@ export class UpdateAiModelDto {
     modelId?: string;
 
     @IsOptional()
+    @IsUUID()
+    providerId?: string;
+
+    @IsOptional()
+    @IsEnum(['sql', 'explain', 'general'])
+    purpose?: 'sql' | 'explain' | 'general';
+
+    @IsOptional()
     @IsNumber()
     maxTokens?: number;
 

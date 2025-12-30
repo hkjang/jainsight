@@ -619,6 +619,153 @@ export default function EditorPage() {
         }
     };
     
+    // Cancel running query
+    const handleCancelQuery = () => {
+        if (abortController) {
+            abortController.abort();
+            setAbortController(null);
+            setLoading(false);
+            showToast('Query cancelled', 'info');
+        }
+    };
+    
+    // Pin current results
+    const handlePinResults = () => {
+        if (results && results.rows?.length > 0) {
+            const pinned = {
+                id: String(Date.now()),
+                query: query.substring(0, 100) + (query.length > 100 ? '...' : ''),
+                results: { ...results },
+                timestamp: new Date()
+            };
+            setPinnedResults(prev => [...prev, pinned].slice(-5)); // Keep max 5 pinned
+            showToast('Results pinned!', 'success');
+        }
+    };
+    
+    // Remove pinned result
+    const handleUnpinResult = (id: string) => {
+        setPinnedResults(prev => prev.filter(p => p.id !== id));
+    };
+    
+    // Undo query change
+    const handleUndo = () => {
+        if (queryUndoStack.length > 0) {
+            const prev = queryUndoStack[queryUndoStack.length - 1];
+            setQueryRedoStack(r => [...r, query]);
+            setQueryUndoStack(s => s.slice(0, -1));
+            setQuery(prev);
+        }
+    };
+    
+    // Redo query change
+    const handleRedo = () => {
+        if (queryRedoStack.length > 0) {
+            const next = queryRedoStack[queryRedoStack.length - 1];
+            setQueryUndoStack(s => [...s, query]);
+            setQueryRedoStack(r => r.slice(0, -1));
+            setQuery(next);
+        }
+    };
+    
+    // Toggle auto-refresh
+    const toggleAutoRefresh = () => {
+        if (autoRefresh) {
+            setAutoRefresh(false);
+            if (autoRefreshRef.current) {
+                clearInterval(autoRefreshRef.current);
+                autoRefreshRef.current = null;
+            }
+            showToast('Auto-refresh disabled', 'info');
+        } else {
+            setAutoRefresh(true);
+            showToast(`Auto-refresh enabled: every ${autoRefreshInterval}s`, 'success');
+        }
+    };
+    
+    // Auto-refresh effect
+    useEffect(() => {
+        if (autoRefresh && selectedConnection) {
+            autoRefreshRef.current = setInterval(() => {
+                handleExecute();
+            }, autoRefreshInterval * 1000);
+            return () => {
+                if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
+            };
+        }
+    }, [autoRefresh, autoRefreshInterval, selectedConnection]);
+    
+    // Show column stats popup
+    const handleShowColumnStats = (field: string, event: React.MouseEvent) => {
+        event.stopPropagation();
+        if (statsPopupColumn === field) {
+            setStatsPopupColumn(null);
+            setStatsPopupPosition(null);
+        } else {
+            setStatsPopupColumn(field);
+            setStatsPopupPosition({ x: event.clientX, y: event.clientY });
+        }
+    };
+    
+    // Get chart data for visualization
+    const getChartData = () => {
+        if (!results?.rows || !chartField) return [];
+        const counts: Record<string, number> = {};
+        results.rows.forEach((row: any) => {
+            const key = String(row[chartField] ?? 'NULL');
+            counts[key] = (counts[key] || 0) + 1;
+        });
+        return Object.entries(counts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([label, value]) => ({ label, value }));
+    };
+    
+    // Get numeric fields for chart
+    const getNumericFields = () => {
+        if (!results?.rows?.[0]) return [];
+        return results.fields?.filter((f: string) => {
+            const val = results.rows[0][f];
+            return typeof val === 'number' || !isNaN(parseFloat(val));
+        }) || [];
+    };
+    
+    // Execute multiple queries (split by semicolon)
+    const handleExecuteAll = async () => {
+        const queries = query.split(';').map(q => q.trim()).filter(q => q.length > 0);
+        if (queries.length <= 1) {
+            handleExecute();
+            return;
+        }
+        setLoading(true);
+        setSplitQueryResults([]);
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        
+        const allResults: Array<{ query: string; results: any; error?: string }> = [];
+        for (const q of queries) {
+            try {
+                const res = await fetch('/api/query/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ connectionId: selectedConnection, query: q }),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    allResults.push({ query: q, results: data });
+                } else {
+                    const errorData = await res.json().catch(() => ({}));
+                    allResults.push({ query: q, results: null, error: errorData.message || 'Query failed' });
+                }
+            } catch (e: any) {
+                allResults.push({ query: q, results: null, error: e.message });
+            }
+        }
+        setSplitQueryResults(allResults);
+        setLoading(false);
+        showToast(`Executed ${queries.length} queries`, 'success');
+    };
+    
     // Auto-save draft to localStorage
     const saveDraft = useCallback(() => {
         const draft = { 
@@ -1130,7 +1277,7 @@ export default function EditorPage() {
         td: { padding: '8px 12px', borderBottom: `1px solid ${theme.border}`, color: theme.text },
         tabs: { display: 'flex', alignItems: 'center', gap: 2, padding: '4px 8px', backgroundColor: theme.bgHover, borderBottom: `1px solid ${theme.border}`, overflowX: 'auto' as const },
         tab: { display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px', borderRadius: '6px 6px 0 0', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' as const },
-        statusBar: { display: 'flex', justifyContent: 'space-between', padding: '4px 12px', fontSize: 11, color: theme.textMuted, backgroundColor: theme.bgHover, borderTop: `1px solid ${theme.border}` },
+        statusBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', fontSize: 11, color: theme.textMuted, backgroundColor: theme.bgHover, borderTop: `1px solid ${theme.border}`, minHeight: 28 },
     };
 
     // ========================================================================
@@ -1305,6 +1452,27 @@ export default function EditorPage() {
                         <button onClick={handleExplainQuery} disabled={explainLoading || !selectedConnection || !query.trim()} style={{ ...styles.btn, ...styles.btnSecondary, opacity: explainLoading || !selectedConnection ? 0.5 : 1 }}>
                             {explainLoading ? '⏳' : '📊'} Explain
                         </button>
+                        {/* Auto Refresh Toggle */}
+                        <div style={{ position: 'relative' }}>
+                            <button 
+                                onClick={toggleAutoRefresh} 
+                                style={{ 
+                                    ...styles.btnIcon, 
+                                    color: autoRefresh ? theme.success : theme.textSecondary,
+                                    animation: autoRefresh ? 'pulse 2s infinite' : 'none'
+                                }} 
+                                title={autoRefresh ? `Auto-refresh ON (${autoRefreshInterval}s)` : 'Enable auto-refresh'}
+                            >
+                                🔄
+                            </button>
+                            {autoRefresh && (
+                                <span style={{ 
+                                    position: 'absolute', top: -2, right: -2, width: 8, height: 8, 
+                                    borderRadius: '50%', backgroundColor: theme.success,
+                                    boxShadow: `0 0 4px ${theme.success}`
+                                }} />
+                            )}
+                        </div>
                         <button onClick={() => setShowAiModal(true)} style={{ ...styles.btn, background: 'linear-gradient(135deg, #8b5cf6, #ec4899)', color: '#fff' }}>
                             ✨ AI Assist
                         </button>
@@ -1314,9 +1482,23 @@ export default function EditorPage() {
                         <button onClick={() => setIsDarkMode(!isDarkMode)} style={styles.btnIcon}>{isDarkMode ? '🌞' : '🌙'}</button>
                         <button onClick={toggleFullscreen} style={styles.btnIcon} title="Fullscreen">{isFullscreen ? '🔳' : '⛶'}</button>
                         <button onClick={() => setShowShortcuts(true)} style={styles.btnIcon} title="Keyboard Shortcuts (F1)">⌨️</button>
-                        <button onClick={handleExecute} disabled={loading || !selectedConnection} style={{ ...styles.btn, ...styles.btnPrimary, opacity: loading || !selectedConnection ? 0.5 : 1 }}>
-                            {loading ? '⏳ Running...' : '▶ Execute'}
-                        </button>
+                        {/* Execute buttons */}
+                        {loading ? (
+                            <button onClick={handleCancelQuery} style={{ ...styles.btn, backgroundColor: theme.error, color: '#fff' }}>
+                                ⏹ Cancel
+                            </button>
+                        ) : (
+                            <>
+                                {query.includes(';') && query.split(';').filter(q => q.trim()).length > 1 && (
+                                    <button onClick={handleExecuteAll} disabled={!selectedConnection} style={{ ...styles.btn, ...styles.btnSecondary, opacity: !selectedConnection ? 0.5 : 1 }} title="Execute all queries separated by semicolon">
+                                        ▶▶ All
+                                    </button>
+                                )}
+                                <button onClick={handleExecute} disabled={!selectedConnection} style={{ ...styles.btn, ...styles.btnPrimary, opacity: !selectedConnection ? 0.5 : 1 }}>
+                                    ▶ Execute
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -1353,29 +1535,31 @@ export default function EditorPage() {
                 {/* Editor & Results */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                     {/* Editor */}
-                    <div style={{ height: `${editorHeight}%`, position: 'relative', borderBottom: `1px solid ${theme.border}` }}>
-                        <Editor
-                            height="100%"
-                            defaultLanguage="sql"
-                            value={query}
-                            onChange={(v) => setQuery(v || '')}
-                            onMount={handleEditorMount}
-                            theme={isDarkMode ? 'vs-dark' : 'vs-light'}
-                            options={{ 
-                                minimap: { enabled: showMinimap }, 
-                                fontSize: fontSize, 
-                                lineNumbers: showLineNumbers ? 'on' : 'off', 
-                                wordWrap: wordWrap ? 'on' : 'off', 
-                                padding: { top: 12 }, 
-                                scrollBeyondLastLine: false, 
-                                automaticLayout: true,
-                                folding: true,
-                                lineDecorationsWidth: 10,
-                                renderLineHighlight: 'all',
-                                cursorBlinking: 'smooth',
-                                smoothScrolling: true,
-                            }}
-                        />
+                    <div style={{ height: `${editorHeight}%`, display: 'flex', flexDirection: 'column', position: 'relative', borderBottom: `1px solid ${theme.border}` }}>
+                        <div style={{ flex: 1, minHeight: 0 }}>
+                            <Editor
+                                height="100%"
+                                defaultLanguage="sql"
+                                value={query}
+                                onChange={(v) => setQuery(v || '')}
+                                onMount={handleEditorMount}
+                                theme={isDarkMode ? 'vs-dark' : 'vs-light'}
+                                options={{ 
+                                    minimap: { enabled: showMinimap }, 
+                                    fontSize: fontSize, 
+                                    lineNumbers: showLineNumbers ? 'on' : 'off', 
+                                    wordWrap: wordWrap ? 'on' : 'off', 
+                                    padding: { top: 12 }, 
+                                    scrollBeyondLastLine: false, 
+                                    automaticLayout: true,
+                                    folding: true,
+                                    lineDecorationsWidth: 10,
+                                    renderLineHighlight: 'all',
+                                    cursorBlinking: 'smooth',
+                                    smoothScrolling: true,
+                                }}
+                            />
+                        </div>
                         <div style={styles.statusBar}>
                             <span>Ln {cursorPosition.line}, Col {cursorPosition.column} | {query.split('\n').length} lines | {query.length} chars</span>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1416,6 +1600,33 @@ export default function EditorPage() {
                                         <button onClick={() => setViewMode('cards')} style={{ ...styles.btnIcon, padding: '4px 8px', fontSize: 11, backgroundColor: viewMode === 'cards' ? theme.bgCard : 'transparent', borderRadius: 3 }} title="Card View">🃏</button>
                                     </div>
                                 )}
+                                {/* Chart Toggle */}
+                                {results?.rows?.length > 0 && (
+                                    <button 
+                                        onClick={() => setShowChart(!showChart)} 
+                                        style={{ 
+                                            ...styles.btnIcon, 
+                                            padding: '4px 8px', 
+                                            fontSize: 11, 
+                                            color: showChart ? theme.primary : theme.textSecondary,
+                                            backgroundColor: showChart ? `${theme.primary}20` : 'transparent',
+                                            borderRadius: 4
+                                        }} 
+                                        title="Show/Hide Chart"
+                                    >
+                                        📈
+                                    </button>
+                                )}
+                                {/* Pin Results */}
+                                {results?.rows?.length > 0 && (
+                                    <button 
+                                        onClick={handlePinResults} 
+                                        style={{ ...styles.btnIcon, padding: '4px 8px', fontSize: 11 }} 
+                                        title="Pin current results"
+                                    >
+                                        📌
+                                    </button>
+                                )}
                             </div>
                             {results?.rows?.length > 0 && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1450,7 +1661,7 @@ export default function EditorPage() {
                         </div>
 
                         {/* Results Content */}
-                        <div style={{ flex: 1, overflow: 'auto', padding: loading || error || !results ? 16 : 0 }}>
+                        <div style={{ flex: 1, overflow: 'auto', padding: loading || error || !results ? 16 : 0, minHeight: 0 }}>
                             {loading && (
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
                                     <div style={{ textAlign: 'center' }}>
@@ -1889,6 +2100,111 @@ export default function EditorPage() {
                 </div>
             )}
             
+            {/* Chart Visualization Panel */}
+            {showChart && results?.rows?.length > 0 && (
+                <div style={{ 
+                    position: 'fixed', bottom: 100, right: 24, width: 400, 
+                    backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, 
+                    borderRadius: 12, boxShadow: '0 12px 40px rgba(0,0,0,0.4)', zIndex: 60
+                }}>
+                    <div style={{ padding: 12, borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 600, fontSize: 14 }}>📈 Data Visualization</span>
+                        <button onClick={() => setShowChart(false)} style={styles.btnIcon}>×</button>
+                    </div>
+                    <div style={{ padding: 12 }}>
+                        {/* Chart Controls */}
+                        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                            <select 
+                                value={chartField || ''} 
+                                onChange={(e) => setChartField(e.target.value || null)}
+                                style={{ ...styles.select, flex: 1 }}
+                            >
+                                <option value="">Select Field</option>
+                                {results.fields?.map((f: string) => <option key={f} value={f}>{f}</option>)}
+                            </select>
+                            <select value={chartType} onChange={(e) => setChartType(e.target.value as any)} style={styles.select}>
+                                <option value="bar">Bar</option>
+                                <option value="pie">Pie</option>
+                            </select>
+                        </div>
+                        {/* Simple Bar Chart */}
+                        {chartField && chartType === 'bar' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                {getChartData().map((d, i) => (
+                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <span style={{ fontSize: 11, color: theme.textSecondary, width: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</span>
+                                        <div style={{ flex: 1, height: 20, backgroundColor: theme.bgHover, borderRadius: 4, overflow: 'hidden' }}>
+                                            <div style={{ 
+                                                width: `${(d.value / Math.max(...getChartData().map(x => x.value))) * 100}%`, 
+                                                height: '100%', 
+                                                background: `hsl(${(i * 36) % 360}, 70%, 50%)`,
+                                                transition: 'width 0.3s'
+                                            }} />
+                                        </div>
+                                        <span style={{ fontSize: 11, color: theme.textMuted, width: 40, textAlign: 'right' }}>{d.value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {/* Simple Pie Chart */}
+                        {chartField && chartType === 'pie' && (
+                            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 200 }}>
+                                <svg width="180" height="180" viewBox="0 0 100 100">
+                                    {(() => {
+                                        const data = getChartData();
+                                        const total = data.reduce((a, b) => a + b.value, 0);
+                                        let accAngle = 0;
+                                        return data.map((d, i) => {
+                                            const angle = (d.value / total) * 360;
+                                            const startAngle = accAngle;
+                                            accAngle += angle;
+                                            const x1 = 50 + 40 * Math.cos((startAngle - 90) * Math.PI / 180);
+                                            const y1 = 50 + 40 * Math.sin((startAngle - 90) * Math.PI / 180);
+                                            const x2 = 50 + 40 * Math.cos((startAngle + angle - 90) * Math.PI / 180);
+                                            const y2 = 50 + 40 * Math.sin((startAngle + angle - 90) * Math.PI / 180);
+                                            const largeArc = angle > 180 ? 1 : 0;
+                                            return (
+                                                <path 
+                                                    key={i}
+                                                    d={`M 50 50 L ${x1} ${y1} A 40 40 0 ${largeArc} 1 ${x2} ${y2} Z`}
+                                                    fill={`hsl(${(i * 36) % 360}, 70%, 50%)`}
+                                                />
+                                            );
+                                        });
+                                    })()}
+                                </svg>
+                            </div>
+                        )}
+                        {!chartField && <div style={{ textAlign: 'center', color: theme.textMuted, fontSize: 13, padding: 20 }}>Select a field to visualize</div>}
+                    </div>
+                </div>
+            )}
+            
+            {/* Pinned Results Panel */}
+            {pinnedResults.length > 0 && (
+                <div style={{ 
+                    position: 'fixed', top: 100, left: showSidebar ? 290 : 24, width: 280, 
+                    backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, 
+                    borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.3)', zIndex: 55, maxHeight: 400, overflow: 'hidden'
+                }}>
+                    <div style={{ padding: 12, borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 600, fontSize: 13 }}>📌 Pinned Results ({pinnedResults.length})</span>
+                        <button onClick={() => setPinnedResults([])} style={{ ...styles.btnIcon, fontSize: 10 }} title="Clear all">🗑</button>
+                    </div>
+                    <div style={{ maxHeight: 340, overflowY: 'auto' }}>
+                        {pinnedResults.map(p => (
+                            <div key={p.id} style={{ padding: '10px 12px', borderBottom: `1px solid ${theme.border}20` }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                    <span style={{ fontSize: 12, color: theme.textSecondary }}>{p.results.rowCount} rows</span>
+                                    <button onClick={() => handleUnpinResult(p.id)} style={{ ...styles.btnIcon, fontSize: 10 }}>×</button>
+                                </div>
+                                <div style={{ fontSize: 11, color: theme.textMuted, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.query}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+            
             {/* Toast Notification */}
             {toast && (
                 <div style={{
@@ -1921,6 +2237,10 @@ export default function EditorPage() {
                 @keyframes spin {
                     from { transform: rotate(0deg); }
                     to { transform: rotate(360deg); }
+                }
+                @keyframes pulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.5; }
                 }
             `}</style>
         </div>
