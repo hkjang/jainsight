@@ -246,23 +246,36 @@ export class DatabaseConnectorService implements OnModuleDestroy {
      * 예: CareerMovement -> "CareerMovement", startDate -> "startDate"
      */
     private autoQuotePostgresIdentifiers(query: string): string {
-        // 이미 따옴표가 있는 식별자는 건드리지 않음
-        // PascalCase 또는 camelCase 패턴 감지 (대문자가 포함된 비-키워드)
+        // 이미 따옴표가 있으면 건드리지 않음
+        if (query.includes('"')) {
+            return query;
+        }
+
         const sqlKeywords = new Set([
             'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL', 'TRUE', 'FALSE',
             'ORDER', 'BY', 'ASC', 'DESC', 'LIMIT', 'OFFSET', 'GROUP', 'HAVING', 'JOIN', 'LEFT',
             'RIGHT', 'INNER', 'OUTER', 'ON', 'AS', 'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MAX', 'MIN',
             'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'TABLE',
             'INDEX', 'BETWEEN', 'LIKE', 'ILIKE', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'CAST',
-            'COALESCE', 'NULLIF', 'EXISTS', 'UNION', 'ALL', 'EXCEPT', 'INTERSECT', 'WITH', 'RECURSIVE'
+            'COALESCE', 'NULLIF', 'EXISTS', 'UNION', 'ALL', 'EXCEPT', 'INTERSECT', 'WITH', 'RECURSIVE',
+            'NOW', 'CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP', 'EXTRACT', 'DATE', 'TIME',
+            'INTERVAL', 'YEAR', 'MONTH', 'DAY', 'HOUR', 'MINUTE', 'SECOND'
         ]);
 
-        // 정규식: 따옴표 밖에서 PascalCase/camelCase 식별자 찾기
-        // 예: CareerMovement, startDate, userId 등
+        // 정규식: PascalCase/camelCase 식별자 찾기
         return query.replace(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g, (match, identifier) => {
-            // 이미 따옴표로 감싸진 경우 스킵
+            // 빈 문자열이거나 1자리면 스킵
+            if (!identifier || identifier.length < 2) {
+                return match;
+            }
+            
             // SQL 키워드는 스킵
             if (sqlKeywords.has(identifier.toUpperCase())) {
+                return match;
+            }
+            
+            // 숫자만 있거나 언더스코어만 있으면 스킵
+            if (/^\d+$/.test(identifier) || /^_+$/.test(identifier)) {
                 return match;
             }
             

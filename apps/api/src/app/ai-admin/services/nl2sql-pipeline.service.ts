@@ -264,38 +264,46 @@ export class Nl2SqlPipelineService {
                 return this.getDefaultSuggestedQuestions(tables, translations);
             }
 
-            // 4. AI로 추천 질문 생성
+            // 4. AI로 추천 질문 생성 (매번 다양하게)
             const client = this.providerService.createOpenAIClient(routedModel.model.provider);
             
-            const prompt = `다음 데이터베이스 스키마를 분석하여 한국어 질문 예시 6개를 생성하세요.
+            // 랜덤 카테고리 선택
+            const categories = [
+                '최근 데이터 조회', '통계/집계', '조건 검색', 'TOP N 조회',
+                '기간별 분석', '그룹별 현황', '특정 필드 검색', '정렬 조회'
+            ];
+            const selectedCategories = categories
+                .sort(() => Math.random() - 0.5)
+                .slice(0, 4)
+                .join(', ');
+            
+            const prompt = `다음 데이터베이스 스키마를 분석하여 **새롭고 다양한** 한국어 질문 예시 6개를 생성하세요.
 
 ## 테이블 및 컬럼 정보
 ${tableDetails.join('\n')}
 
-## 규칙
-1. 간결한 한국어로 작성 (10~25자)
-2. 다양한 유형의 질문 포함:
-   - 전체 조회 ("~목록 보기")
-   - 조건 검색 ("~인 데이터")
-   - 최신순 조회 ("최근 ~")
-   - 통계/집계 ("~수", "~별 현황")
-   - TOP N ("상위 10개")
-3. 각 질문은 새 줄에 작성 (번호/기호 없이)
-4. 테이블명 대신 한글명 사용
+## 이번에 집중할 질문 유형
+${selectedCategories}
 
-예시:
-최근 생성된 사용자 10명
-부서별 직원 수
-이번 달 등록된 주문`;
+## 규칙
+1. 간결한 한국어 (8~25자)
+2. 매번 다른 창의적인 질문 생성 (반복 금지!)
+3. 테이블명 대신 한글명 사용
+4. 각 질문은 새 줄에 (번호/기호 없이)
+
+예시 형식:
+최근 경력이동 10건
+부서별 직원 현황
+이번 주 등록된 데이터`;
 
             const response = await client.chat.completions.create({
                 model: routedModel.model.modelId,
                 messages: [
-                    { role: 'system' as const, content: '데이터베이스 질문 예시를 생성하는 도우미입니다. 한국어로 간결하게 응답하세요.' },
+                    { role: 'system' as const, content: '창의적인 데이터베이스 질문을 생성합니다. 매번 다른 새로운 질문을 만드세요.' },
                     { role: 'user' as const, content: prompt }
                 ],
                 max_tokens: 400,
-                temperature: 0.8,
+                temperature: 0.95, // 높은 온도로 다양성 증가
             });
 
             const content = response.choices[0]?.message?.content || '';
@@ -419,7 +427,7 @@ ${variables.userQuery}
 
             const client = this.providerService.createOpenAIClient(routedModel.model.provider);
             
-            const prompt = `SQL 쿼리 실행 오류를 분석해주세요.
+            const prompt = `SQL 쿼리 실행 오류를 분석하고 수정된 쿼리를 제안해주세요.
 
 ## 오류 메시지
 ${errorMessage}
@@ -427,14 +435,19 @@ ${errorMessage}
 ## 실행한 쿼리
 ${query}
 
-## 데이터베이스 테이블 목록
+## 데이터베이스 테이블 목록 (참고용)
 ${tableInfo}
 
-## 응답 형식 (JSON으로 응답)
+## 중요 사항
+- PostgreSQL의 경우 PascalCase/camelCase 테이블명은 큰따옴표("")로 감싸야 함
+- 문법 오류는 LIMIT, ORDER BY 등의 키워드 위치와 쉼표를 확인
+- 실제 테이블/컬럼명은 위 목록 참고
+
+## 응답 형식 (반드시 JSON)
 {
-  "cause": "오류 원인 설명 (한국어, 1-2문장)",
-  "solution": "해결 방법 (한국어, 구체적인 조치)",
-  "correctedQuery": "수정된 쿼리 (있는 경우만)"
+  "cause": "오류 원인 (한국어, 1-2문장으로 명확히)",
+  "solution": "해결 방법 (한국어, 구체적 조치)",
+  "correctedQuery": "수정된 쿼리 (반드시 포함, 실행 가능한 SQL)"
 }`;
 
             const response = await client.chat.completions.create({
