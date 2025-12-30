@@ -164,6 +164,28 @@ export default function EditorPage() {
     });
     const [connectionSearch, setConnectionSearch] = useState('');
     const [showConnectionDropdown, setShowConnectionDropdown] = useState(false);
+    const [recentConnections, setRecentConnections] = useState<string[]>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('editorRecentConnections');
+            return saved ? JSON.parse(saved) : [];
+        }
+        return [];
+    });
+    const [favoriteConnections, setFavoriteConnections] = useState<string[]>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('editorFavoriteConnections');
+            return saved ? JSON.parse(saved).slice(0, 10) : [];
+        }
+        return [];
+    });
+    const [executionStats, setExecutionStats] = useState<Array<{ query: string; duration: number; timestamp: Date }>>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('editorExecutionStats');
+            return saved ? JSON.parse(saved).slice(-20) : [];
+        }
+        return [];
+    });
+    const [copyWithHeaders, setCopyWithHeaders] = useState(true);
     const [queryTabs, setQueryTabs] = useState<QueryTab[]>(() => {
         if (typeof window !== 'undefined') {
             const saved = localStorage.getItem('editorQueryTabs');
@@ -204,6 +226,11 @@ export default function EditorPage() {
     const [showSaveModal, setShowSaveModal] = useState(false);
     const [showAiModal, setShowAiModal] = useState(false);
     const [showShortcuts, setShowShortcuts] = useState(false);
+    
+    // Query Library Filters
+    const [librarySearch, setLibrarySearch] = useState('');
+    const [librarySortBy, setLibrarySortBy] = useState<'name' | 'recent'>('recent');
+    const [libraryShowLimit, setLibraryShowLimit] = useState(20);
     
     // Toast Notifications
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -415,6 +442,22 @@ export default function EditorPage() {
         showToast(`${selectedRows.size} rows copied as JSON`, 'success');
     };
     
+    // Open saved query in new tab
+    const openSavedQueryInNewTab = (savedQuery: SavedQuery) => {
+        const newId = Date.now().toString();
+        const newTab: QueryTab = {
+            id: newId,
+            name: savedQuery.name,
+            query: savedQuery.query,
+            unsaved: false
+        };
+        const updatedTabs = [...queryTabs, newTab];
+        setQueryTabs(updatedTabs);
+        setActiveTabId(newId);
+        localStorage.setItem('editorQueryTabs', JSON.stringify(updatedTabs));
+        showToast(`Opened "${savedQuery.name}" in new tab`, 'success');
+    };
+    
     // Keyboard navigation for results
     const handleResultsKeyDown = (e: React.KeyboardEvent) => {
         if (!selectedCell || !results) return;
@@ -455,12 +498,41 @@ export default function EditorPage() {
         setEditingTabName(currentName);
     };
     
-    const finishEditingTab = () => {
+    const finishEditingTab = async () => {
         if (editingTabId && editingTabName.trim()) {
-            setQueryTabs(tabs => tabs.map(t => 
+            const editingTab = queryTabs.find(t => t.id === editingTabId);
+            const updatedTabs = queryTabs.map(t => 
                 t.id === editingTabId ? { ...t, name: editingTabName.trim() } : t
-            ));
-            showToast('Tab renamed', 'success');
+            );
+            setQueryTabs(updatedTabs);
+            // Save to localStorage
+            localStorage.setItem('editorQueryTabs', JSON.stringify(updatedTabs));
+            
+            // Also save to Query Library (backend)
+            if (editingTab) {
+                try {
+                    const token = localStorage.getItem('token');
+                    const res = await fetch('/api/queries', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ 
+                            name: editingTabName.trim(), 
+                            query: editingTab.query,
+                            description: `Saved from tab: ${editingTabName.trim()}`,
+                            isPublic: false
+                        }),
+                    });
+                    if (res.ok) {
+                        const savedQuery = await res.json();
+                        setSavedQueries(prev => [...prev.filter(q => q.name !== editingTabName.trim()), savedQuery]);
+                        showToast(`"${editingTabName.trim()}" saved to Query Library`, 'success');
+                    } else {
+                        showToast('Tab renamed (library save failed)', 'info');
+                    }
+                } catch (e) {
+                    showToast('Tab renamed (library save failed)', 'info');
+                }
+            }
         }
         setEditingTabId(null);
         setEditingTabName('');
@@ -806,24 +878,40 @@ export default function EditorPage() {
     useEffect(() => {
         if (selectedConnection) {
             localStorage.setItem('editorSelectedConnection', selectedConnection);
+            // Track recent connections
+            const updated = [selectedConnection, ...recentConnections.filter(id => id !== selectedConnection)].slice(0, 5);
+            setRecentConnections(updated);
+            localStorage.setItem('editorRecentConnections', JSON.stringify(updated));
         }
     }, [selectedConnection]);
     
-    // Load draft on mount
-    useEffect(() => {
-        const draft = localStorage.getItem('editorDraft');
-        if (draft) {
-            try {
-                const parsed = JSON.parse(draft);
-                if (parsed.tabs && parsed.tabs.length > 0) {
-                    setQueryTabs(parsed.tabs);
-                    setActiveTabId(parsed.activeTabId || parsed.tabs[0].id);
-                }
-            } catch (e) {
-                console.error('Failed to load draft', e);
-            }
-        }
-    }, []);
+    // Toggle connection favorite
+    const toggleConnectionFavorite = (connectionId: string) => {
+        const newFavorites = favoriteConnections.includes(connectionId)
+            ? favoriteConnections.filter(id => id !== connectionId)
+            : [...favoriteConnections, connectionId].slice(0, 10);
+        setFavoriteConnections(newFavorites);
+        localStorage.setItem('editorFavoriteConnections', JSON.stringify(newFavorites));
+        showToast(favoriteConnections.includes(connectionId) ? 'Removed from favorites' : 'Added to favorites', 'success');
+    };
+    
+    // Log execution stats
+    const logExecutionStat = (queryText: string, duration: number) => {
+        const stat = { query: queryText.substring(0, 100), duration, timestamp: new Date() };
+        const updated = [...executionStats, stat].slice(-20);
+        setExecutionStats(updated);
+        localStorage.setItem('editorExecutionStats', JSON.stringify(updated));
+    };
+    
+    // Get average execution time
+    const getAverageExecutionTime = () => {
+        if (executionStats.length === 0) return 0;
+        return executionStats.reduce((sum, s) => sum + s.duration, 0) / executionStats.length;
+    };
+    
+    
+    // Note: Tabs are already loaded from 'editorQueryTabs' in useState initialization
+    // No need for separate editorDraft loading
     
     // Auto-save every 30 seconds
     useEffect(() => {
@@ -933,12 +1021,31 @@ export default function EditorPage() {
                 e.preventDefault();
                 setShowShortcuts(s => !s);
             }
+            // Ctrl+1-9 to switch tabs
+            if (e.ctrlKey && e.key >= '1' && e.key <= '9') {
+                e.preventDefault();
+                const tabIndex = parseInt(e.key) - 1;
+                if (tabIndex < queryTabs.length) {
+                    setActiveTabId(queryTabs[tabIndex].id);
+                    showToast(`Switched to ${queryTabs[tabIndex].name}`, 'info');
+                }
+            }
+            // Ctrl+W to close current tab
+            if (e.ctrlKey && e.key === 'w' && queryTabs.length > 1) {
+                e.preventDefault();
+                closeTab(activeTabId, { stopPropagation: () => {} } as any);
+            }
             if (e.key === 'Escape') {
                 setShowSaveModal(false);
                 setShowAiModal(false);
                 setShowHistory(false);
                 setShowTemplates(false);
                 setShowShortcuts(false);
+                setShowConnectionDropdown(false);
+                setShowExportMenu(false);
+                setShowSnippets(false);
+                setShowColumnSelector(false);
+                setShowSchemaBrowser(false);
             }
         };
         window.addEventListener('keydown', handleKeyDown);
@@ -965,6 +1072,23 @@ export default function EditorPage() {
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
         };
+    }, []);
+    
+    // Close dropdowns when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            // Don't close if clicking inside a dropdown or on a dropdown trigger button
+            if (target.closest('[data-dropdown]') || target.closest('[data-dropdown-trigger]')) return;
+            
+            // Use setTimeout to let the click event propagate first
+            setTimeout(() => {
+                setShowExportMenu(false);
+                setShowColumnSelector(false);
+            }, 10);
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
     // ========================================================================
@@ -1328,9 +1452,45 @@ export default function EditorPage() {
         <div style={styles.container}>
             {/* Sidebar */}
             <div style={styles.sidebar}>
-                <div style={{ padding: 16, borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>📁 Query Library</span>
-                    <button onClick={() => setShowSidebar(false)} style={{ ...styles.btnIcon, fontSize: 16 }}>×</button>
+                <div style={{ padding: 12, borderBottom: `1px solid ${theme.border}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <span style={{ fontWeight: 600, fontSize: 14 }}>📁 Query Library</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontSize: 11, color: theme.textMuted }}>{savedQueries.length}</span>
+                            <button onClick={() => setShowSidebar(false)} style={{ ...styles.btnIcon, fontSize: 16, padding: 4 }}>×</button>
+                        </div>
+                    </div>
+                    {/* Search Input */}
+                    <input 
+                        type="text" 
+                        placeholder="🔍 Search queries..." 
+                        value={librarySearch}
+                        onChange={(e) => setLibrarySearch(e.target.value)}
+                        style={{ ...styles.input, width: '100%', marginBottom: 8 }}
+                    />
+                    {/* Sort Options */}
+                    <div style={{ display: 'flex', gap: 4, fontSize: 11 }}>
+                        <button 
+                            onClick={() => setLibrarySortBy('recent')} 
+                            style={{ 
+                                flex: 1, padding: '4px 8px', border: 'none', borderRadius: 4, cursor: 'pointer',
+                                backgroundColor: librarySortBy === 'recent' ? theme.primary : theme.bgHover,
+                                color: librarySortBy === 'recent' ? '#fff' : theme.textSecondary
+                            }}
+                        >
+                            🕐 Recent
+                        </button>
+                        <button 
+                            onClick={() => setLibrarySortBy('name')} 
+                            style={{ 
+                                flex: 1, padding: '4px 8px', border: 'none', borderRadius: 4, cursor: 'pointer',
+                                backgroundColor: librarySortBy === 'name' ? theme.primary : theme.bgHover,
+                                color: librarySortBy === 'name' ? '#fff' : theme.textSecondary
+                            }}
+                        >
+                            🔤 Name
+                        </button>
+                    </div>
                 </div>
                 <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
                     {/* Favorites Section */}
@@ -1340,7 +1500,7 @@ export default function EditorPage() {
                                 ⭐ Favorites
                             </div>
                             {savedQueries.filter(sq => favorites.includes(sq.id)).map(sq => (
-                                <div key={sq.id} onClick={() => { setQuery(sq.query); showToast('Query loaded', 'success'); }} style={{ padding: 10, borderRadius: 6, marginBottom: 6, cursor: 'pointer', backgroundColor: theme.bgHover, border: `1px solid ${theme.warning}40` }}>
+                                <div key={sq.id} onClick={() => openSavedQueryInNewTab(sq)} style={{ padding: 10, borderRadius: 6, marginBottom: 6, cursor: 'pointer', backgroundColor: theme.bgHover, border: `1px solid ${theme.warning}40` }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <span style={{ fontWeight: 500, fontSize: 13 }}>{sq.name}</span>
                                         <button onClick={(e) => { e.stopPropagation(); toggleFavorite(sq.id); }} style={{ ...styles.btnIcon, fontSize: 12, color: theme.warning }}>⭐</button>
@@ -1352,11 +1512,18 @@ export default function EditorPage() {
                     
                     {/* My Queries */}
                     <div style={{ marginBottom: 16 }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted, marginBottom: 8, textTransform: 'uppercase' }}>My Queries</div>
-                        {savedQueries.filter(sq => sq.userId === currentUser?.id).map(sq => (
-                            <div key={sq.id} onClick={() => { setQuery(sq.query); showToast('Query loaded', 'success'); }} style={{ padding: 10, borderRadius: 6, marginBottom: 6, cursor: 'pointer', backgroundColor: theme.bgHover, border: `1px solid ${theme.border}` }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted, marginBottom: 8, textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between' }}>
+                            <span>My Queries</span>
+                            <span style={{ color: theme.primary }}>{savedQueries.filter(sq => sq.userId === currentUser?.id && sq.name.toLowerCase().includes(librarySearch.toLowerCase())).length}</span>
+                        </div>
+                        {savedQueries
+                            .filter(sq => sq.userId === currentUser?.id && sq.name.toLowerCase().includes(librarySearch.toLowerCase()))
+                            .sort((a, b) => librarySortBy === 'name' ? a.name.localeCompare(b.name) : 0)
+                            .slice(0, libraryShowLimit)
+                            .map(sq => (
+                            <div key={sq.id} onClick={() => openSavedQueryInNewTab(sq)} style={{ padding: 10, borderRadius: 6, marginBottom: 6, cursor: 'pointer', backgroundColor: theme.bgHover, border: `1px solid ${theme.border}` }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontWeight: 500, fontSize: 13 }}>{sq.name}</span>
+                                    <span style={{ fontWeight: 500, fontSize: 13, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sq.name}</span>
                                     <div style={{ display: 'flex', gap: 4 }}>
                                         <button onClick={(e) => { e.stopPropagation(); toggleFavorite(sq.id); }} style={{ ...styles.btnIcon, fontSize: 12, color: favorites.includes(sq.id) ? theme.warning : theme.textMuted }}>
                                             {favorites.includes(sq.id) ? '⭐' : '☆'}
@@ -1364,11 +1531,21 @@ export default function EditorPage() {
                                         <button onClick={(e) => handleDeleteQuery(sq.id, e)} style={{ ...styles.btnIcon, fontSize: 12, color: theme.error }}>🗑</button>
                                     </div>
                                 </div>
-                                {sq.description && <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 4 }}>{sq.description}</div>}
+                                {sq.description && <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sq.description}</div>}
                             </div>
                         ))}
-                        {savedQueries.filter(sq => sq.userId === currentUser?.id).length === 0 && (
-                            <div style={{ fontSize: 12, color: theme.textMuted, padding: 8, textAlign: 'center' }}>No saved queries yet</div>
+                        {savedQueries.filter(sq => sq.userId === currentUser?.id && sq.name.toLowerCase().includes(librarySearch.toLowerCase())).length > libraryShowLimit && (
+                            <button 
+                                onClick={() => setLibraryShowLimit(prev => prev + 20)} 
+                                style={{ width: '100%', padding: 8, border: `1px dashed ${theme.border}`, borderRadius: 6, backgroundColor: 'transparent', color: theme.textMuted, cursor: 'pointer', fontSize: 11 }}
+                            >
+                                📥 Load More ({savedQueries.filter(sq => sq.userId === currentUser?.id && sq.name.toLowerCase().includes(librarySearch.toLowerCase())).length - libraryShowLimit} more)
+                            </button>
+                        )}
+                        {savedQueries.filter(sq => sq.userId === currentUser?.id && sq.name.toLowerCase().includes(librarySearch.toLowerCase())).length === 0 && (
+                            <div style={{ fontSize: 12, color: theme.textMuted, padding: 8, textAlign: 'center' }}>
+                                {librarySearch ? 'No matching queries' : 'No saved queries yet'}
+                            </div>
                         )}
                     </div>
                     
@@ -1376,7 +1553,7 @@ export default function EditorPage() {
                     <div>
                         <div style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted, marginBottom: 8, textTransform: 'uppercase' }}>Team Queries</div>
                         {savedQueries.filter(sq => sq.userId !== currentUser?.id).map(sq => (
-                            <div key={sq.id} onClick={() => { setQuery(sq.query); showToast('Query loaded', 'success'); }} style={{ padding: 10, borderRadius: 6, marginBottom: 6, cursor: 'pointer', backgroundColor: theme.bgHover, border: `1px solid ${theme.border}` }}>
+                            <div key={sq.id} onClick={() => openSavedQueryInNewTab(sq)} style={{ padding: 10, borderRadius: 6, marginBottom: 6, cursor: 'pointer', backgroundColor: theme.bgHover, border: `1px solid ${theme.border}` }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 500, fontSize: 13 }}>{sq.name}</span>
                                     <button onClick={(e) => { e.stopPropagation(); toggleFavorite(sq.id); }} style={{ ...styles.btnIcon, fontSize: 12, color: favorites.includes(sq.id) ? theme.warning : theme.textMuted }}>
@@ -1443,47 +1620,123 @@ export default function EditorPage() {
                                         </div>
                                         {/* Connection List */}
                                         <div style={{ flex: 1, overflowY: 'auto', maxHeight: 300 }}>
+                                            {/* Favorites Section */}
+                                            {!connectionSearch && favoriteConnections.length > 0 && (
+                                                <>
+                                                    <div style={{ padding: '6px 12px', fontSize: 10, fontWeight: 600, color: theme.textMuted, backgroundColor: theme.bgHover, textTransform: 'uppercase' }}>
+                                                        ⭐ Favorites
+                                                    </div>
+                                                    {connections.filter(c => favoriteConnections.includes(c.id)).map(c => (
+                                                        <button 
+                                                            key={`fav-${c.id}`}
+                                                            onClick={() => {
+                                                                setSelectedConnection(c.id);
+                                                                setShowConnectionDropdown(false);
+                                                                setConnectionStatus('connected');
+                                                            }}
+                                                            style={{ 
+                                                                display: 'flex', alignItems: 'center', gap: 8,
+                                                                width: '100%', padding: '8px 12px', textAlign: 'left', 
+                                                                border: 'none', cursor: 'pointer', 
+                                                                backgroundColor: c.id === selectedConnection ? `${theme.primary}20` : 'transparent',
+                                                                color: theme.text
+                                                            }}
+                                                        >
+                                                            <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 9, fontWeight: 600, backgroundColor: c.type === 'postgresql' ? '#336791' : c.type === 'mysql' ? '#4479A1' : theme.accent, color: '#fff' }}>
+                                                                {c.type.substring(0, 4).toUpperCase()}
+                                                            </span>
+                                                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>{c.name}</span>
+                                                            <span style={{ color: theme.warning }}>⭐</span>
+                                                        </button>
+                                                    ))}
+                                                </>
+                                            )}
+                                            {/* Recent Section */}
+                                            {!connectionSearch && recentConnections.length > 0 && (
+                                                <>
+                                                    <div style={{ padding: '6px 12px', fontSize: 10, fontWeight: 600, color: theme.textMuted, backgroundColor: theme.bgHover, textTransform: 'uppercase' }}>
+                                                        🕐 Recent
+                                                    </div>
+                                                    {connections.filter(c => recentConnections.includes(c.id) && !favoriteConnections.includes(c.id)).slice(0, 3).map(c => (
+                                                        <button 
+                                                            key={`recent-${c.id}`}
+                                                            onClick={() => {
+                                                                setSelectedConnection(c.id);
+                                                                setShowConnectionDropdown(false);
+                                                                setConnectionStatus('connected');
+                                                            }}
+                                                            style={{ 
+                                                                display: 'flex', alignItems: 'center', gap: 8,
+                                                                width: '100%', padding: '8px 12px', textAlign: 'left', 
+                                                                border: 'none', cursor: 'pointer', 
+                                                                backgroundColor: c.id === selectedConnection ? `${theme.primary}20` : 'transparent',
+                                                                color: theme.text, fontSize: 13
+                                                            }}
+                                                        >
+                                                            <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 9, fontWeight: 600, backgroundColor: c.type === 'postgresql' ? '#336791' : c.type === 'mysql' ? '#4479A1' : theme.accent, color: '#fff' }}>
+                                                                {c.type.substring(0, 4).toUpperCase()}
+                                                            </span>
+                                                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                                                        </button>
+                                                    ))}
+                                                </>
+                                            )}
+                                            {/* All Connections Header */}
+                                            {!connectionSearch && (favoriteConnections.length > 0 || recentConnections.length > 0) && (
+                                                <div style={{ padding: '6px 12px', fontSize: 10, fontWeight: 600, color: theme.textMuted, backgroundColor: theme.bgHover, textTransform: 'uppercase' }}>
+                                                    📁 All Connections
+                                                </div>
+                                            )}
                                             {connections
                                                 .filter(c => 
                                                     c.name.toLowerCase().includes(connectionSearch.toLowerCase()) ||
                                                     c.type.toLowerCase().includes(connectionSearch.toLowerCase()) ||
                                                     (c.host || '').toLowerCase().includes(connectionSearch.toLowerCase())
                                                 )
-                                                .slice(0, 50) // Limit to 50 for performance
+                                                .slice(0, 50)
                                                 .map(c => (
-                                                    <button 
+                                                    <div 
                                                         key={c.id}
-                                                        onClick={() => {
-                                                            setSelectedConnection(c.id);
-                                                            setShowConnectionDropdown(false);
-                                                            setConnectionStatus(c.id ? 'connected' : 'disconnected');
-                                                            setConnectionSearch('');
-                                                            showToast(`Connected to ${c.name}`, 'success');
-                                                        }}
                                                         style={{ 
-                                                            display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
-                                                            width: '100%', padding: '10px 12px', textAlign: 'left', 
-                                                            border: 'none', cursor: 'pointer', 
+                                                            display: 'flex', alignItems: 'center',
                                                             backgroundColor: c.id === selectedConnection ? `${theme.primary}20` : 'transparent',
-                                                            color: theme.text,
                                                             borderLeft: c.id === selectedConnection ? `3px solid ${theme.primary}` : '3px solid transparent'
                                                         }}
                                                     >
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-                                                            <span style={{ 
-                                                                padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600,
-                                                                backgroundColor: c.type === 'postgresql' ? '#336791' : c.type === 'mysql' ? '#4479A1' : theme.accent,
-                                                                color: '#fff'
-                                                            }}>
-                                                                {c.type.toUpperCase()}
-                                                            </span>
-                                                            <span style={{ fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
-                                                            {c.id === selectedConnection && <span style={{ color: theme.success }}>✓</span>}
-                                                        </div>
-                                                        <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
-                                                            {c.host || 'localhost'}:{c.port || 5432} / {c.database || 'default'}
-                                                        </div>
-                                                    </button>
+                                                        <button 
+                                                            onClick={() => {
+                                                                setSelectedConnection(c.id);
+                                                                setShowConnectionDropdown(false);
+                                                                setConnectionStatus('connected');
+                                                                setConnectionSearch('');
+                                                                showToast(`Connected to ${c.name}`, 'success');
+                                                            }}
+                                                            style={{ 
+                                                                display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+                                                                flex: 1, padding: '10px 8px 10px 12px', textAlign: 'left', 
+                                                                border: 'none', cursor: 'pointer', backgroundColor: 'transparent',
+                                                                color: theme.text
+                                                            }}
+                                                        >
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                                                                <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600, backgroundColor: c.type === 'postgresql' ? '#336791' : c.type === 'mysql' ? '#4479A1' : theme.accent, color: '#fff' }}>
+                                                                    {c.type.toUpperCase()}
+                                                                </span>
+                                                                <span style={{ fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                                                                {c.id === selectedConnection && <span style={{ color: theme.success }}>✓</span>}
+                                                            </div>
+                                                            <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                                                                {c.host || 'localhost'}:{c.port || 5432} / {c.database || 'default'}
+                                                            </div>
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); toggleConnectionFavorite(c.id); }}
+                                                            style={{ padding: 8, border: 'none', backgroundColor: 'transparent', cursor: 'pointer', fontSize: 14 }}
+                                                            title={favoriteConnections.includes(c.id) ? 'Remove from favorites' : 'Add to favorites'}
+                                                        >
+                                                            {favoriteConnections.includes(c.id) ? '⭐' : '☆'}
+                                                        </button>
+                                                    </div>
                                                 ))
                                             }
                                             {connections.filter(c => 
