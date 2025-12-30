@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { translateColumnName } from '../../utils/columnTranslator';
 
 interface Connection {
     id: string;
@@ -30,6 +31,38 @@ const dbIcons: Record<string, { icon: string; color: string; gradient: string }>
     mssql: { icon: '🔷', color: '#CC2927', gradient: 'linear-gradient(135deg, #CC2927, #5C2D91)' },
     oracle: { icon: '🔶', color: '#F80000', gradient: 'linear-gradient(135deg, #F80000, #FF6B6B)' },
     sqlite: { icon: '📁', color: '#003B57', gradient: 'linear-gradient(135deg, #003B57, #0F5298)' },
+};
+
+// Data type color mapping for visual distinction
+const getDataTypeStyle = (type: string) => {
+    const lowerType = type.toLowerCase();
+    
+    // String types
+    if (lowerType.includes('varchar') || lowerType.includes('text') || lowerType.includes('char')) {
+        return { bg: 'rgba(34, 197, 94, 0.15)', color: '#22c55e' }; // green
+    }
+    // Numeric types
+    if (lowerType.includes('int') || lowerType.includes('numeric') || lowerType.includes('decimal') || lowerType.includes('float') || lowerType.includes('double')) {
+        return { bg: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6' }; // blue
+    }
+    // Date/Time types
+    if (lowerType.includes('date') || lowerType.includes('time') || lowerType.includes('timestamp')) {
+        return { bg: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }; // amber
+    }
+    // Boolean
+    if (lowerType.includes('bool')) {
+        return { bg: 'rgba(236, 72, 153, 0.15)', color: '#ec4899' }; // pink
+    }
+    // JSON/Object types
+    if (lowerType.includes('json') || lowerType.includes('object')) {
+        return { bg: 'rgba(168, 85, 247, 0.15)', color: '#a855f7' }; // purple
+    }
+    // UUID
+    if (lowerType.includes('uuid')) {
+        return { bg: 'rgba(20, 184, 166, 0.15)', color: '#14b8a6' }; // teal
+    }
+    // Default
+    return { bg: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa' };
 };
 
 export default function SchemaExplorerPage() {
@@ -637,7 +670,8 @@ export default function SchemaExplorerPage() {
                                     <thead>
                                         <tr style={{ background: 'rgba(99, 102, 241, 0.08)' }}>
                                             <th style={{ padding: '14px 18px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', width: '50px' }}>PK</th>
-                                            <th style={{ padding: '14px 18px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>컬럼명</th>
+                                            <th style={{ padding: '14px 18px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>컨럼명</th>
+                                            <th style={{ padding: '14px 18px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.5px' }}>한글 설명 ✨</th>
                                             <th style={{ padding: '14px 18px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>데이터 타입</th>
                                             <th style={{ padding: '14px 18px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Nullable</th>
                                             <th style={{ padding: '14px 18px', textAlign: 'center', fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', width: '80px' }}>복사</th>
@@ -646,7 +680,7 @@ export default function SchemaExplorerPage() {
                                     <tbody>
                                         {loading ? (
                                             <tr>
-                                                <td colSpan={5} style={{ padding: '50px', textAlign: 'center' }}>
+                                                <td colSpan={6} style={{ padding: '50px', textAlign: 'center' }}>
                                                     <div style={{ fontSize: '32px', marginBottom: '12px', animation: 'pulse 1.5s infinite' }}>⏳</div>
                                                     <div style={{ color: '#64748b', fontSize: '14px' }}>컬럼 정보 로딩 중...</div>
                                                 </td>
@@ -682,12 +716,21 @@ export default function SchemaExplorerPage() {
                                                     </td>
                                                     <td style={{ padding: '14px 18px' }}>
                                                         <span style={{
+                                                            fontSize: '13px',
+                                                            color: '#a5b4fc',
+                                                            fontStyle: 'normal',
+                                                        }}>
+                                                            {translateColumnName(col.name)}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ padding: '14px 18px' }}>
+                                                        <span style={{
                                                             padding: '4px 10px',
                                                             borderRadius: '6px',
                                                             fontSize: '12px',
                                                             fontFamily: 'monospace',
-                                                            background: 'rgba(139, 92, 246, 0.15)',
-                                                            color: '#a78bfa',
+                                                            background: getDataTypeStyle(col.type).bg,
+                                                            color: getDataTypeStyle(col.type).color,
                                                             fontWeight: 500,
                                                         }}>
                                                             {col.type}
@@ -726,7 +769,7 @@ export default function SchemaExplorerPage() {
                                             ))
                                         ) : (
                                             <tr>
-                                                <td colSpan={5} style={{ padding: '50px', textAlign: 'center', color: '#64748b' }}>
+                                                <td colSpan={6} style={{ padding: '50px', textAlign: 'center', color: '#64748b' }}>
                                                     {columnSearch ? '검색 결과 없음' : '컬럼 정보 없음'}
                                                 </td>
                                             </tr>

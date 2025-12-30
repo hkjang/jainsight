@@ -10,4 +10,5 @@ export interface ColumnInfo {
     type: string;
     nullable: boolean;
     primaryKey: boolean;
+    comment?: string; // Column description/Korean translation
 }
