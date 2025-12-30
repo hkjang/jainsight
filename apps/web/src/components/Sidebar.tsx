@@ -562,6 +562,70 @@ export function Sidebar() {
                         </button>
                     </div>
                 )}
+
+                {/* System Info Footer */}
+                <div style={{
+                    marginTop: '12px',
+                    paddingTop: '12px',
+                    borderTop: '1px solid rgba(99, 102, 241, 0.1)',
+                }}>
+                    {!collapsed ? (
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '8px 12px',
+                            background: 'rgba(99, 102, 241, 0.05)',
+                            borderRadius: '8px',
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{
+                                    width: '8px',
+                                    height: '8px',
+                                    borderRadius: '50%',
+                                    background: '#10b981',
+                                    boxShadow: '0 0 8px rgba(16, 185, 129, 0.6)',
+                                    animation: 'statusPulse 2s infinite',
+                                }} />
+                                <span style={{ 
+                                    fontSize: '11px', 
+                                    color: '#64748b',
+                                    fontWeight: 500,
+                                }}>
+                                    시스템 정상
+                                </span>
+                            </div>
+                            <span style={{
+                                fontSize: '10px',
+                                color: '#4f46e5',
+                                fontWeight: 600,
+                                padding: '2px 8px',
+                                background: 'rgba(99, 102, 241, 0.1)',
+                                borderRadius: '4px',
+                            }}>
+                                v0.1.0
+                            </span>
+                        </div>
+                    ) : (
+                        <div 
+                            style={{
+                                display: 'flex',
+                                justifyContent: 'center',
+                                padding: '8px',
+                            }}
+                            title="시스템 정상 - v0.1.0"
+                        >
+                            <span style={{
+                                width: '10px',
+                                height: '10px',
+                                borderRadius: '50%',
+                                background: '#10b981',
+                                boxShadow: '0 0 8px rgba(16, 185, 129, 0.6)',
+                                animation: 'statusPulse 2s infinite',
+                            }} />
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Styles */}
@@ -608,6 +672,17 @@ export function Sidebar() {
                 
                 nav::-webkit-scrollbar-thumb:hover {
                     background: rgba(99, 102, 241, 0.5);
+                }
+                
+                @keyframes statusPulse {
+                    0%, 100% {
+                        opacity: 1;
+                        transform: scale(1);
+                    }
+                    50% {
+                        opacity: 0.7;
+                        transform: scale(0.95);
+                    }
                 }
             `}</style>
         </aside>

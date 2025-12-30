@@ -2,6 +2,7 @@
 import './global.css';
 import { Sidebar } from '../components/Sidebar';
 import { ClientProviders } from '../components/ClientProviders';
+import { SkipLink } from '../components/SkipLink';
 
 export const metadata = {
   title: 'Jainsight DB Hub',
@@ -14,7 +15,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="ko">
       <body style={{
         display: 'flex',
         height: '100vh',
@@ -24,12 +25,19 @@ export default function RootLayout({
         color: '#e2e8f0',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
       }}>
+        {/* Skip Link for Accessibility */}
+        <SkipLink />
+
         <Sidebar />
-        <main style={{
-          flex: 1,
-          overflow: 'auto',
-          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 27, 75, 0.9) 100%)',
-        }}>
+        <main 
+          id="main-content"
+          role="main"
+          style={{
+            flex: 1,
+            overflow: 'auto',
+            background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 27, 75, 0.9) 100%)',
+          }}
+        >
           <ClientProviders>
             {children}
           </ClientProviders>
