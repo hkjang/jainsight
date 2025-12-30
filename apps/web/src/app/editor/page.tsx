@@ -242,6 +242,7 @@ export default function EditorPage() {
     const [showSchemaPanel, setShowSchemaPanel] = useState(false);
     const [schemaData, setSchemaData] = useState<{ tables: string[]; columns: Record<string, string[]> }>({ tables: [], columns: {} });
     const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
+    const [schemaTranslations, setSchemaTranslations] = useState<Record<string, { koreanName: string; columns: Record<string, string> }>>({});
     
     // Export Menu
     const [showExportMenu, setShowExportMenu] = useState(false);
@@ -904,6 +905,13 @@ export default function EditorPage() {
         showToast(favoriteConnections.includes(connectionId) ? 'Removed from favorites' : 'Added to favorites', 'success');
     };
     
+    // Fetch schema translations when schema browser opens
+    useEffect(() => {
+        if (showSchemaBrowser && selectedConnection) {
+            fetchSchemaTranslations(selectedConnection);
+        }
+    }, [showSchemaBrowser, selectedConnection]);
+    
     // Log execution stats
     const logExecutionStat = (queryText: string, duration: number) => {
         const stat = { query: queryText.substring(0, 100), duration, timestamp: new Date() };
@@ -1137,6 +1145,31 @@ export default function EditorPage() {
             }
         } catch (e) {
             console.error('Failed to fetch saved queries', e);
+        }
+    };
+
+    // 스키마 번역 불러오기
+    const fetchSchemaTranslations = async (connectionId: string) => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        try {
+            const res = await fetch(`/api/schema/${connectionId}/translations`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                // 번역 맵 생성
+                const translationMap: Record<string, { koreanName: string; columns: Record<string, string> }> = {};
+                for (const t of data) {
+                    translationMap[t.tableName] = {
+                        koreanName: t.koreanName || t.tableName,
+                        columns: t.columnTranslations || {}
+                    };
+                }
+                setSchemaTranslations(translationMap);
+            }
+        } catch (e) {
+            console.error('Failed to fetch schema translations', e);
         }
     };
 
@@ -2619,7 +2652,7 @@ export default function EditorPage() {
             {/* Schema Browser Panel */}
             {showSchemaBrowser && (
                 <div style={{ 
-                    position: 'fixed', top: 100, right: 24, width: 320, maxHeight: 'calc(100vh - 150px)',
+                    position: 'fixed', top: 100, right: 24, width: 420, maxHeight: 'calc(100vh - 150px)',
                     backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12,
                     boxShadow: '0 12px 40px rgba(0,0,0,0.4)', zIndex: 60, display: 'flex', flexDirection: 'column'
                 }}>
@@ -2638,8 +2671,13 @@ export default function EditorPage() {
                     </div>
                     <div style={{ flex: 1, overflow: 'auto', padding: 8 }}>
                         {schemaData.tables
-                            .filter(t => !schemaFilter || t.toLowerCase().includes(schemaFilter.toLowerCase()))
-                            .map(table => (
+                            .filter(t => !schemaFilter || t.toLowerCase().includes(schemaFilter.toLowerCase()) || 
+                                (schemaTranslations[t]?.koreanName || '').toLowerCase().includes(schemaFilter.toLowerCase()))
+                            .map(table => {
+                                const tableTranslation = schemaTranslations[table];
+                                const tableKoreanName = tableTranslation?.koreanName && tableTranslation.koreanName !== table 
+                                    ? tableTranslation.koreanName : null;
+                                return (
                                 <div key={table} style={{ marginBottom: 4 }}>
                                     <div 
                                         onClick={() => setExpandedTables(prev => {
@@ -2651,36 +2689,42 @@ export default function EditorPage() {
                                         style={{ 
                                             padding: '8px 12px', borderRadius: 6, cursor: 'pointer', 
                                             backgroundColor: expandedTables.has(table) ? theme.bgHover : 'transparent',
-                                            display: 'flex', alignItems: 'center', gap: 8, fontSize: 13
+                                            display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, flexWrap: 'wrap'
                                         }}
                                     >
                                         <span>{expandedTables.has(table) ? '📂' : '📁'}</span>
                                         <span style={{ fontWeight: 500 }}>{table}</span>
+                                        {tableKoreanName && <span style={{ fontSize: 11, color: theme.textMuted }}>({tableKoreanName})</span>}
                                         <span style={{ fontSize: 11, color: theme.textMuted, marginLeft: 'auto' }}>
                                             {(schemaData.columns[table] || []).length} cols
                                         </span>
                                     </div>
                                     {expandedTables.has(table) && (
                                         <div style={{ marginLeft: 20, borderLeft: `2px solid ${theme.border}`, paddingLeft: 12 }}>
-                                            {(schemaData.columns[table] || []).map((col: any, ci: number) => (
+                                            {(schemaData.columns[table] || []).map((col: any, ci: number) => {
+                                                const colName = col.name || col;
+                                                const colKoreanName = tableTranslation?.columns?.[colName];
+                                                const showKorean = colKoreanName && colKoreanName !== colName;
+                                                return (
                                                 <div 
                                                     key={ci}
-                                                    onClick={() => { insertSnippet(col.name || col); }}
+                                                    onClick={() => { insertSnippet(colName); }}
                                                     style={{ 
                                                         padding: '6px 8px', fontSize: 12, cursor: 'pointer', 
                                                         borderRadius: 4, display: 'flex', alignItems: 'center', gap: 6
                                                     }}
-                                                    title="Click to insert column name"
+                                                    title={showKorean ? `${colName} (${colKoreanName})` : colName}
                                                 >
                                                     <span style={{ color: theme.textMuted }}>└</span>
-                                                    <span style={{ color: theme.text }}>{col.name || col}</span>
+                                                    <span style={{ color: theme.text }}>{colName}</span>
+                                                    {showKorean && <span style={{ fontSize: 10, color: '#a78bfa' }}>({colKoreanName})</span>}
                                                     {col.type && <span style={{ fontSize: 10, color: theme.accent, marginLeft: 'auto' }}>{col.type}</span>}
                                                 </div>
-                                            ))}
+                                            );})}
                                         </div>
                                     )}
                                 </div>
-                            ))
+                            );})
                         }
                         {schemaData.tables.length === 0 && (
                             <div style={{ padding: 24, textAlign: 'center', color: theme.textMuted, fontSize: 13 }}>
