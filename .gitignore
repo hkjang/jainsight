@@ -4,6 +4,7 @@
 dist
 tmp
 out-tsc
+jainsight.db
 
 # dependencies
 node_modules
