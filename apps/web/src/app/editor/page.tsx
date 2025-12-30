@@ -12,6 +12,9 @@ interface Connection {
     id: string;
     name: string;
     type: string;
+    host?: string;
+    port?: number;
+    database?: string;
 }
 
 interface SavedQuery {
@@ -153,11 +156,31 @@ export default function EditorPage() {
     
     // Connection & Query State
     const [connections, setConnections] = useState<Connection[]>([]);
-    const [selectedConnection, setSelectedConnection] = useState('');
-    const [queryTabs, setQueryTabs] = useState<QueryTab[]>([
-        { id: '1', name: 'Query 1', query: '-- Select your connection and write your SQL query\nSELECT * FROM information_schema.tables LIMIT 10;', unsaved: false }
-    ]);
-    const [activeTabId, setActiveTabId] = useState('1');
+    const [selectedConnection, setSelectedConnection] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('editorSelectedConnection') || '';
+        }
+        return '';
+    });
+    const [connectionSearch, setConnectionSearch] = useState('');
+    const [showConnectionDropdown, setShowConnectionDropdown] = useState(false);
+    const [queryTabs, setQueryTabs] = useState<QueryTab[]>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('editorQueryTabs');
+            if (saved) {
+                try {
+                    return JSON.parse(saved);
+                } catch (e) { /* ignore */ }
+            }
+        }
+        return [{ id: '1', name: 'Query 1', query: '-- Select your connection and write your SQL query\nSELECT * FROM information_schema.tables LIMIT 10;', unsaved: false }];
+    });
+    const [activeTabId, setActiveTabId] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('editorActiveTabId') || '1';
+        }
+        return '1';
+    });
     
     // Results State
     const [results, setResults] = useState<any>(null);
@@ -774,14 +797,17 @@ export default function EditorPage() {
     
     // Auto-save draft to localStorage
     const saveDraft = useCallback(() => {
-        const draft = { 
-            tabs: queryTabs, 
-            activeTabId, 
-            timestamp: new Date().toISOString() 
-        };
-        localStorage.setItem('editorDraft', JSON.stringify(draft));
+        localStorage.setItem('editorQueryTabs', JSON.stringify(queryTabs));
+        localStorage.setItem('editorActiveTabId', activeTabId);
         setLastAutoSave(new Date());
     }, [queryTabs, activeTabId]);
+    
+    // Save selected connection when it changes
+    useEffect(() => {
+        if (selectedConnection) {
+            localStorage.setItem('editorSelectedConnection', selectedConnection);
+        }
+    }, [selectedConnection]);
     
     // Load draft on mount
     useEffect(() => {
@@ -1367,11 +1393,118 @@ export default function EditorPage() {
                         <button onClick={() => setShowSidebar(!showSidebar)} style={styles.btnIcon} title="Saved Queries">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
                         </button>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <select value={selectedConnection} onChange={(e) => { setSelectedConnection(e.target.value); setConnectionStatus(e.target.value ? 'connected' : 'disconnected'); }} style={{ ...styles.select, minWidth: 160 }}>
-                                <option value="">Select Connection</option>
-                                {connections.map(c => <option key={c.id} value={c.id}>{c.name} ({c.type})</option>)}
-                            </select>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {/* Searchable Connection Dropdown */}
+                            <div style={{ position: 'relative' }}>
+                                <button 
+                                    onClick={() => setShowConnectionDropdown(!showConnectionDropdown)}
+                                    style={{ 
+                                        ...styles.btn, 
+                                        ...styles.btnSecondary, 
+                                        minWidth: 200, 
+                                        display: 'flex', 
+                                        justifyContent: 'space-between', 
+                                        alignItems: 'center',
+                                        gap: 8
+                                    }}
+                                >
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {selectedConnection 
+                                            ? connections.find(c => c.id === selectedConnection)?.name || 'Unknown' 
+                                            : `Select Connection (${connections.length})`}
+                                    </span>
+                                    <span style={{ fontSize: 10 }}>▼</span>
+                                </button>
+                                {showConnectionDropdown && (
+                                    <div style={{ 
+                                        position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 320, 
+                                        backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, 
+                                        borderRadius: 8, boxShadow: '0 12px 40px rgba(0,0,0,0.4)', zIndex: 100, 
+                                        maxHeight: 400, display: 'flex', flexDirection: 'column'
+                                    }}>
+                                        {/* Search Input */}
+                                        <div style={{ padding: 8, borderBottom: `1px solid ${theme.border}` }}>
+                                            <input 
+                                                type="text"
+                                                placeholder="🔍 Search connections..."
+                                                value={connectionSearch}
+                                                onChange={(e) => setConnectionSearch(e.target.value)}
+                                                autoFocus
+                                                style={{ ...styles.input, width: '100%' }}
+                                            />
+                                        </div>
+                                        {/* Connection List */}
+                                        <div style={{ flex: 1, overflowY: 'auto', maxHeight: 300 }}>
+                                            {connections
+                                                .filter(c => 
+                                                    c.name.toLowerCase().includes(connectionSearch.toLowerCase()) ||
+                                                    c.type.toLowerCase().includes(connectionSearch.toLowerCase()) ||
+                                                    (c.host || '').toLowerCase().includes(connectionSearch.toLowerCase())
+                                                )
+                                                .slice(0, 50) // Limit to 50 for performance
+                                                .map(c => (
+                                                    <button 
+                                                        key={c.id}
+                                                        onClick={() => {
+                                                            setSelectedConnection(c.id);
+                                                            setShowConnectionDropdown(false);
+                                                            setConnectionStatus(c.id ? 'connected' : 'disconnected');
+                                                            setConnectionSearch('');
+                                                            showToast(`Connected to ${c.name}`, 'success');
+                                                        }}
+                                                        style={{ 
+                                                            display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+                                                            width: '100%', padding: '10px 12px', textAlign: 'left', 
+                                                            border: 'none', cursor: 'pointer', 
+                                                            backgroundColor: c.id === selectedConnection ? `${theme.primary}20` : 'transparent',
+                                                            color: theme.text,
+                                                            borderLeft: c.id === selectedConnection ? `3px solid ${theme.primary}` : '3px solid transparent'
+                                                        }}
+                                                    >
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                                                            <span style={{ 
+                                                                padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600,
+                                                                backgroundColor: c.type === 'postgresql' ? '#336791' : c.type === 'mysql' ? '#4479A1' : theme.accent,
+                                                                color: '#fff'
+                                                            }}>
+                                                                {c.type.toUpperCase()}
+                                                            </span>
+                                                            <span style={{ fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                                                            {c.id === selectedConnection && <span style={{ color: theme.success }}>✓</span>}
+                                                        </div>
+                                                        <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                                                            {c.host || 'localhost'}:{c.port || 5432} / {c.database || 'default'}
+                                                        </div>
+                                                    </button>
+                                                ))
+                                            }
+                                            {connections.filter(c => 
+                                                c.name.toLowerCase().includes(connectionSearch.toLowerCase()) ||
+                                                c.type.toLowerCase().includes(connectionSearch.toLowerCase())
+                                            ).length === 0 && (
+                                                <div style={{ padding: 16, textAlign: 'center', color: theme.textMuted, fontSize: 13 }}>
+                                                    No connections found
+                                                </div>
+                                            )}
+                                            {connections.filter(c => 
+                                                c.name.toLowerCase().includes(connectionSearch.toLowerCase()) ||
+                                                c.type.toLowerCase().includes(connectionSearch.toLowerCase())
+                                            ).length > 50 && (
+                                                <div style={{ padding: 8, textAlign: 'center', color: theme.textMuted, fontSize: 11, borderTop: `1px solid ${theme.border}` }}>
+                                                    Showing 50 of {connections.filter(c => 
+                                                        c.name.toLowerCase().includes(connectionSearch.toLowerCase()) ||
+                                                        c.type.toLowerCase().includes(connectionSearch.toLowerCase())
+                                                    ).length} results. Refine your search.
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* Footer */}
+                                        <div style={{ padding: 8, borderTop: `1px solid ${theme.border}`, fontSize: 11, color: theme.textMuted, textAlign: 'center' }}>
+                                            {connections.length} total connections
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                             <button 
                                 onClick={testConnection} 
                                 disabled={testingConnection || !selectedConnection}
@@ -1633,6 +1766,51 @@ export default function EditorPage() {
                                         📌
                                     </button>
                                 )}
+                                {/* Column Selector */}
+                                {results?.fields?.length > 0 && (
+                                    <div style={{ position: 'relative' }}>
+                                        <button 
+                                            onClick={() => setShowColumnSelector(!showColumnSelector)} 
+                                            style={{ 
+                                                ...styles.btnIcon, 
+                                                padding: '4px 8px', 
+                                                fontSize: 11,
+                                                color: hiddenColumns.size > 0 ? theme.warning : theme.textSecondary
+                                            }} 
+                                            title={`Columns (${hiddenColumns.size} hidden)`}
+                                        >
+                                            👁️ {hiddenColumns.size > 0 && <span style={{ fontSize: 10 }}>-{hiddenColumns.size}</span>}
+                                        </button>
+                                        {showColumnSelector && (
+                                            <div style={{ 
+                                                position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 220, 
+                                                backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, 
+                                                borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.25)', zIndex: 50, 
+                                                maxHeight: 300, overflow: 'auto'
+                                            }}>
+                                                <div style={{ padding: '8px 12px', borderBottom: `1px solid ${theme.border}`, fontSize: 12, fontWeight: 600, display: 'flex', justifyContent: 'space-between' }}>
+                                                    <span>Columns</span>
+                                                    <button onClick={() => setHiddenColumns(new Set())} style={{ fontSize: 10, color: theme.primary, background: 'none', border: 'none', cursor: 'pointer' }}>Show All</button>
+                                                </div>
+                                                {results.fields.map((field: string) => (
+                                                    <label key={field} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer', fontSize: 12 }}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={!hiddenColumns.has(field)}
+                                                            onChange={() => {
+                                                                const newHidden = new Set(hiddenColumns);
+                                                                if (hiddenColumns.has(field)) newHidden.delete(field);
+                                                                else newHidden.add(field);
+                                                                setHiddenColumns(newHidden);
+                                                            }}
+                                                        />
+                                                        <span style={{ color: hiddenColumns.has(field) ? theme.textMuted : theme.text }}>{field}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             {results?.rows?.length > 0 && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1704,12 +1882,26 @@ export default function EditorPage() {
                                     )}
                                 </div>
                             )}
-                            {results && (
+                            {results && viewMode === 'table' && (
                                 <table style={styles.table}>
                                     <thead>
                                         <tr>
+                                            <th style={{ ...styles.th, width: 36 }}>
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={selectedRows.size === paginatedRows.length && paginatedRows.length > 0}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setSelectedRows(new Set(paginatedRows.map((_: any, i: number) => (currentPage - 1) * itemsPerPage + i)));
+                                                        } else {
+                                                            setSelectedRows(new Set());
+                                                        }
+                                                    }}
+                                                    style={{ cursor: 'pointer' }}
+                                                />
+                                            </th>
                                             <th style={{ ...styles.th, width: 40 }}>#</th>
-                                            {results.fields?.map((field: string, i: number) => (
+                                            {results.fields?.filter((f: string) => !hiddenColumns.has(f)).map((field: string, i: number) => (
                                                 <th key={i} style={styles.th} onClick={() => handleSort(field)} title={`Click to sort by ${field}`}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                                         <span>{field}</span>
@@ -1720,37 +1912,101 @@ export default function EditorPage() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {paginatedRows.map((row: any, ri: number) => (
-                                            <tr 
-                                                key={ri} 
-                                                style={{ backgroundColor: ri % 2 === 0 ? 'transparent' : theme.bgHover, cursor: 'pointer' }}
-                                                onDoubleClick={() => { setSelectedRow(row); setShowRowDetails(true); }}
-                                            >
-                                                <td style={{ ...styles.td, color: theme.textMuted }}>{(currentPage - 1) * itemsPerPage + ri + 1}</td>
-                                                {results.fields?.map((field: string, fi: number) => (
-                                                    <td 
-                                                        key={fi} 
-                                                        style={{ ...styles.td, cursor: 'pointer', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                                        onClick={() => handleCopyCell(row[field])}
-                                                        title={row[field] === null ? 'NULL' : `${String(row[field]).substring(0, 100)}${String(row[field]).length > 100 ? '...' : ''}\n\nClick to copy`}
-                                                    >
-                                                        {row[field] === null ? (
-                                                            <span style={{ color: theme.textMuted, fontStyle: 'italic', fontSize: 11 }}>NULL</span>
-                                                        ) : typeof row[field] === 'boolean' ? (
-                                                            <span style={{ color: row[field] ? theme.success : theme.error }}>{row[field] ? '✓ true' : '✗ false'}</span>
-                                                        ) : typeof row[field] === 'number' ? (
-                                                            <span style={{ fontFamily: 'monospace', color: theme.accent }}>{row[field].toLocaleString()}</span>
-                                                        ) : String(row[field]).length > 50 ? (
-                                                            <span>{String(row[field]).substring(0, 50)}...</span>
-                                                        ) : (
-                                                            String(row[field])
-                                                        )}
+                                        {paginatedRows.map((row: any, ri: number) => {
+                                            const globalIndex = (currentPage - 1) * itemsPerPage + ri;
+                                            const isSelected = selectedRows.has(globalIndex);
+                                            return (
+                                                <tr 
+                                                    key={ri} 
+                                                    style={{ 
+                                                        backgroundColor: isSelected ? `${theme.primary}15` : ri % 2 === 0 ? 'transparent' : theme.bgHover, 
+                                                        cursor: 'pointer' 
+                                                    }}
+                                                    onDoubleClick={() => { setSelectedRow(row); setShowRowDetails(true); }}
+                                                >
+                                                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={isSelected}
+                                                            onChange={() => {
+                                                                const newSet = new Set(selectedRows);
+                                                                if (isSelected) newSet.delete(globalIndex);
+                                                                else newSet.add(globalIndex);
+                                                                setSelectedRows(newSet);
+                                                            }}
+                                                            style={{ cursor: 'pointer' }}
+                                                        />
                                                     </td>
-                                                ))}
-                                            </tr>
-                                        ))}
+                                                    <td style={{ ...styles.td, color: theme.textMuted }}>{globalIndex + 1}</td>
+                                                    {results.fields?.filter((f: string) => !hiddenColumns.has(f)).map((field: string, fi: number) => (
+                                                        <td 
+                                                            key={fi} 
+                                                            style={{ ...styles.td, cursor: 'pointer', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                                            onClick={() => handleCopyCell(row[field])}
+                                                            title={row[field] === null ? 'NULL' : `${String(row[field]).substring(0, 100)}${String(row[field]).length > 100 ? '...' : ''}\n\nClick to copy`}
+                                                        >
+                                                            {row[field] === null ? (
+                                                                <span style={{ color: theme.textMuted, fontStyle: 'italic', fontSize: 11 }}>NULL</span>
+                                                            ) : typeof row[field] === 'boolean' ? (
+                                                                <span style={{ color: row[field] ? theme.success : theme.error }}>{row[field] ? '✓ true' : '✗ false'}</span>
+                                                            ) : typeof row[field] === 'number' ? (
+                                                                <span style={{ fontFamily: 'monospace', color: theme.accent }}>{row[field].toLocaleString()}</span>
+                                                            ) : String(row[field]).length > 50 ? (
+                                                                <span>{String(row[field]).substring(0, 50)}...</span>
+                                                            ) : (
+                                                                String(row[field])
+                                                            )}
+                                                        </td>
+                                                    ))}
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
+                            )}
+                            {/* JSON View */}
+                            {results && viewMode === 'json' && (
+                                <div style={{ padding: 16 }}>
+                                    <pre style={{ 
+                                        backgroundColor: theme.bgHover, padding: 16, borderRadius: 8, 
+                                        overflow: 'auto', fontSize: 12, fontFamily: 'monospace', margin: 0,
+                                        maxHeight: 400
+                                    }}>
+                                        {JSON.stringify(paginatedRows, null, 2)}
+                                    </pre>
+                                </div>
+                            )}
+                            {/* Card View */}
+                            {results && viewMode === 'cards' && (
+                                <div style={{ padding: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+                                    {paginatedRows.map((row: any, ri: number) => (
+                                        <div 
+                                            key={ri} 
+                                            style={{ 
+                                                backgroundColor: theme.bgHover, borderRadius: 8, padding: 12, 
+                                                border: `1px solid ${theme.border}`, cursor: 'pointer' 
+                                            }}
+                                            onClick={() => { setSelectedRow(row); setShowRowDetails(true); }}
+                                        >
+                                            <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 8 }}>
+                                                Row {(currentPage - 1) * itemsPerPage + ri + 1}
+                                            </div>
+                                            {results.fields?.filter((f: string) => !hiddenColumns.has(f)).slice(0, 5).map((field: string, fi: number) => (
+                                                <div key={fi} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 12 }}>
+                                                    <span style={{ color: theme.textSecondary, fontWeight: 500 }}>{field}:</span>
+                                                    <span style={{ color: theme.text, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {row[field] === null ? <i style={{ color: theme.textMuted }}>NULL</i> : String(row[field]).substring(0, 30)}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                            {results.fields?.length > 5 && (
+                                                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                                                    +{results.fields.length - 5} more fields
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
                             )}
                             {!loading && !error && !results && (
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
