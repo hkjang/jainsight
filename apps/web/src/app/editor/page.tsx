@@ -888,9 +888,9 @@ export default function EditorPage() {
         }
     }, [selectedConnection]);
     
-    // Fetch AI suggested questions when modal opens
+    // Fetch AI suggested questions when modal opens (새로 열릴 때마다 재생성)
     useEffect(() => {
-        if (showAiModal && selectedConnection && suggestedQuestions.length === 0) {
+        if (showAiModal && selectedConnection) {
             fetchSuggestedQuestions();
         }
     }, [showAiModal, selectedConnection]);

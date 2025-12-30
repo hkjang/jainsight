@@ -188,9 +188,16 @@ export class Nl2SqlPipelineService {
         const lines: string[] = ['Tables in database (테이블명 / 한글명):'];
         
         // 번역 정보 조회
-        const translations = await this.translationService.getTranslationsMap(connectionId);
+        let translations: Record<string, any> = {};
+        try {
+            translations = await this.translationService.getTranslationsMap(connectionId);
+        } catch (e) {
+            this.logger.warn(`Failed to get translations: ${e.message}`);
+        }
         
-        for (const table of tables.slice(0, 20)) { // Limit to 20 tables
+        this.logger.log(`Building schema context: ${tables.length} tables found`);
+        
+        for (const table of tables.slice(0, 50)) { // Increased to 50 tables
             const translation = translations[table.name];
             const koreanName = translation?.koreanName || table.name;
             lines.push(`\n## ${table.name} (${koreanName})`);
@@ -199,7 +206,7 @@ export class Nl2SqlPipelineService {
                 const columns = await this.schemaService.getColumns(connectionId, table.name);
                 const columnTranslations = translation?.columnTranslations || {};
                 
-                for (const col of columns.slice(0, 30)) { // Limit to 30 columns per table
+                for (const col of columns.slice(0, 50)) { // Increased to 50 columns per table
                     const colKorean = columnTranslations[col.name] || col.name;
                     lines.push(`  - ${col.name} (${colKorean}): ${col.type}${col.primaryKey ? ' (PK)' : ''}${col.nullable ? '' : ' NOT NULL'}`);
                 }
@@ -207,6 +214,8 @@ export class Nl2SqlPipelineService {
                 lines.push('  (columns not available)');
             }
         }
+        
+        this.logger.log(`Schema context built with ${lines.length} lines`);
 
         return lines.join('\n');
     }
@@ -300,9 +309,17 @@ export class Nl2SqlPipelineService {
     }
 
     private renderDefaultPrompt(variables: PromptVariables): string {
+        const isPostgres = (variables.dbType || '').toLowerCase().includes('postgres');
+        const quoteNote = isPostgres 
+            ? '- For PostgreSQL: Use double quotes around table/column names to preserve case (e.g., "CareerMovement", "startDate")'
+            : '';
+        
         return `You are an expert SQL query generator. Given a natural language question and database schema information, generate a valid SQL query.
 
-IMPORTANT: The schema includes Korean translations in parentheses. When the user asks in Korean, match their keywords to the Korean names to identify the correct tables and columns.
+CRITICAL: 
+- Use EXACT table and column names from the schema with CORRECT CASE
+${quoteNote}
+- The schema includes Korean translations in parentheses for reference
 
 ## Database Schema
 ${variables.schema}
@@ -312,10 +329,10 @@ ${variables.userQuery}
 
 ## Instructions
 1. Generate ONLY the SQL query, no explanations
-2. Use the English table/column names from the schema (not the Korean translations)
-3. Match Korean keywords in the question to Korean translations in the schema
-4. Add appropriate LIMIT clause for large result sets
-5. Use standard SQL syntax compatible with ${variables.dbType || 'most databases'}
+2. Use the EXACT English table/column names from the schema${isPostgres ? ' with double quotes' : ''}
+3. Match Korean keywords in the question to Korean translations to find correct tables/columns
+4. Add LIMIT 100 clause for SELECT queries
+5. Use standard SQL syntax compatible with ${variables.dbType || 'PostgreSQL'}
 
 ## Generated SQL:`;
     }

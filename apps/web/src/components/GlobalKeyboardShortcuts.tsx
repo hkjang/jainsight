@@ -821,7 +821,8 @@ export function GlobalKeyboardShortcuts() {
             const target = e.target as HTMLElement;
             const isInputFocused = target.tagName === 'INPUT' || 
                                    target.tagName === 'TEXTAREA' || 
-                                   target.isContentEditable;
+                                   target.isContentEditable ||
+                                   target.closest('.monaco-editor') !== null; // Monaco Editor detection
 
             // Command Palette - works everywhere
             if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -830,7 +831,7 @@ export function GlobalKeyboardShortcuts() {
                 return;
             }
 
-            // Skip other shortcuts if in input
+            // Skip other shortcuts if in input or Monaco editor
             if (isInputFocused) return;
 
             // Help modal open

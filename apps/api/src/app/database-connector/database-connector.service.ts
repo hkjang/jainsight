@@ -230,12 +230,50 @@ export class DatabaseConnectorService implements OnModuleDestroy {
             this.pools.set(poolKey, pool);
         }
 
-        const result = await pool.query(query);
+        // Auto-quote mixed-case identifiers for PostgreSQL
+        const processedQuery = this.autoQuotePostgresIdentifiers(query);
+        
+        const result = await pool.query(processedQuery);
         return {
             rows: result.rows,
             fields: result.fields.map(f => f.name),
             rowCount: result.rowCount || 0,
         };
+    }
+
+    /**
+     * PostgreSQL에서 대소문자가 섞인 식별자(테이블명/컬럼명)를 자동으로 따옴표 처리
+     * 예: CareerMovement -> "CareerMovement", startDate -> "startDate"
+     */
+    private autoQuotePostgresIdentifiers(query: string): string {
+        // 이미 따옴표가 있는 식별자는 건드리지 않음
+        // PascalCase 또는 camelCase 패턴 감지 (대문자가 포함된 비-키워드)
+        const sqlKeywords = new Set([
+            'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL', 'TRUE', 'FALSE',
+            'ORDER', 'BY', 'ASC', 'DESC', 'LIMIT', 'OFFSET', 'GROUP', 'HAVING', 'JOIN', 'LEFT',
+            'RIGHT', 'INNER', 'OUTER', 'ON', 'AS', 'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MAX', 'MIN',
+            'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'TABLE',
+            'INDEX', 'BETWEEN', 'LIKE', 'ILIKE', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'CAST',
+            'COALESCE', 'NULLIF', 'EXISTS', 'UNION', 'ALL', 'EXCEPT', 'INTERSECT', 'WITH', 'RECURSIVE'
+        ]);
+
+        // 정규식: 따옴표 밖에서 PascalCase/camelCase 식별자 찾기
+        // 예: CareerMovement, startDate, userId 등
+        return query.replace(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g, (match, identifier) => {
+            // 이미 따옴표로 감싸진 경우 스킵
+            // SQL 키워드는 스킵
+            if (sqlKeywords.has(identifier.toUpperCase())) {
+                return match;
+            }
+            
+            // 대소문자가 섞인 식별자만 따옴표 추가 (PascalCase 또는 camelCase)
+            const hasMixedCase = /[a-z]/.test(identifier) && /[A-Z]/.test(identifier);
+            if (hasMixedCase) {
+                return `"${identifier}"`;
+            }
+            
+            return match;
+        });
     }
 
     private async getPostgresTables(connDto: CreateConnectionDto): Promise<TableInfo[]> {
