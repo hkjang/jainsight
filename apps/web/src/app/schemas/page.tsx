@@ -96,11 +96,18 @@ export default function SchemaExplorerPage() {
     const [isTranslating, setIsTranslating] = useState(false);
     const [translationStatus, setTranslationStatus] = useState<string | null>(null);
 
-    // Get connection from URL params
+    // Get connection from URL params or localStorage
     useEffect(() => {
         const connId = searchParams.get('connectionId');
         if (connId) {
             setSelectedConnection(connId);
+            localStorage.setItem('schema_selectedConnection', connId);
+        } else {
+            // URL에 없으면 localStorage에서 복원
+            const savedConnection = localStorage.getItem('schema_selectedConnection');
+            if (savedConnection) {
+                setSelectedConnection(savedConnection);
+            }
         }
     }, [searchParams]);
 
@@ -110,6 +117,8 @@ export default function SchemaExplorerPage() {
 
     useEffect(() => {
         if (selectedConnection) {
+            // localStorage에 저장
+            localStorage.setItem('schema_selectedConnection', selectedConnection);
             fetchTables(selectedConnection);
             fetchTranslations(selectedConnection);
             setSelectedTable('');
@@ -283,6 +292,42 @@ export default function SchemaExplorerPage() {
             setTimeout(() => setColumnTranslationStatus(null), 3000);
         } finally {
             setIsColumnTranslating(false);
+        }
+    };
+
+    // 모든 테이블의 컬럼을 AI 번역
+    const [isAllColumnsTranslating, setIsAllColumnsTranslating] = useState(false);
+    const [allColumnsTranslationStatus, setAllColumnsTranslationStatus] = useState<string | null>(null);
+
+    const generateAllColumnsTranslations = async () => {
+        const token = localStorage.getItem('token');
+        if (!token || !selectedConnection) return;
+
+        setIsAllColumnsTranslating(true);
+        setAllColumnsTranslationStatus('AI 전체 컬럼 번역 중...');
+        try {
+            const res = await fetch(`/api/schema/${selectedConnection}/translations/all-columns`, {
+                method: 'POST',
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await res.json();
+            if (data.success) {
+                setAllColumnsTranslationStatus(`✓ ${data.translatedTables}개 테이블 ${data.totalColumns}개 컬럼 번역`);
+                fetchTranslations(selectedConnection); // 새로고침
+                setTimeout(() => setAllColumnsTranslationStatus(null), 5000);
+            } else {
+                setAllColumnsTranslationStatus('번역 실패');
+                setTimeout(() => setAllColumnsTranslationStatus(null), 3000);
+            }
+        } catch (e) {
+            console.error('Failed to generate all columns translations', e);
+            setAllColumnsTranslationStatus('번역 오류');
+            setTimeout(() => setAllColumnsTranslationStatus(null), 3000);
+        } finally {
+            setIsAllColumnsTranslating(false);
         }
     };
 
@@ -832,6 +877,31 @@ export default function SchemaExplorerPage() {
                                     }}
                                 >
                                     {isColumnTranslating ? '⏳ 번역 중...' : columnTranslationStatus || '🤖 AI 컬럼 번역'}
+                                </button>
+                                <button
+                                    onClick={generateAllColumnsTranslations}
+                                    disabled={isAllColumnsTranslating}
+                                    title="AI로 모든 테이블의 컬럼 한글 번역 생성"
+                                    style={{
+                                        padding: '10px 16px',
+                                        background: isAllColumnsTranslating 
+                                            ? 'rgba(168, 85, 247, 0.1)'
+                                            : allColumnsTranslationStatus?.includes('✓') 
+                                                ? 'rgba(16, 185, 129, 0.2)'
+                                                : 'linear-gradient(90deg, rgba(168, 85, 247, 0.2), rgba(139, 92, 246, 0.15))',
+                                        border: `1px solid ${allColumnsTranslationStatus?.includes('✓') ? 'rgba(16, 185, 129, 0.4)' : 'rgba(168, 85, 247, 0.4)'}`,
+                                        borderRadius: '10px',
+                                        color: isAllColumnsTranslating ? '#94a3b8' : allColumnsTranslationStatus?.includes('✓') ? '#10b981' : '#c4b5fd',
+                                        cursor: isAllColumnsTranslating ? 'not-allowed' : 'pointer',
+                                        fontSize: '13px',
+                                        fontWeight: 500,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        transition: 'all 0.2s',
+                                    }}
+                                >
+                                    {isAllColumnsTranslating ? '⏳ 전체 번역 중...' : allColumnsTranslationStatus || '🤖 AI 전체 컬럼 번역'}
                                 </button>
                                 <Link href={`/editor?connectionId=${selectedConnection}&table=${selectedTable}`} style={{
                                     padding: '10px 18px',

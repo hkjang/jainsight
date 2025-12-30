@@ -7,6 +7,7 @@ import { PromptManagerService, PromptVariables } from './prompt-manager.service'
 import { SqlSecurityService, SecurityCheckResult } from './sql-security.service';
 import { AiProviderService } from './ai-provider.service';
 import { SchemaService } from '../../schema/schema.service';
+import { TableTranslationService } from '../../schema/table-translation.service';
 
 export interface Nl2SqlRequest {
     userQuery: string;
@@ -38,6 +39,7 @@ export class Nl2SqlPipelineService {
         private readonly securityService: SqlSecurityService,
         private readonly providerService: AiProviderService,
         private readonly schemaService: SchemaService,
+        private readonly translationService: TableTranslationService,
     ) {}
 
     async generateSql(request: Nl2SqlRequest): Promise<Nl2SqlResponse> {
@@ -183,15 +185,23 @@ export class Nl2SqlPipelineService {
     }
 
     private async buildSchemaContext(connectionId: string, tables: any[]): Promise<string> {
-        const lines: string[] = ['Tables in database:'];
+        const lines: string[] = ['Tables in database (테이블명 / 한글명):'];
+        
+        // 번역 정보 조회
+        const translations = await this.translationService.getTranslationsMap(connectionId);
         
         for (const table of tables.slice(0, 20)) { // Limit to 20 tables
-            lines.push(`\n## ${table.name}`);
+            const translation = translations[table.name];
+            const koreanName = translation?.koreanName || table.name;
+            lines.push(`\n## ${table.name} (${koreanName})`);
             
             try {
                 const columns = await this.schemaService.getColumns(connectionId, table.name);
+                const columnTranslations = translation?.columnTranslations || {};
+                
                 for (const col of columns.slice(0, 30)) { // Limit to 30 columns per table
-                    lines.push(`  - ${col.name}: ${col.type}${col.primaryKey ? ' (PK)' : ''}${col.nullable ? '' : ' NOT NULL'}`);
+                    const colKorean = columnTranslations[col.name] || col.name;
+                    lines.push(`  - ${col.name} (${colKorean}): ${col.type}${col.primaryKey ? ' (PK)' : ''}${col.nullable ? '' : ' NOT NULL'}`);
                 }
             } catch {
                 lines.push('  (columns not available)');
@@ -201,8 +211,98 @@ export class Nl2SqlPipelineService {
         return lines.join('\n');
     }
 
+    /**
+     * 연결된 DB의 스키마 기반으로 추천 질문 생성
+     */
+    async generateSuggestedQuestions(connectionId: string): Promise<{ questions: string[] }> {
+        try {
+            // 1. 스키마 정보 조회
+            const tables = await this.schemaService.getTables(connectionId);
+            const translations = await this.translationService.getTranslationsMap(connectionId);
+            
+            if (tables.length === 0) {
+                return { questions: ['테이블 목록 조회', '데이터베이스 정보 확인'] };
+            }
+
+            // 2. 주요 테이블 정보 요약
+            const tableInfo = tables.slice(0, 10).map(t => {
+                const translation = translations[t.name];
+                return `${t.name} (${translation?.koreanName || t.name})`;
+            }).join(', ');
+
+            // 3. AI 사용 가능한지 확인
+            const routingContext: RoutingContext = { purpose: 'sql' };
+            const routedModel = await this.router.selectModel(routingContext);
+            
+            if (!routedModel) {
+                // AI 없으면 기본 추천 질문 반환
+                return this.getDefaultSuggestedQuestions(tables, translations);
+            }
+
+            // 4. AI로 추천 질문 생성
+            const client = this.providerService.createOpenAIClient(routedModel.model.provider);
+            
+            const prompt = `다음 데이터베이스 테이블을 기반으로 한국어로 질문할 수 있는 예시 질문 5개를 생성해주세요.
+테이블 목록: ${tableInfo}
+
+규칙:
+1. 간결한 한국어 질문으로 작성
+2. 실제 조회할 수 있는 실용적인 질문
+3. 각 질문은 한 줄로
+4. 번호 없이 질문만 작성
+5. 각 질문은 새 줄에 작성
+
+예시 형식:
+최근 가입한 사용자 목록
+이번 달 주문 통계`;
+
+            const response = await client.chat.completions.create({
+                model: routedModel.model.modelId,
+                messages: [
+                    { role: 'system' as const, content: '데이터베이스 질문 생성 도우미입니다. 한국어로만 응답하세요.' },
+                    { role: 'user' as const, content: prompt }
+                ],
+                max_tokens: 300,
+                temperature: 0.7,
+            });
+
+            const content = response.choices[0]?.message?.content || '';
+            const questions = content
+                .split('\n')
+                .map(q => q.trim())
+                .filter(q => q.length > 3 && q.length < 50 && !q.startsWith('#'))
+                .slice(0, 5);
+
+            if (questions.length === 0) {
+                return this.getDefaultSuggestedQuestions(tables, translations);
+            }
+
+            return { questions };
+        } catch (error) {
+            this.logger.error(`Failed to generate suggested questions: ${error.message}`);
+            return { questions: ['전체 데이터 조회', '최근 데이터 확인', '통계 조회'] };
+        }
+    }
+
+    private getDefaultSuggestedQuestions(tables: any[], translations: Record<string, any>): { questions: string[] } {
+        const questions: string[] = [];
+        
+        for (const table of tables.slice(0, 5)) {
+            const koreanName = translations[table.name]?.koreanName || table.name;
+            if (koreanName !== table.name) {
+                questions.push(`${koreanName} 전체 조회`);
+            } else {
+                questions.push(`${table.name} 데이터 조회`);
+            }
+        }
+
+        return { questions: questions.length > 0 ? questions : ['데이터 조회', '최근 데이터 확인'] };
+    }
+
     private renderDefaultPrompt(variables: PromptVariables): string {
         return `You are an expert SQL query generator. Given a natural language question and database schema information, generate a valid SQL query.
+
+IMPORTANT: The schema includes Korean translations in parentheses. When the user asks in Korean, match their keywords to the Korean names to identify the correct tables and columns.
 
 ## Database Schema
 ${variables.schema}
@@ -212,9 +312,10 @@ ${variables.userQuery}
 
 ## Instructions
 1. Generate ONLY the SQL query, no explanations
-2. Use proper table and column names from the schema
-3. Add appropriate LIMIT clause for large result sets
-4. Use standard SQL syntax compatible with ${variables.dbType || 'most databases'}
+2. Use the English table/column names from the schema (not the Korean translations)
+3. Match Korean keywords in the question to Korean translations in the schema
+4. Add appropriate LIMIT clause for large result sets
+5. Use standard SQL syntax compatible with ${variables.dbType || 'most databases'}
 
 ## Generated SQL:`;
     }

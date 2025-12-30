@@ -358,6 +358,51 @@ ${tableList}`;
     }
 
     /**
+     * 모든 테이블의 컬럼을 AI로 번역
+     */
+    async translateAllTablesColumns(connectionId: string): Promise<{ 
+        totalTables: number; 
+        translatedTables: number; 
+        totalColumns: number 
+    }> {
+        // 1. 테이블 목록 가져오기
+        const tables = await this.schemaService.getTables(connectionId);
+        
+        if (tables.length === 0) {
+            return { totalTables: 0, translatedTables: 0, totalColumns: 0 };
+        }
+
+        let translatedTables = 0;
+        let totalColumns = 0;
+
+        // 2. 각 테이블을 순차적으로 AI 번역
+        for (const table of tables) {
+            try {
+                this.logger.log(`Translating table ${translatedTables + 1}/${tables.length}: ${table.name}`);
+                const result = await this.translateSingleTable(connectionId, table.name);
+                totalColumns += result.columnsTranslated;
+                translatedTables++;
+            } catch (error) {
+                this.logger.error(`Failed to translate table ${table.name}, using dictionary fallback`, error);
+                // AI 실패 시 사전 번역으로 폴백
+                try {
+                    const fallbackResult = await this.translateSingleTableWithDictionary(connectionId, table.name);
+                    totalColumns += fallbackResult.columnsTranslated;
+                    translatedTables++;
+                } catch (fallbackError) {
+                    this.logger.error(`Dictionary fallback also failed for ${table.name}`, fallbackError);
+                }
+            }
+        }
+        
+        return { 
+            totalTables: tables.length, 
+            translatedTables, 
+            totalColumns 
+        };
+    }
+
+    /**
      * 수동 번역 업데이트
      */
     async updateTranslation(

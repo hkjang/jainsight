@@ -92,6 +92,23 @@ export class SchemaController {
     }
 
     /**
+     * 모든 테이블의 컬럼을 AI로 번역
+     * 타임아웃 10분 (많은 테이블에 대해 AI 번역에 시간이 걸릴 수 있음)
+     */
+    @Post(':connectionId/translations/all-columns')
+    @UseInterceptors(new TimeoutInterceptor(600000)) // 10 minutes
+    async generateAllTablesColumnTranslations(
+        @Param('connectionId') connectionId: string,
+    ) {
+        const result = await this.tableTranslationService.translateAllTablesColumns(connectionId);
+        return {
+            success: true,
+            message: `${result.translatedTables}/${result.totalTables}개 테이블의 ${result.totalColumns}개 컬럼 번역 완료`,
+            ...result,
+        };
+    }
+
+    /**
      * 컬럼 번역 수동 업데이트
      */
     @Patch(':connectionId/translations/:tableName/column/:columnName')

@@ -315,6 +315,8 @@ export default function EditorPage() {
     const [aiPrompt, setAiPrompt] = useState('');
     const [aiLoading, setAiLoading] = useState(false);
     const [aiError, setAiError] = useState('');
+    const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
+    const [suggestionsLoading, setSuggestionsLoading] = useState(false);
     
     // Schema Browser State
     const [showSchemaBrowser, setShowSchemaBrowser] = useState(false);
@@ -885,6 +887,13 @@ export default function EditorPage() {
         }
     }, [selectedConnection]);
     
+    // Fetch AI suggested questions when modal opens
+    useEffect(() => {
+        if (showAiModal && selectedConnection && suggestedQuestions.length === 0) {
+            fetchSuggestedQuestions();
+        }
+    }, [showAiModal, selectedConnection]);
+    
     // Toggle connection favorite
     const toggleConnectionFavorite = (connectionId: string) => {
         const newFavorites = favoriteConnections.includes(connectionId)
@@ -1230,6 +1239,30 @@ export default function EditorPage() {
         }
     };
 
+    // AI 추천 질문 불러오기
+    const fetchSuggestedQuestions = async () => {
+        if (!selectedConnection) return;
+        setSuggestionsLoading(true);
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        try {
+            const res = await fetch(`/api/ai/suggest-questions/${selectedConnection}`, {
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.questions && Array.isArray(data.questions)) {
+                    setSuggestedQuestions(data.questions);
+                }
+            }
+        } catch (e) {
+            console.error('Failed to fetch suggested questions', e);
+            // 실패 시 기본 질문 유지
+        } finally {
+            setSuggestionsLoading(false);
+        }
+    };
+
     const handleAiGenerate = async () => {
         if (!selectedConnection || !aiPrompt.trim()) return;
         setAiLoading(true);
@@ -1237,16 +1270,21 @@ export default function EditorPage() {
         const token = localStorage.getItem('token');
         if (!token) return;
         try {
-            const res = await fetch('/api/ai/generate', {
+            const res = await fetch('/api/ai/generate-sql', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ connectionId: selectedConnection, prompt: aiPrompt }),
+                body: JSON.stringify({ connectionId: selectedConnection, userQuery: aiPrompt }),
             });
             if (!res.ok) throw new Error('Failed to generate SQL');
             const data = await res.json();
-            setQuery(data.sql);
-            setShowAiModal(false);
-            setAiPrompt('');
+            if (data.success && data.sql) {
+                setQuery(data.sql);
+                setShowAiModal(false);
+                setAiPrompt('');
+                showToast('SQL 쿼리가 생성되었습니다', 'success');
+            } else {
+                throw new Error(data.error || 'SQL 생성 실패');
+            }
         } catch (e: any) {
             setAiError(e.message);
         } finally {
@@ -2429,15 +2467,28 @@ export default function EditorPage() {
                             marginBottom: 12,
                             border: '1px solid rgba(99, 102, 241, 0.2)',
                         }}>
-                            <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 8, fontWeight: 600 }}>💡 예시 질문:</div>
+                            <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 8, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span>💡</span> 
+                                {suggestionsLoading ? '추천 질문 생성 중...' : '이 DB에서 할 수 있는 질문 예시:'}
+                                {!suggestionsLoading && suggestedQuestions.length === 0 && (
+                                    <button 
+                                        onClick={fetchSuggestedQuestions}
+                                        style={{ marginLeft: 'auto', fontSize: 10, color: '#a5b4fc', background: 'none', border: 'none', cursor: 'pointer' }}
+                                    >
+                                        🔄 새로고침
+                                    </button>
+                                )}
+                            </div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                {[
+                                {suggestionsLoading ? (
+                                    <div style={{ fontSize: 12, color: theme.textMuted, padding: '8px 0' }}>⏳ AI가 질문을 생성하고 있습니다...</div>
+                                ) : (suggestedQuestions.length > 0 ? suggestedQuestions : [
                                     '최근 일주일간 가입한 사용자',
                                     '이번 달 주문 통계',
                                     '상품별 판매량 TOP 10',
                                     '활성 사용자 수',
                                     '부서별 직원 수',
-                                ].map((example) => (
+                                ]).map((example) => (
                                     <button
                                         key={example}
                                         onClick={() => setAiPrompt(example)}
