@@ -1,0 +1,119 @@
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 612B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/node:20-alpine
+#2 DONE 0.3s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 201B done
+#3 DONE 0.0s
+
+#4 [builder 1/6] FROM docker.io/library/node:20-alpine@sha256:658d0f63e501824d6c23e06d4bb95c71e7d704537c9d9272f488ac03a370d448
+#4 resolve docker.io/library/node:20-alpine@sha256:658d0f63e501824d6c23e06d4bb95c71e7d704537c9d9272f488ac03a370d448 0.0s done
+#4 DONE 0.0s
+
+#5 [builder 2/6] WORKDIR /app
+#5 CACHED
+
+#6 [internal] load build context
+#6 transferring context: 24.69kB 0.0s done
+#6 DONE 0.0s
+
+#7 [builder 3/6] COPY package*.json ./
+#7 CACHED
+
+#8 [builder 4/6] RUN npm ci
+#8 CACHED
+
+#9 [builder 5/6] COPY . .
+#9 DONE 0.1s
+
+#10 [builder 6/6] RUN npx nx run web:build
+#10 1.839 
+#10 1.839 > nx run web:build
+#10 1.839 
+#10 1.840 > next build
+#10 1.840 
+#10 2.671 Attention: Next.js now collects completely anonymous telemetry regarding usage.
+#10 2.671 This information is used to shape Next.js' roadmap and prioritize features.
+#10 2.671 You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+#10 2.671 https://nextjs.org/telemetry
+#10 2.671 
+#10 2.688    ??Next.js 16.0.10 (Turbopack)
+#10 2.688 
+#10 2.750    Creating an optimized production build ...
+#10 19.94  ??[22m Compiled successfully in 16.5s
+#10 19.96    Running TypeScript ...
+#10 25.10    Collecting page data using 31 workers ...
+#10 25.63    Generating static pages using 31 workers (0/2) ...
+#10 26.10  ??[22m Generating static pages using 31 workers (2/2) in 468.7ms
+#10 26.11    Finalizing page optimization ...
+#10 26.42 
+#10 26.42 Route (app)
+#10 26.42 ??? /
+#10 26.42 ??? /_not-found
+#10 26.42 ??? /admin/ai-audit
+#10 26.42 ??? /admin/ai-dashboard
+#10 26.42 ??? /admin/ai-models
+#10 26.42 ??? /admin/ai-providers
+#10 26.42 ??? /admin/api-keys
+#10 26.42 ??? /admin/audit
+#10 26.42 ??? /admin/groups
+#10 26.42 ??? /admin/nl2sql-policies
+#10 26.42 ??? /admin/prompts
+#10 26.42 ??? /admin/queries
+#10 26.42 ??? /admin/rbac
+#10 26.42 ??? /admin/reports
+#10 26.42 ??? /admin/security
+#10 26.42 ??? /admin/settings
+#10 26.42 ??? /admin/users
+#10 26.42 ??? /api-builder
+#10 26.42 ??? /api/hello
+#10 26.42 ??? /audit
+#10 26.42 ??? /connections
+#10 26.42 ??? /connections/create
+#10 26.42 ??? /editor
+#10 26.42 ??? /login
+#10 26.42 ??? /schemas
+#10 26.42 
+#10 26.42 
+#10 26.42 ?  (Dynamic)  server-rendered on demand
+#10 26.42 
+#10 26.83 
+#10 26.83 
+#10 26.83 
+#10 26.83  NX   Successfully ran target build for project web
+#10 26.83 
+#10 26.83 
+#10 DONE 27.1s
+
+#11 [runner 4/5] COPY --from=builder /app/dist/apps/web/.next/static ./apps/web/.next/static
+#11 ERROR: failed to calculate checksum of ref x3jh6e29zuud67lyuc7mlksat::wrsmyejh7ir871qsyshxpotn1: "/app/dist/apps/web/.next/static": not found
+
+#12 [runner 3/5] COPY --from=builder /app/dist/apps/web/.next/standalone ./
+#12 ERROR: failed to calculate checksum of ref x3jh6e29zuud67lyuc7mlksat::wrsmyejh7ir871qsyshxpotn1: "/app/dist/apps/web/.next/standalone": not found
+------
+ > [runner 3/5] COPY --from=builder /app/dist/apps/web/.next/standalone ./:
+------
+------
+ > [runner 4/5] COPY --from=builder /app/dist/apps/web/.next/static ./apps/web/.next/static:
+------
+
+ 3 warnings found (use docker --debug to expand):
+ - LegacyKeyValueFormat: "ENV key=value" should be used instead of legacy "ENV key value" format (line 30)
+ - LegacyKeyValueFormat: "ENV key=value" should be used instead of legacy "ENV key value" format (line 20)
+ - LegacyKeyValueFormat: "ENV key=value" should be used instead of legacy "ENV key value" format (line 29)
+Dockerfile:24
+--------------------
+  22 |     # Copy standalone build
+  23 |     COPY --from=builder /app/dist/apps/web/.next/standalone ./
+  24 | >>> COPY --from=builder /app/dist/apps/web/.next/static ./apps/web/.next/static
+  25 |     COPY --from=builder /app/apps/web/public ./apps/web/public
+  26 |     
+--------------------
+ERROR: failed to build: failed to solve: failed to compute cache key: failed to calculate checksum of ref x3jh6e29zuud67lyuc7mlksat::wrsmyejh7ir871qsyshxpotn1: "/app/dist/apps/web/.next/static": not found
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/dzuijmy5t2vdvnh6rcaib4n43

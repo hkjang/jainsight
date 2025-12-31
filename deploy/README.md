@@ -4,8 +4,17 @@
 
 Run the build script from the project root:
 
+### Windows
+
 ```powershell
-.\deploy\build_offline.ps1
+.\deploy\build_offline_windows.ps1
+```
+
+### Linux
+
+```bash
+chmod +x deploy/build_offline_linux.sh
+./deploy/build_offline_linux.sh
 ```
 
 This will create `jainsight-api.tar` and `jainsight-web.tar` in the `deploy` folder.
@@ -18,8 +27,17 @@ Copy the entire `deploy` folder to the target offline machine.
 
 Open PowerShell in the `deploy` folder on the target machine and run:
 
+### Windows
+
 ```powershell
 .\load_offline.ps1
+```
+
+### Linux
+
+```bash
+chmod +x load_offline_linux.sh
+./load_offline_linux.sh
 ```
 
 ## 4. specific

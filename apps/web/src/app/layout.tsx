@@ -1,8 +1,9 @@
-
 import './global.css';
 import { Sidebar } from '../components/Sidebar';
 import { ClientProviders } from '../components/ClientProviders';
 import { SkipLink } from '../components/SkipLink';
+
+export const dynamic = 'force-dynamic';
 
 export const metadata = {
   title: 'Jainsight DB Hub',

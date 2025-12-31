@@ -6,6 +6,10 @@ tmp
 out-tsc
 jainsight.db
 test.db
+*.log
+*.tar
+build_error.txt
+build_success.txt
 
 # dependencies
 node_modules

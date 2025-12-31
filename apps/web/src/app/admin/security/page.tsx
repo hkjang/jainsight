@@ -87,6 +87,8 @@ const presetProfiles = [
     },
 ];
 
+export const dynamic = 'force-dynamic';
+
 export default function SecurityPage() {
     const [settings, setSettings] = useState<SecuritySettings>(defaultSettings);
     const [recentEvents, setRecentEvents] = useState<SecurityEvent[]>([]);

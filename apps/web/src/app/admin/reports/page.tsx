@@ -7,6 +7,8 @@ import {
 } from '../../../components/admin/AdminUtils';
 
 const API_URL = '/api';
+export const dynamic = 'force-dynamic';
+
 
 interface UserActivity { userId: string; userName: string; queryCount: number; lastActive: string; activeHours: number; trend: number[]; }
 interface GroupUsage { name: string; type: string; members: number; queries: number; avgRisk: number; }

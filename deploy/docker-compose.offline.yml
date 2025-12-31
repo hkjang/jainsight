@@ -9,6 +9,7 @@ services:
       - PORT=3000
       - JWT_SECRET=super_secret_docker_key_123
       - DB_SYNC=true
+      - CORS_ORIGINS=https://jainsight.koreacb.com,http://localhost:4200
       # Add database credentials if using external DB
     networks:
       - jainsight-offline

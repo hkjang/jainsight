@@ -9,14 +9,14 @@ RUN npm ci
 COPY . .
 
 RUN npx nx run api:build:production
-RUN npx nx run api:prune-lockfile
+# RUN npx nx run api:prune-lockfile
 
 FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-COPY --from=builder /app/dist/apps/api/package.json ./
-COPY --from=builder /app/dist/apps/api/package-lock.json ./
+COPY package.json ./
+COPY package-lock.json ./
 
 RUN npm ci --omit=dev
 
