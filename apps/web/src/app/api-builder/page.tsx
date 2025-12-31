@@ -24,11 +24,28 @@ const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false 
 interface ApiTemplate {
     id: string;
     name: string;
+    description?: string;
     sql: string;
     apiKey: string;
-    parameters: Array<{ name: string; type: string; required: boolean }>;
+    parameters: Array<{ name: string; type: string; required: boolean; defaultValue?: any }>;
     connectionId: string;
     createdAt: string;
+    updatedAt?: string;
+    isActive: boolean;
+    version: number;
+    usageCount: number;
+    lastUsedAt?: string;
+    cacheTtl?: number;
+    rateLimit?: { requests: number; windowSeconds: number };
+    method?: string;
+}
+
+interface TestResult {
+    success: boolean;
+    data?: any;
+    error?: string;
+    duration: number;
+    rowCount?: number;
 }
 
 export default function ApiBuilderPage() {
@@ -40,15 +57,30 @@ export default function ApiBuilderPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const [copiedKey, setCopiedKey] = useState<string | null>(null);
     const [showApiKey, setShowApiKey] = useState<string | null>(null);
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
     // Editor State
     const [editingApiId, setEditingApiId] = useState<string | null>(null);
     const [name, setName] = useState('');
+    const [description, setDescription] = useState('');
     const [sql, setSql] = useState('SELECT * FROM users WHERE id = :userId');
     const [params, setParams] = useState<any[]>([]);
     const [connectionId, setConnectionId] = useState('');
     const [saving, setSaving] = useState(false);
-    const [testResult, setTestResult] = useState<any>(null);
+    const [cacheTtl, setCacheTtl] = useState(0);
+    const [isActive, setIsActive] = useState(true);
+
+    // Test Modal State
+    const [showTestModal, setShowTestModal] = useState(false);
+    const [testingApi, setTestingApi] = useState<ApiTemplate | null>(null);
+    const [testParams, setTestParams] = useState<Record<string, any>>({});
+    const [testResult, setTestResult] = useState<TestResult | null>(null);
+    const [testing, setTesting] = useState(false);
+
+    // Code Snippet Modal State
+    const [showSnippetModal, setShowSnippetModal] = useState(false);
+    const [snippetApi, setSnippetApi] = useState<ApiTemplate | null>(null);
+    const [snippetType, setSnippetType] = useState<'curl' | 'javascript' | 'python'>('curl');
 
     useEffect(() => {
         fetchTemplates();
@@ -112,7 +144,7 @@ export default function ApiBuilderPage() {
 
     const handleSave = async () => {
         if (!name || !connectionId) {
-            alert('이름과 연결을 선택해주세요');
+            showToast('이름과 연결을 선택해주세요', 'error');
             return;
         }
 
@@ -133,9 +165,12 @@ export default function ApiBuilderPage() {
                 },
                 body: JSON.stringify({
                     name,
+                    description,
                     sql,
                     parameters: params,
-                    connectionId
+                    connectionId,
+                    cacheTtl: cacheTtl || null,
+                    isActive
                 })
             });
 
@@ -143,12 +178,13 @@ export default function ApiBuilderPage() {
                 setView('list');
                 fetchTemplates();
                 resetEditor();
+                showToast(editingApiId ? 'API 수정 완료' : 'API 생성 완료', 'success');
             } else {
                 const data = await res.json();
-                alert(data.message || 'API 저장에 실패했습니다');
+                showToast(data.message || 'API 저장에 실패했습니다', 'error');
             }
         } catch {
-            alert('API 저장 중 오류가 발생했습니다');
+            showToast('API 저장 중 오류가 발생했습니다', 'error');
         } finally {
             setSaving(false);
         }
@@ -185,24 +221,209 @@ export default function ApiBuilderPage() {
     const resetEditor = () => {
         setEditingApiId(null);
         setName('');
+        setDescription('');
         setSql('SELECT * FROM users WHERE id = :userId');
         setParams([]);
         setConnectionId('');
+        setCacheTtl(0);
+        setIsActive(true);
         setTestResult(null);
     };
 
     const handleEditApi = (api: ApiTemplate) => {
         setEditingApiId(api.id);
         setName(api.name);
+        setDescription(api.description || '');
         setSql(api.sql);
         setParams(api.parameters || []);
         setConnectionId(api.connectionId);
+        setCacheTtl(api.cacheTtl || 0);
+        setIsActive(api.isActive !== false);
         setView('editor');
+    };
+
+    // Toast helper
+    const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 3000);
+    };
+
+    // Toggle API active status
+    const handleToggleActive = async (id: string) => {
+        const token = localStorage.getItem('token');
+        try {
+            const res = await fetch(`/api/sql-api/${id}/toggle`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                showToast(data.message, 'success');
+                fetchTemplates();
+            }
+        } catch (e) {
+            showToast('상태 변경 실패', 'error');
+        }
+    };
+
+    // Duplicate API
+    const handleDuplicate = async (id: string) => {
+        const token = localStorage.getItem('token');
+        try {
+            const res = await fetch(`/api/sql-api/${id}/duplicate`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+                showToast('API 복제 완료', 'success');
+                fetchTemplates();
+            }
+        } catch (e) {
+            showToast('복제 실패', 'error');
+        }
+    };
+
+    // Regenerate API key
+    const handleRegenerateKey = async (id: string) => {
+        if (!confirm('API 키를 재생성하시겠습니까? 기존 키는 더 이상 사용할 수 없습니다.')) return;
+        
+        const token = localStorage.getItem('token');
+        try {
+            const res = await fetch(`/api/sql-api/${id}/regenerate-key`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+                showToast('API 키 재생성 완료', 'success');
+                fetchTemplates();
+            }
+        } catch (e) {
+            showToast('키 재생성 실패', 'error');
+        }
+    };
+
+    // Open test modal
+    const openTestModal = (api: ApiTemplate) => {
+        setTestingApi(api);
+        const defaultParams: Record<string, any> = {};
+        api.parameters?.forEach(p => {
+            defaultParams[p.name] = p.defaultValue || '';
+        });
+        setTestParams(defaultParams);
+        setTestResult(null);
+        setShowTestModal(true);
+    };
+
+    // Run test
+    const runTest = async () => {
+        if (!testingApi) return;
+        setTesting(true);
+        setTestResult(null);
+        
+        const token = localStorage.getItem('token');
+        try {
+            const res = await fetch(`/api/sql-api/${testingApi.id}/test`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ params: testParams })
+            });
+            const data = await res.json();
+            setTestResult(data);
+        } catch (e: any) {
+            setTestResult({ success: false, error: e.message, duration: 0 });
+        } finally {
+            setTesting(false);
+        }
+    };
+
+    // Open code snippet modal
+    const openSnippetModal = (api: ApiTemplate) => {
+        setSnippetApi(api);
+        setSnippetType('curl');
+        setShowSnippetModal(true);
+    };
+
+    // Generate code snippets
+    const generateSnippet = (api: ApiTemplate, type: 'curl' | 'javascript' | 'python'): string => {
+        const endpoint = `${typeof window !== 'undefined' ? window.location.origin : ''}/api/sql-api/execute/${api.id}`;
+        const params = api.parameters?.reduce((acc, p) => {
+            acc[p.name] = p.type === 'number' ? 123 : 'value';
+            return acc;
+        }, {} as Record<string, any>) || {};
+
+        if (type === 'curl') {
+            return `curl -X POST '${endpoint}' \\
+  -H 'Content-Type: application/json' \\
+  -d '{
+    "apiKey": "${api.apiKey}",
+    "params": ${JSON.stringify(params, null, 4).replace(/\n/g, '\n    ')}
+  }'`;
+        }
+
+        if (type === 'javascript') {
+            return `const response = await fetch('${endpoint}', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+        apiKey: '${api.apiKey}',
+        params: ${JSON.stringify(params, null, 8).replace(/\n/g, '\n        ')}
+    })
+});
+
+const data = await response.json();
+console.log(data);`;
+        }
+
+        if (type === 'python') {
+            return `import requests
+
+response = requests.post(
+    '${endpoint}',
+    json={
+        'apiKey': '${api.apiKey}',
+        'params': ${JSON.stringify(params, null, 8).replace(/\n/g, '\n        ')}
+    }
+)
+
+data = response.json()
+print(data)`;
+        }
+
+        return '';
+    };
+
+    // Copy snippet to clipboard
+    const copySnippet = () => {
+        if (!snippetApi) return;
+        navigator.clipboard.writeText(generateSnippet(snippetApi, snippetType));
+        showToast('코드 복사 완료', 'success');
+    };
+
+    // Format relative time
+    const formatRelativeTime = (dateStr?: string) => {
+        if (!dateStr) return '사용 기록 없음';
+        const date = new Date(dateStr);
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+        
+        if (diffMins < 1) return '방금 전';
+        if (diffMins < 60) return `${diffMins}분 전`;
+        if (diffHours < 24) return `${diffHours}시간 전`;
+        return `${diffDays}일 전`;
     };
 
     const filteredTemplates = templates.filter(t =>
         t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        t.sql.toLowerCase().includes(searchTerm.toLowerCase())
+        t.sql.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (t.description?.toLowerCase().includes(searchTerm.toLowerCase()) || false)
     );
 
     if (loading) {
@@ -241,6 +462,235 @@ export default function ApiBuilderPage() {
 
     return (
         <div style={{ padding: '32px', maxWidth: '1200px', margin: '0 auto' }}>
+            {/* Toast Notification */}
+            {toast && (
+                <div style={{
+                    position: 'fixed',
+                    top: '20px',
+                    right: '20px',
+                    padding: '12px 20px',
+                    borderRadius: '10px',
+                    background: toast.type === 'success' ? 'rgba(16, 185, 129, 0.9)' 
+                        : toast.type === 'error' ? 'rgba(239, 68, 68, 0.9)' 
+                        : 'rgba(99, 102, 241, 0.9)',
+                    color: '#fff',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    zIndex: 9999,
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                    animation: 'fadeSlideUp 0.3s ease',
+                }}>
+                    {toast.type === 'success' ? '✓ ' : toast.type === 'error' ? '✗ ' : 'ℹ '}
+                    {toast.message}
+                </div>
+            )}
+
+            {/* Test Modal */}
+            {showTestModal && testingApi && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0,0,0,0.7)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000,
+                }} onClick={() => setShowTestModal(false)}>
+                    <div 
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            width: '90%',
+                            maxWidth: '700px',
+                            maxHeight: '80vh',
+                            overflow: 'auto',
+                            background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.98), rgba(49, 46, 129, 0.95))',
+                            borderRadius: '20px',
+                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                            padding: '28px',
+                        }}
+                    >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                            <h2 style={{ fontSize: '20px', fontWeight: 600, color: '#e2e8f0' }}>
+                                🧪 API 테스트: {testingApi.name}
+                            </h2>
+                            <button onClick={() => setShowTestModal(false)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '24px', cursor: 'pointer' }}>×</button>
+                        </div>
+
+                        {/* Parameters Input */}
+                        {testingApi.parameters && testingApi.parameters.length > 0 && (
+                            <div style={{ marginBottom: '20px' }}>
+                                <div style={{ fontSize: '14px', fontWeight: 500, color: '#a5b4fc', marginBottom: '12px' }}>파라미터</div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    {testingApi.parameters.map(p => (
+                                        <div key={p.name} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                            <span style={{ color: '#a78bfa', fontFamily: 'monospace', width: '120px' }}>:{p.name}</span>
+                                            <input
+                                                type={p.type === 'number' ? 'number' : 'text'}
+                                                value={testParams[p.name] || ''}
+                                                onChange={(e) => setTestParams(prev => ({ ...prev, [p.name]: e.target.value }))}
+                                                placeholder={`${p.type}${p.required ? ' (필수)' : ''}`}
+                                                style={{
+                                                    flex: 1,
+                                                    padding: '10px 14px',
+                                                    background: 'rgba(15, 23, 42, 0.6)',
+                                                    border: '1px solid rgba(99, 102, 241, 0.2)',
+                                                    borderRadius: '8px',
+                                                    color: '#e2e8f0',
+                                                    fontSize: '14px',
+                                                    outline: 'none',
+                                                }}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Run Test Button */}
+                        <button
+                            onClick={runTest}
+                            disabled={testing}
+                            style={{
+                                width: '100%',
+                                padding: '12px',
+                                background: testing ? 'rgba(99, 102, 241, 0.3)' : 'linear-gradient(90deg, #6366f1, #8b5cf6)',
+                                border: 'none',
+                                borderRadius: '10px',
+                                color: '#fff',
+                                fontSize: '14px',
+                                fontWeight: 600,
+                                cursor: testing ? 'not-allowed' : 'pointer',
+                                marginBottom: '20px',
+                            }}
+                        >
+                            {testing ? '⏳ 실행 중...' : '▶ 테스트 실행'}
+                        </button>
+
+                        {/* Test Result */}
+                        {testResult && (
+                            <div style={{
+                                padding: '16px',
+                                background: testResult.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                borderRadius: '12px',
+                                border: `1px solid ${testResult.success ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                                    <span style={{ color: testResult.success ? '#10b981' : '#f87171', fontWeight: 600 }}>
+                                        {testResult.success ? '✓ 성공' : '✗ 실패'}
+                                    </span>
+                                    <span style={{ color: '#94a3b8', fontSize: '13px' }}>
+                                        ⏱ {testResult.duration}ms {testResult.rowCount !== undefined && `· ${testResult.rowCount} rows`}
+                                    </span>
+                                </div>
+                                <pre style={{
+                                    background: 'rgba(0,0,0,0.3)',
+                                    padding: '12px',
+                                    borderRadius: '8px',
+                                    overflow: 'auto',
+                                    maxHeight: '200px',
+                                    fontSize: '12px',
+                                    color: testResult.success ? '#a5b4fc' : '#fca5a5',
+                                    margin: 0,
+                                }}>
+                                    {testResult.error || JSON.stringify(testResult.data, null, 2)}
+                                </pre>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Code Snippet Modal */}
+            {showSnippetModal && snippetApi && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0,0,0,0.7)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000,
+                }} onClick={() => setShowSnippetModal(false)}>
+                    <div 
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            width: '90%',
+                            maxWidth: '700px',
+                            maxHeight: '80vh',
+                            overflow: 'auto',
+                            background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.98), rgba(49, 46, 129, 0.95))',
+                            borderRadius: '20px',
+                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                            padding: '28px',
+                        }}
+                    >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                            <h2 style={{ fontSize: '20px', fontWeight: 600, color: '#e2e8f0' }}>
+                                💻 코드 스니펫: {snippetApi.name}
+                            </h2>
+                            <button onClick={() => setShowSnippetModal(false)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '24px', cursor: 'pointer' }}>×</button>
+                        </div>
+
+                        {/* Language Tabs */}
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                            {(['curl', 'javascript', 'python'] as const).map(type => (
+                                <button
+                                    key={type}
+                                    onClick={() => setSnippetType(type)}
+                                    style={{
+                                        padding: '8px 16px',
+                                        background: snippetType === type ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.1)',
+                                        border: `1px solid ${snippetType === type ? 'rgba(99, 102, 241, 0.5)' : 'rgba(99, 102, 241, 0.2)'}`,
+                                        borderRadius: '8px',
+                                        color: snippetType === type ? '#a5b4fc' : '#6b7280',
+                                        cursor: 'pointer',
+                                        fontSize: '13px',
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    {type === 'curl' ? '🔗 cURL' : type === 'javascript' ? '🟡 JavaScript' : '🐍 Python'}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Code Block */}
+                        <pre style={{
+                            background: 'rgba(0,0,0,0.4)',
+                            padding: '16px',
+                            borderRadius: '12px',
+                            overflow: 'auto',
+                            maxHeight: '300px',
+                            fontSize: '13px',
+                            color: '#a5b4fc',
+                            fontFamily: 'monospace',
+                            lineHeight: 1.6,
+                            margin: 0,
+                            marginBottom: '16px',
+                        }}>
+                            {generateSnippet(snippetApi, snippetType)}
+                        </pre>
+
+                        {/* Copy Button */}
+                        <button
+                            onClick={copySnippet}
+                            style={{
+                                width: '100%',
+                                padding: '12px',
+                                background: 'linear-gradient(90deg, #6366f1, #8b5cf6)',
+                                border: 'none',
+                                borderRadius: '10px',
+                                color: '#fff',
+                                fontSize: '14px',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                            }}
+                        >
+                            📋 코드 복사
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {view === 'list' && (
                 <>
                     {/* Header */}

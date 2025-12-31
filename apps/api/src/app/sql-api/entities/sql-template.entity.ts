@@ -45,9 +45,35 @@ export class SqlTemplate {
     @Column({ nullable: true })
     cacheTtl: number; // Seconds
 
+    // New fields for enhanced functionality
+    @Column({ default: true })
+    isActive: boolean;
+
+    @Column({ default: 1 })
+    version: number;
+
+    @Column({ default: 0 })
+    usageCount: number;
+
+    @Column({ nullable: true })
+    lastUsedAt: Date;
+
+    @Column('simple-json', { nullable: true })
+    rateLimit: {
+        requests: number;
+        windowSeconds: number;
+    };
+
+    @Column({ nullable: true })
+    createdBy: string;
+
+    @Column({ nullable: true })
+    method: string; // GET, POST, etc.
+
     @CreateDateColumn()
     createdAt: Date;
 
     @UpdateDateColumn()
     updatedAt: Date;
 }
+

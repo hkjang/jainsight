@@ -68,9 +68,40 @@ export class SqlApiController {
         return this.sqlApiService.execute(templateId, body.params, body.apiKey);
     }
 
+    // === New Enhanced Endpoints ===
+
+    @Get(':id/stats')
+    async getStatistics(@Param('id') id: string) {
+        return this.sqlApiService.getStatistics(id);
+    }
+
+    @Post(':id/toggle')
+    @Roles('admin')
+    async toggleActive(@Param('id') id: string) {
+        return this.sqlApiService.toggleActive(id);
+    }
+
+    @Post(':id/test')
+    async testExecute(@Param('id') id: string, @Body() body: { params: Record<string, any> }) {
+        return this.sqlApiService.testExecute(id, body.params || {});
+    }
+
+    @Post(':id/duplicate')
+    @Roles('admin')
+    async duplicate(@Param('id') id: string) {
+        return this.sqlApiService.duplicate(id);
+    }
+
+    @Post(':id/regenerate-key')
+    @Roles('admin')
+    async regenerateApiKey(@Param('id') id: string) {
+        return this.sqlApiService.regenerateApiKey(id);
+    }
+
     @Post('seed')
     @Roles('admin')
     async seed() {
         return this.sqlApiService.seed();
     }
 }
+

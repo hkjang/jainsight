@@ -144,6 +144,11 @@ export class SqlApiService implements OnModuleInit {
         const template = await this.findOne(templateId);
         if (!template) throw new Error('Template not found');
 
+        // Check if API is active
+        if (!template.isActive) {
+            throw new Error('API is currently disabled');
+        }
+
         // Security Check
         if (apiKey && template.apiKey !== apiKey) {
             throw new Error('Invalid API Key');
@@ -162,6 +167,12 @@ export class SqlApiService implements OnModuleInit {
                 }
             }
         }
+
+        // Track usage
+        await this.templateRepository.update(templateId, {
+            usageCount: () => 'usageCount + 1',
+            lastUsedAt: new Date(),
+        });
 
         // Caching Logic
         if (template.cacheTtl && template.cacheTtl > 0) {
@@ -201,6 +212,100 @@ export class SqlApiService implements OnModuleInit {
         return this.databaseConnector.executeQuery(connection.id, connectionDto, sql);
     }
 
+    // === New Enhanced Methods ===
+
+    async getStatistics(id: string) {
+        const template = await this.findOne(id);
+        if (!template) throw new Error('Template not found');
+
+        return {
+            id: template.id,
+            name: template.name,
+            usageCount: template.usageCount || 0,
+            lastUsedAt: template.lastUsedAt,
+            createdAt: template.createdAt,
+            isActive: template.isActive,
+            version: template.version,
+            cacheTtl: template.cacheTtl,
+            rateLimit: template.rateLimit,
+        };
+    }
+
+    async regenerateApiKey(id: string) {
+        const template = await this.findOne(id);
+        if (!template) throw new Error('Template not found');
+
+        const newApiKey = uuidv4();
+        await this.templateRepository.update(id, { apiKey: newApiKey });
+
+        return { 
+            success: true, 
+            apiKey: newApiKey,
+            message: 'API key regenerated successfully' 
+        };
+    }
+
+    async toggleActive(id: string) {
+        const template = await this.findOne(id);
+        if (!template) throw new Error('Template not found');
+
+        const newStatus = !template.isActive;
+        await this.templateRepository.update(id, { isActive: newStatus });
+
+        return { 
+            success: true, 
+            isActive: newStatus,
+            message: `API ${newStatus ? 'activated' : 'deactivated'} successfully` 
+        };
+    }
+
+    async testExecute(id: string, params: Record<string, any>) {
+        const startTime = Date.now();
+        
+        try {
+            const result = await this.execute(id, params);
+            const duration = Date.now() - startTime;
+            
+            return {
+                success: true,
+                data: result,
+                duration,
+                rowCount: Array.isArray(result) ? result.length : 1,
+            };
+        } catch (error: any) {
+            const duration = Date.now() - startTime;
+            return {
+                success: false,
+                error: error.message,
+                duration,
+            };
+        }
+    }
+
+    async duplicate(id: string) {
+        const template = await this.findOne(id);
+        if (!template) throw new Error('Template not found');
+
+        const newTemplate = this.templateRepository.create({
+            name: `${template.name} (Copy)`,
+            description: template.description,
+            sql: template.sql,
+            parameters: template.parameters,
+            connectionId: template.connectionId,
+            config: template.config,
+            visualization: template.visualization,
+            cacheTtl: template.cacheTtl,
+            rateLimit: template.rateLimit,
+            method: template.method,
+            apiKey: uuidv4(),
+            isActive: false,
+            version: 1,
+            usageCount: 0,
+        });
+
+        return this.templateRepository.save(newTemplate);
+    }
+
     private extractParameters(sql: string): string[] {
         const regex = /:(\w+)/g;
         const matches = new Set<string>();
@@ -221,3 +326,4 @@ export class SqlApiService implements OnModuleInit {
         return { sql, values };
     }
 }
+
