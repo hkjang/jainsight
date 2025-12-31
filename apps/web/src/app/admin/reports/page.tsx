@@ -41,6 +41,12 @@ export default function ReportsAdminPage() {
     const [showComparison, setShowComparison] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [previousPeriodStats, setPreviousPeriodStats] = useState({ totalQueries: 14200, blockedQueries: 198 });
+    
+    // Scheduled Reports CRUD
+    interface ScheduledReport { id: string; name: string; email: string; frequency: 'daily' | 'weekly' | 'monthly'; isActive: boolean; nextSendAt: string; }
+    const [scheduledReports, setScheduledReports] = useState<ScheduledReport[]>([]);
+    const [editingSchedule, setEditingSchedule] = useState<ScheduledReport | null>(null);
+    const [scheduleName, setScheduleName] = useState('운영 리포트');
 
     const fetchReportData = useCallback(async () => {
         setRefreshing(true);
@@ -122,7 +128,84 @@ export default function ReportsAdminPage() {
         showNotification(`${scheduleFrequency === 'daily' ? '일일' : scheduleFrequency === 'weekly' ? '주간' : '월간'} 리포트가 ${scheduleEmail}로 예약되었습니다.`, 'success');
         setShowScheduleModal(false);
         setScheduleEmail('');
+        setScheduleName('운영 리포트');
+        setEditingSchedule(null);
+        fetchScheduledReports();
     };
+
+    const fetchScheduledReports = async () => {
+        try {
+            const res = await fetch(`${API_URL}/reports/scheduled`);
+            if (res.ok) setScheduledReports(await res.json());
+        } catch (e) { console.error('Failed to fetch scheduled reports:', e); }
+    };
+
+    const handleCreateSchedule = async () => {
+        if (!scheduleEmail) { showNotification('이메일 주소를 입력해주세요.', 'error'); return; }
+        try {
+            const res = await fetch(`${API_URL}/reports/scheduled`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: scheduleName, email: scheduleEmail, frequency: scheduleFrequency })
+            });
+            if (res.ok) {
+                showNotification('리포트 예약이 생성되었습니다.', 'success');
+                setShowScheduleModal(false);
+                setScheduleEmail('');
+                fetchScheduledReports();
+            } else {
+                showNotification('예약 생성 실패', 'error');
+            }
+        } catch (e) { console.error(e); showNotification('예약 생성 실패', 'error'); }
+    };
+
+    const handleUpdateSchedule = async () => {
+        if (!editingSchedule || !scheduleEmail) return;
+        try {
+            const res = await fetch(`${API_URL}/reports/scheduled/${editingSchedule.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: scheduleName, email: scheduleEmail, frequency: scheduleFrequency })
+            });
+            if (res.ok) {
+                showNotification('예약이 수정되었습니다.', 'success');
+                setShowScheduleModal(false);
+                setEditingSchedule(null);
+                fetchScheduledReports();
+            }
+        } catch (e) { console.error(e); showNotification('수정 실패', 'error'); }
+    };
+
+    const handleDeleteSchedule = async (id: string) => {
+        if (!confirm('이 예약을 삭제하시겠습니까?')) return;
+        try {
+            const res = await fetch(`${API_URL}/reports/scheduled/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                showNotification('예약이 삭제되었습니다.', 'success');
+                fetchScheduledReports();
+            }
+        } catch (e) { console.error(e); showNotification('삭제 실패', 'error'); }
+    };
+
+    const handleToggleSchedule = async (id: string) => {
+        try {
+            const res = await fetch(`${API_URL}/reports/scheduled/${id}/toggle`, { method: 'POST' });
+            if (res.ok) {
+                showNotification('예약 상태가 변경되었습니다.', 'success');
+                fetchScheduledReports();
+            }
+        } catch (e) { console.error(e); }
+    };
+
+    const openEditSchedule = (schedule: ScheduledReport) => {
+        setEditingSchedule(schedule);
+        setScheduleName(schedule.name);
+        setScheduleEmail(schedule.email);
+        setScheduleFrequency(schedule.frequency);
+        setShowScheduleModal(true);
+    };
+
+    useEffect(() => { fetchScheduledReports(); }, []);
 
     const handlePrint = () => {
         window.print();
@@ -374,9 +457,15 @@ export default function ReportsAdminPage() {
 
             {/* Schedule Report Modal */}
             {showScheduleModal && (
-                <div style={darkStyles.modalOverlay} onClick={() => setShowScheduleModal(false)}>
+                <div style={darkStyles.modalOverlay} onClick={() => { setShowScheduleModal(false); setEditingSchedule(null); }}>
                     <div style={darkStyles.modal} onClick={e => e.stopPropagation()}>
-                        <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '20px', color: darkTheme.textPrimary, display: 'flex', alignItems: 'center', gap: '10px' }}>📅 리포트 예약</h2>
+                        <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '20px', color: darkTheme.textPrimary, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            📅 {editingSchedule ? '예약 수정' : '리포트 예약'}
+                        </h2>
+                        <div style={{ marginBottom: '16px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>예약 이름</label>
+                            <input type="text" style={{ ...darkStyles.input, width: '100%' }} value={scheduleName} onChange={e => setScheduleName(e.target.value)} placeholder="일일 운영 리포트" />
+                        </div>
                         <div style={{ marginBottom: '16px' }}>
                             <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>수신 이메일</label>
                             <input type="email" style={{ ...darkStyles.input, width: '100%' }} value={scheduleEmail} onChange={e => setScheduleEmail(e.target.value)} placeholder="admin@example.com" />
@@ -390,11 +479,47 @@ export default function ReportsAdminPage() {
                             </select>
                         </div>
                         <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                            <button style={darkStyles.buttonSecondary} onClick={() => setShowScheduleModal(false)}>취소</button>
-                            <button style={darkStyles.button} onClick={handleScheduleReport}>📧 예약 설정</button>
+                            <button style={darkStyles.buttonSecondary} onClick={() => { setShowScheduleModal(false); setEditingSchedule(null); }}>취소</button>
+                            <button style={darkStyles.button} onClick={editingSchedule ? handleUpdateSchedule : handleCreateSchedule}>
+                                {editingSchedule ? '💾 수정' : '📧 예약 설정'}
+                            </button>
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Scheduled Reports List */}
+            {scheduledReports.length > 0 && (
+                <AnimatedCard delay={0.3}>
+                    <div style={{ padding: '16px 20px', borderBottom: `1px solid ${darkTheme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: '600', color: darkTheme.textPrimary }}>📅 예약된 리포트</span>
+                        <button style={darkStyles.button} onClick={() => { setScheduleName('운영 리포트'); setScheduleEmail(''); setScheduleFrequency('weekly'); setEditingSchedule(null); setShowScheduleModal(true); }}>+ 새 예약</button>
+                    </div>
+                    <div style={{ maxHeight: '200px', overflow: 'auto' }}>
+                        {scheduledReports.map(schedule => (
+                            <div key={schedule.id} style={{ padding: '14px 20px', borderBottom: `1px solid ${darkTheme.borderLight}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                                onMouseEnter={e => e.currentTarget.style.background = darkTheme.bgCardHover}
+                                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                <div>
+                                    <div style={{ fontWeight: '500', color: darkTheme.textPrimary, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        {schedule.name}
+                                        <span style={{ padding: '2px 8px', background: schedule.isActive ? `${darkTheme.accentGreen}20` : darkTheme.bgSecondary, color: schedule.isActive ? darkTheme.accentGreen : darkTheme.textMuted, borderRadius: '4px', fontSize: '11px' }}>
+                                            {schedule.isActive ? '활성' : '비활성'}
+                                        </span>
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: darkTheme.textMuted, marginTop: '4px' }}>
+                                        {schedule.email} · {schedule.frequency === 'daily' ? '매일' : schedule.frequency === 'weekly' ? '매주' : '매월'}
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button style={darkStyles.buttonSecondary} onClick={() => handleToggleSchedule(schedule.id)}>{schedule.isActive ? '⏸️' : '▶️'}</button>
+                                    <button style={darkStyles.buttonSecondary} onClick={() => openEditSchedule(schedule)}>✏️</button>
+                                    <button style={{ ...darkStyles.buttonSecondary, color: darkTheme.accentRed }} onClick={() => handleDeleteSchedule(schedule.id)}>🗑️</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </AnimatedCard>
             )}
 
             {/* Notification Toast */}

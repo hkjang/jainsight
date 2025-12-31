@@ -36,6 +36,8 @@ import { GroupsModule } from './groups/groups.module';
 import { RbacModule } from './rbac/rbac.module';
 import { QueryPoliciesModule } from './query-policies/query-policies.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
+import { SettingsModule } from './settings/settings.module';
+import { ReportsModule } from './reports/reports.module';
 
 // Entities
 import { User } from './users/entities/user.entity';
@@ -104,6 +106,9 @@ import { TableTranslation } from './schema/entities/table-translation.entity';
     RbacModule,
     QueryPoliciesModule,
     ApiKeysModule,
+    // System Admin Modules
+    SettingsModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [
