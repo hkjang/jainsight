@@ -6,10 +6,10 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - PORT=3000
-      - JWT_SECRET=super_secret_docker_key_123
-      - DB_SYNC=true
-      - CORS_ORIGINS=https://jainsight.koreacb.com,http://localhost:4200
+      PORT: "3000"
+      JWT_SECRET: "super_secret_docker_key_123"
+      DB_SYNC: "true"
+      CORS_ORIGINS: "https://jainsight.koreacb.com,http://localhost:4200"
       # Add database credentials if using external DB
     networks:
       - jainsight-offline
@@ -21,8 +21,8 @@ services:
       - "4200:4200"
     environment:
       # This points to the internal docker service 'api' on port 3000
-      - API_URL=http://api:3000
-      - PORT=4200
+      API_URL: "http://api:3000"
+      PORT: "4200"
     networks:
       - jainsight-offline
     depends_on:

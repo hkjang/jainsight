@@ -16,7 +16,7 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: `${process.env.API_URL || 'http://localhost:3333'}/api/:path*`,
+        destination: `${process.env.API_URL || (process.env.NODE_ENV === 'production' ? 'http://api:3000' : 'http://localhost:3333')}/api/:path*`,
       },
     ];
   },
