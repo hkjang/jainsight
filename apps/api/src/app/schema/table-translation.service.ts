@@ -1,12 +1,11 @@
-import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import OpenAI from 'openai';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 import { TableTranslation } from './entities/table-translation.entity';
 import { AiProvider } from '../ai-admin/entities/ai-provider.entity';
 import { SchemaService } from './schema.service';
-import { translateTableName, translateColumnName, needsAiTranslation } from '../ai/column-translator';
+import { translateTableName, translateColumnName } from '../ai/column-translator';
 
 // ===== Type Definitions =====
 interface TranslationResult {
@@ -83,14 +82,23 @@ export class TableTranslationService implements OnModuleInit {
     };
     private translationTimes: number[] = [];
 
+    // 진행 상황 콜백 (옵션)
+    private progressCallback?: (progress: TranslationProgress) => void;
+
     constructor(
         @InjectRepository(TableTranslation)
         private translationRepo: Repository<TableTranslation>,
         @InjectRepository(AiProvider)
         private providerRepo: Repository<AiProvider>,
         private schemaService: SchemaService,
-        private eventEmitter?: EventEmitter2,
     ) {}
+
+    /**
+     * 진행 상황 콜백 설정
+     */
+    setProgressCallback(callback: (progress: TranslationProgress) => void) {
+        this.progressCallback = callback;
+    }
 
     async onModuleInit() {
         await this.initializeAiClient();
@@ -853,18 +861,30 @@ ${tableList}`;
     }
 
     /**
-     * 진행 상황 이벤트 발송
+     * 진행 상황 알림 (콜백 또는 로깅)
      */
     private emitProgress(connectionId: string, current: number, total: number, tableName: string, status: TranslationProgress['status']) {
-        if (this.eventEmitter) {
-            const progress: TranslationProgress = {
-                connectionId,
-                current,
-                total,
-                tableName,
-                status,
-            };
-            this.eventEmitter.emit('translation.progress', progress);
+        const progress: TranslationProgress = {
+            connectionId,
+            current,
+            total,
+            tableName,
+            status,
+        };
+        
+        // 콜백이 설정되어 있으면 호출
+        if (this.progressCallback) {
+            this.progressCallback(progress);
+        }
+        
+        // 상태별 로깅
+        if (status === 'completed') {
+            this.logger.log(`✅ Translation completed: ${total} tables`);
+        } else if (status === 'failed') {
+            this.logger.error(`❌ Translation failed at ${tableName}`);
+        } else if (current > 0 && current % 10 === 0) {
+            // 10개마다 진행 상황 로깅
+            this.logger.log(`📊 Progress: ${current}/${total} (${Math.round(current/total*100)}%)`);
         }
     }
 
