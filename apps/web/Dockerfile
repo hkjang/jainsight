@@ -9,6 +9,11 @@ RUN npm ci
 COPY . .
 
 ENV NODE_ENV=production
+ENV NODE_OPTIONS="--stack-size=4096"
+
+# Copy Monaco Editor assets for offline usage
+RUN mkdir -p apps/web/public/monaco-editor/min/vs
+RUN cp -r node_modules/monaco-editor/min/vs/* apps/web/public/monaco-editor/min/vs/
 
 # Build the application
 RUN npx nx run web:build
