@@ -177,6 +177,41 @@ export class UsersService {
         return user.status === 'locked';
     }
 
+    async resetPassword(userId: string): Promise<{ tempPassword: string }> {
+        const user = await this.findOneById(userId);
+        if (!user) throw new NotFoundException('User not found');
+
+        // Generate temporary password
+        const tempPassword = randomBytes(8).toString('hex');
+        
+        // In production, you would hash this password before storing
+        // For now, we'll store a hash indicator and return the temp password
+        const bcrypt = await import('bcrypt');
+        user.password = await bcrypt.hash(tempPassword, 10);
+        user.passwordChangedAt = new Date();
+        
+        // Force user to change password on next login (could add a flag for this)
+        await this.usersRepository.save(user);
+        
+        return { tempPassword };
+    }
+
+    async updateUser(userId: string, data: { name?: string; email?: string; role?: string }): Promise<User> {
+        const user = await this.findOneById(userId);
+        if (!user) throw new NotFoundException('User not found');
+
+        if (data.email && data.email !== user.email) {
+            const existing = await this.findOneByEmail(data.email);
+            if (existing) throw new BadRequestException('Email already in use');
+            user.email = data.email;
+        }
+
+        if (data.name) user.name = data.name;
+        if (data.role) user.role = data.role;
+
+        return this.usersRepository.save(user);
+    }
+
     async getStats(): Promise<{
         total: number;
         byStatus: Record<string, number>;

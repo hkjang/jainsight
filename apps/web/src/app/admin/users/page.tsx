@@ -42,6 +42,13 @@ export default function UsersAdminPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [activityData] = useState([12, 19, 15, 25, 22, 30, 28, 35, 32, 40, 38, 42]);
     const itemsPerPage = 10;
+    
+    // Edit user modal state
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editingUser, setEditingUser] = useState<User | null>(null);
+    const [editName, setEditName] = useState('');
+    const [editRole, setEditRole] = useState('');
+    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
     const fetchUsers = useCallback(async () => {
         try {
@@ -111,7 +118,51 @@ export default function UsersAdminPage() {
             const endpoint = action === 'resend-invite' ? 'resend-invite' : action;
             await fetch(`${API_URL}/users/${userId}/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: action === 'lock' ? JSON.stringify({ reason: '관리자 잠금' }) : undefined });
             fetchUsers();
-        } catch (error) { console.error(`${action} failed:`, error); }
+            showNotification('작업이 완료되었습니다.', 'success');
+        } catch (error) { console.error(`${action} failed:`, error); showNotification('작업 실패', 'error'); }
+    };
+
+    const handleResetPassword = async (userId: string) => {
+        if (!confirm('이 사용자의 비밀번호를 초기화하시겠습니까?')) return;
+        try {
+            const response = await fetch(`${API_URL}/users/${userId}/reset-password`, { method: 'POST' });
+            if (response.ok) {
+                const data = await response.json();
+                showNotification(`임시 비밀번호: ${data.tempPassword}`, 'success');
+            } else {
+                showNotification('비밀번호 초기화 실패', 'error');
+            }
+        } catch (error) { console.error('Reset password failed:', error); showNotification('비밀번호 초기화 실패', 'error'); }
+    };
+
+    const handleOpenEditModal = (user: User) => {
+        setEditingUser(user);
+        setEditName(user.name);
+        setEditRole(user.role);
+        setShowEditModal(true);
+    };
+
+    const handleEditUser = async () => {
+        if (!editingUser || !editName) return;
+        try {
+            const response = await fetch(`${API_URL}/users/${editingUser.id}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: editName, role: editRole })
+            });
+            if (response.ok) {
+                fetchUsers();
+                setShowEditModal(false);
+                setEditingUser(null);
+                showNotification('사용자 정보가 수정되었습니다.', 'success');
+            } else {
+                showNotification('수정 실패', 'error');
+            }
+        } catch (error) { console.error('Edit user failed:', error); showNotification('수정 실패', 'error'); }
+    };
+
+    const showNotification = (message: string, type: 'success' | 'error') => {
+        setNotification({ message, type });
+        setTimeout(() => setNotification(null), 5000);
     };
 
     const formatDate = (dateStr?: string) => dateStr ? new Date(dateStr).toLocaleString('ko-KR') : '-';
@@ -254,6 +305,8 @@ export default function UsersAdminPage() {
                                 <td style={{ ...darkStyles.td, color: darkTheme.textSecondary, fontSize: '13px' }}>{formatDate(user.lastLoginAt)}</td>
                                 <td style={darkStyles.td}>
                                     <div style={{ display: 'flex', gap: '8px' }}>
+                                        <Tooltip content="수정"><button style={{ ...darkStyles.buttonSecondary, padding: '4px 10px', fontSize: '12px' }} onClick={() => handleOpenEditModal(user)}>✏️</button></Tooltip>
+                                        <Tooltip content="비밀번호 초기화"><button style={{ ...darkStyles.buttonSecondary, padding: '4px 10px', fontSize: '12px' }} onClick={() => handleResetPassword(user.id)}>🔑</button></Tooltip>
                                         {user.status === 'locked' && <Tooltip content="잠금 해제"><button style={{ ...darkStyles.button, padding: '4px 10px', fontSize: '12px', background: darkTheme.accentGreen }} onClick={() => handleUserAction(user.id, 'unlock')}>🔓</button></Tooltip>}
                                         {user.status === 'invited' && <Tooltip content="초대 재전송"><button style={{ ...darkStyles.button, padding: '4px 10px', fontSize: '12px' }} onClick={() => handleUserAction(user.id, 'resend-invite')}>📧</button></Tooltip>}
                                         <Tooltip content="강제 로그아웃"><button style={{ ...darkStyles.buttonSecondary, padding: '4px 10px', fontSize: '12px' }} onClick={() => handleUserAction(user.id, 'force-logout')}>⏏️</button></Tooltip>
@@ -300,6 +353,48 @@ export default function UsersAdminPage() {
                 </div>
             )}
             <style>{`@keyframes modalSlide { from { opacity: 0; transform: scale(0.95) translateY(-10px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
+
+            {/* Edit User Modal */}
+            {showEditModal && editingUser && (
+                <div style={darkStyles.modalOverlay} onClick={() => setShowEditModal(false)}>
+                    <div style={{ ...darkStyles.modal, animation: 'modalSlide 0.3s ease-out' }} onClick={(e) => e.stopPropagation()}>
+                        <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '20px', color: darkTheme.textPrimary, display: 'flex', alignItems: 'center', gap: '10px' }}>✏️ 사용자 수정</h2>
+                        <div style={{ marginBottom: '16px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>이름</label>
+                            <input type="text" style={{ ...darkStyles.input, width: '100%' }} value={editName} onChange={(e) => setEditName(e.target.value)} />
+                        </div>
+                        <div style={{ marginBottom: '16px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>이메일 (읽기 전용)</label>
+                            <input type="email" style={{ ...darkStyles.input, width: '100%', opacity: 0.6 }} value={editingUser.email} disabled />
+                        </div>
+                        <div style={{ marginBottom: '24px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>역할</label>
+                            <select style={{ ...darkStyles.input, width: '100%' }} value={editRole} onChange={(e) => setEditRole(e.target.value)}>
+                                <option value="user">User</option>
+                                <option value="analyst">Analyst</option>
+                                <option value="developer">Developer</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                            <button style={darkStyles.buttonSecondary} onClick={() => setShowEditModal(false)}>취소</button>
+                            <button style={darkStyles.button} onClick={handleEditUser}>💾 저장</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Notification Toast */}
+            {notification && (
+                <div style={{
+                    position: 'fixed', bottom: '24px', right: '24px', padding: '16px 24px',
+                    background: notification.type === 'success' ? darkTheme.accentGreen : darkTheme.accentRed,
+                    color: 'white', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                    animation: 'modalSlide 0.3s ease-out', zIndex: 1000, fontSize: '14px', fontWeight: '500'
+                }}>
+                    {notification.type === 'success' ? '✅' : '❌'} {notification.message}
+                </div>
+            )}
         </div>
     );
 }

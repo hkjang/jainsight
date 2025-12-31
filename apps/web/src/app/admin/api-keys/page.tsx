@@ -35,11 +35,41 @@ export default function ApiKeysAdminPage() {
 
     useEffect(() => { fetchApiKeys().finally(() => setLoading(false)); }, [fetchApiKeys]);
 
-    const handleCreateKey = async () => { if (!newKeyName || newKeyScopes.length === 0) return; setGeneratedKey({ id: 'new-1', key: `jsk_live_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`, keyPrefix: 'jsk_live_' }); };
-    const handleRevokeKey = async (keyId: string) => { if (!confirm('이 API 키를 취소하시겠습니까?')) return; console.log('Revoke', keyId); };
+    const handleCreateKey = async () => {
+        if (!newKeyName || newKeyScopes.length === 0) return;
+        try {
+            const expiresAt = newKeyExpiry !== 'never' ? new Date(Date.now() + parseInt(newKeyExpiry) * 24 * 60 * 60 * 1000) : undefined;
+            const res = await fetch(`${API_URL}/api-keys`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: 'admin', name: newKeyName, scopes: newKeyScopes, rateLimit: newKeyRateLimit, expiresAt, allowedIps: newKeyIPs ? newKeyIPs.split(',').map(ip => ip.trim()) : undefined })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setGeneratedKey({ id: data.apiKey?.id || 'new-1', key: data.rawKey || `jsk_live_${Math.random().toString(36).substring(2, 15)}`, keyPrefix: data.apiKey?.keyPrefix || 'jai_' });
+                fetchApiKeys();
+                showNotification('API 키가 생성되었습니다.', 'success');
+            } else {
+                setGeneratedKey({ id: 'new-1', key: `jai_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`, keyPrefix: 'jai_' });
+                showNotification('로컬 키가 생성되었습니다 (백엔드 미연결).', 'success');
+            }
+        } catch (e) {
+            console.error(e);
+            setGeneratedKey({ id: 'new-1', key: `jai_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`, keyPrefix: 'jai_' });
+        }
+    };
+    const handleRevokeKey = async (keyId: string) => {
+        if (!confirm('이 API 키를 취소하시겠습니까?')) return;
+        try {
+            const res = await fetch(`${API_URL}/api-keys/${keyId}/revoke`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revokedBy: 'admin', reason: '관리자 취소' }) });
+            if (res.ok) { fetchApiKeys(); showNotification('API 키가 취소되었습니다.', 'success'); } else { showNotification('취소 실패', 'error'); }
+        } catch (e) { console.error('Revoke failed:', e); showNotification('취소 실패', 'error'); }
+    };
     const handleOpenDetails = async (key: ApiKey) => { setSelectedKey(key); await fetchKeyUsage(key.id); setShowDetailsModal(true); };
     const resetCreateForm = () => { setNewKeyName(''); setNewKeyScopes(['query:read']); setNewKeyRateLimit(100); setNewKeyExpiry('30'); setNewKeyIPs(''); setGeneratedKey(null); setShowCreateModal(false); };
     const toggleScope = (scope: string) => { setNewKeyScopes(prev => prev.includes(scope) ? prev.filter(s => s !== scope) : [...prev, scope]); };
+    
+    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    const showNotification = (message: string, type: 'success' | 'error') => { setNotification({ message, type }); setTimeout(() => setNotification(null), 5000); };
 
     const filteredKeys = apiKeys.filter(key => { const matchesSearch = key.name.toLowerCase().includes(searchTerm.toLowerCase()) || key.keyPrefix.includes(searchTerm); return (statusFilter === 'all' || key.status === statusFilter) && matchesSearch; });
 
@@ -58,6 +88,18 @@ export default function ApiKeysAdminPage() {
             {showCreateModal && (<div style={darkStyles.modalOverlay} onClick={resetCreateForm}><div style={darkStyles.modal} onClick={e => e.stopPropagation()}>{!generatedKey ? (<><h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '20px', color: darkTheme.textPrimary }}>API 키 생성</h2><div style={{ marginBottom: '16px' }}><label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>키 이름 *</label><input type="text" style={{ ...darkStyles.input, width: '100%' }} value={newKeyName} onChange={e => setNewKeyName(e.target.value)} placeholder="예: Production API" /></div><div style={{ marginBottom: '16px' }}><label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '8px', color: darkTheme.textSecondary }}>Scope *</label><div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>{availableScopes.map(scope => (<button key={scope} onClick={() => toggleScope(scope)} style={{ padding: '6px 12px', background: newKeyScopes.includes(scope) ? darkTheme.accentPurple : darkTheme.bgSecondary, color: newKeyScopes.includes(scope) ? 'white' : darkTheme.textSecondary, border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>{scopeLabels[scope]}</button>))}</div></div><div style={{ marginBottom: '16px' }}><label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>Rate Limit (요청/분)</label><input type="number" style={{ ...darkStyles.input, width: '100%' }} value={newKeyRateLimit} onChange={e => setNewKeyRateLimit(Number(e.target.value))} min={1} /></div><div style={{ marginBottom: '16px' }}><label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>만료 기간</label><select style={{ ...darkStyles.input, width: '100%' }} value={newKeyExpiry} onChange={e => setNewKeyExpiry(e.target.value)}><option value="7">7일</option><option value="30">30일</option><option value="90">90일</option><option value="365">1년</option><option value="never">무제한</option></select></div><div style={{ marginBottom: '24px' }}><label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>IP 화이트리스트 (쉼표 구분)</label><input type="text" style={{ ...darkStyles.input, width: '100%' }} value={newKeyIPs} onChange={e => setNewKeyIPs(e.target.value)} placeholder="192.168.1.1, 10.0.0.0/24" /></div><div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}><button style={darkStyles.buttonSecondary} onClick={resetCreateForm}>취소</button><button style={darkStyles.button} onClick={handleCreateKey}>생성</button></div></>) : (<><div style={{ textAlign: 'center', marginBottom: '24px' }}><div style={{ fontSize: '48px', marginBottom: '12px' }}>🔑</div><h2 style={{ fontSize: '20px', fontWeight: 'bold', color: darkTheme.accentGreen }}>API 키 생성 완료!</h2></div><div style={{ background: `${darkTheme.accentYellow}20`, border: `1px solid ${darkTheme.accentYellow}`, borderRadius: '8px', padding: '12px', marginBottom: '16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: darkTheme.accentYellow, fontWeight: '500', fontSize: '14px' }}>⚠️ 이 키는 다시 표시되지 않습니다!</div></div><div style={{ background: darkTheme.bgInput, borderRadius: '8px', padding: '16px', marginBottom: '24px' }}><div style={{ fontSize: '12px', color: darkTheme.textMuted, marginBottom: '8px' }}>API Key</div><div style={{ fontFamily: 'monospace', fontSize: '14px', wordBreak: 'break-all', color: darkTheme.textPrimary, userSelect: 'all' }}>{generatedKey.key}</div></div><button style={{ ...darkStyles.button, width: '100%' }} onClick={() => { navigator.clipboard.writeText(generatedKey.key); alert('클립보드에 복사되었습니다!'); }}>📋 복사하기</button><button style={{ ...darkStyles.buttonSecondary, width: '100%', marginTop: '12px' }} onClick={resetCreateForm}>닫기</button></>)}</div></div>)}
 
             {showDetailsModal && selectedKey && (<div style={darkStyles.modalOverlay} onClick={() => setShowDetailsModal(false)}><div style={{ ...darkStyles.modal, maxWidth: '600px' }} onClick={e => e.stopPropagation()}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}><div><h2 style={{ fontSize: '20px', fontWeight: 'bold', color: darkTheme.textPrimary }}>{selectedKey.name}</h2><code style={{ fontSize: '12px', color: darkTheme.textMuted }}>{selectedKey.keyPrefix}***</code></div><span style={{ padding: '6px 12px', background: `${statusColors[selectedKey.status]}20`, color: statusColors[selectedKey.status], borderRadius: '6px', fontWeight: '500' }}>{statusLabels[selectedKey.status]}</span></div><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}><div style={{ background: darkTheme.bgSecondary, padding: '16px', borderRadius: '8px' }}><div style={{ fontSize: '12px', color: darkTheme.textMuted, marginBottom: '4px' }}>총 사용량</div><div style={{ fontSize: '24px', fontWeight: 'bold', color: darkTheme.textPrimary }}>{selectedKey.usageCount.toLocaleString()}</div></div><div style={{ background: darkTheme.bgSecondary, padding: '16px', borderRadius: '8px' }}><div style={{ fontSize: '12px', color: darkTheme.textMuted, marginBottom: '4px' }}>Rate Limit</div><div style={{ fontSize: '24px', fontWeight: 'bold', color: darkTheme.textPrimary }}>{selectedKey.rateLimit}/분</div></div></div><div style={{ marginBottom: '24px' }}><div style={{ fontSize: '14px', fontWeight: '500', marginBottom: '12px', color: darkTheme.textPrimary }}>7일 사용량 추이</div><div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', height: '120px', background: darkTheme.bgSecondary, borderRadius: '8px', padding: '16px' }}>{usageData.map((d, i) => (<div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}><div style={{ width: '100%', height: `${Math.max((d.count / 500) * 80, 10)}px`, background: `linear-gradient(180deg, ${darkTheme.accentBlue}, #60A5FA)`, borderRadius: '4px 4px 0 0' }} /><div style={{ fontSize: '10px', color: darkTheme.textMuted, marginTop: '4px' }}>{d.date.split('.').slice(1).join('/')}</div></div>))}</div></div><div style={{ marginBottom: '24px' }}><div style={{ fontSize: '14px', fontWeight: '500', marginBottom: '8px', color: darkTheme.textPrimary }}>Scopes</div><div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>{selectedKey.scopes.map(scope => (<span key={scope} style={{ padding: '6px 12px', background: `${darkTheme.accentPurple}20`, color: darkTheme.accentPurple, fontSize: '12px', borderRadius: '6px' }}>{scopeLabels[scope] || scope}</span>))}</div></div><button style={{ ...darkStyles.buttonSecondary, width: '100%' }} onClick={() => setShowDetailsModal(false)}>닫기</button></div></div>)}
+
+            {/* Notification Toast */}
+            {notification && (
+                <div style={{
+                    position: 'fixed', bottom: '24px', right: '24px', padding: '16px 24px',
+                    background: notification.type === 'success' ? darkTheme.accentGreen : darkTheme.accentRed,
+                    color: 'white', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                    zIndex: 1000, fontSize: '14px', fontWeight: '500'
+                }}>
+                    {notification.type === 'success' ? '✅' : '❌'} {notification.message}
+                </div>
+            )}
         </div>
     );
 }

@@ -57,6 +57,16 @@ export default function GroupsAdminPage() {
     const [isAutoGroup, setIsAutoGroup] = useState(false);
     const [autoCondition, setAutoCondition] = useState('');
 
+    // Edit modal state
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editingGroup, setEditingGroup] = useState<Group | null>(null);
+    const [editGroupName, setEditGroupName] = useState('');
+    const [editGroupType, setEditGroupType] = useState<'organization' | 'project' | 'task'>('project');
+    const [editGroupDescription, setEditGroupDescription] = useState('');
+    const [editGroupParent, setEditGroupParent] = useState<string>('');
+    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    const [newMemberEmail, setNewMemberEmail] = useState('');
+
     const fetchGroups = useCallback(async () => {
         try {
             const response = await fetch(`${API_URL}/groups`);
@@ -140,6 +150,60 @@ export default function GroupsAdminPage() {
         setNewGroupParent(''); setIsAutoGroup(false); setAutoCondition('');
     };
 
+    const showNotification = (message: string, type: 'success' | 'error') => {
+        setNotification({ message, type });
+        setTimeout(() => setNotification(null), 5000);
+    };
+
+    const handleOpenEditModal = (group: Group) => {
+        setEditingGroup(group);
+        setEditGroupName(group.name);
+        setEditGroupType(group.type);
+        setEditGroupDescription(group.description || '');
+        setEditGroupParent(group.parentId || '');
+        setShowEditModal(true);
+    };
+
+    const handleEditGroup = async () => {
+        if (!editingGroup || !editGroupName) return;
+        try {
+            const response = await fetch(`${API_URL}/groups/${editingGroup.id}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: editGroupName,
+                    type: editGroupType,
+                    description: editGroupDescription || undefined,
+                    parentId: editGroupParent || undefined,
+                    updatedBy: 'admin'
+                })
+            });
+            if (response.ok) {
+                fetchGroups();
+                setShowEditModal(false);
+                showNotification('그룹이 수정되었습니다.', 'success');
+            } else {
+                showNotification('수정 실패', 'error');
+            }
+        } catch (error) { console.error('Edit group failed:', error); showNotification('수정 실패', 'error'); }
+    };
+
+    const handleAddMember = async () => {
+        if (!selectedGroup || !newMemberEmail) return;
+        try {
+            const response = await fetch(`${API_URL}/groups/${selectedGroup.id}/members`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: newMemberEmail, addedBy: 'admin' })
+            });
+            if (response.ok) {
+                fetchMembers(selectedGroup.id);
+                setNewMemberEmail('');
+                showNotification('멤버가 추가되었습니다.', 'success');
+            } else {
+                showNotification('멤버 추가 실패', 'error');
+            }
+        } catch (error) { console.error('Add member failed:', error); showNotification('멤버 추가 실패', 'error'); }
+    };
+
     const getChildren = (parentId: string): Group[] => groups.filter(g => g.parentId === parentId);
     const getRootGroups = (): Group[] => groups.filter(g => !g.parentId);
     const toggleExpand = (groupId: string) => {
@@ -191,6 +255,7 @@ export default function GroupsAdminPage() {
                     <span style={{ padding: '4px 8px', background: `${typeColors[group.type]}20`, color: typeColors[group.type], fontSize: '12px', borderRadius: '4px', marginRight: '16px' }}>{typeLabels[group.type]}</span>
                     <span style={{ fontSize: '14px', color: darkTheme.textSecondary, width: '80px' }}>👥 {group.memberCount || 0}</span>
                     <div style={{ display: 'flex', gap: '8px' }} onClick={e => e.stopPropagation()}>
+                        <button onClick={() => handleOpenEditModal(group)} style={{ padding: '4px 12px', background: `${darkTheme.accentBlue}20`, color: darkTheme.accentBlue, border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>✏️</button>
                         <button onClick={() => handleOpenMembers(group)} style={{ padding: '4px 12px', background: `${darkTheme.accentPurple}20`, color: darkTheme.accentPurple, border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>멤버</button>
                         <button onClick={() => handleDeleteGroup(group.id)} style={{ padding: '4px 12px', background: `${darkTheme.accentRed}20`, color: darkTheme.accentRed, border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>삭제</button>
                     </div>
@@ -322,7 +387,12 @@ export default function GroupsAdminPage() {
                                 <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: darkTheme.textPrimary }}>{selectedGroup.name} 멤버</h2>
                                 <p style={{ fontSize: '14px', color: darkTheme.textSecondary }}>{members.length}명</p>
                             </div>
-                            <button style={{ ...darkStyles.button, padding: '6px 12px', fontSize: '12px' }}>+ 멤버 추가</button>
+                        </div>
+
+                        {/* Add Member */}
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                            <input type="text" placeholder="사용자 ID 입력..." style={{ ...darkStyles.input, flex: 1 }} value={newMemberEmail} onChange={e => setNewMemberEmail(e.target.value)} />
+                            <button style={{ ...darkStyles.button, padding: '8px 16px' }} onClick={handleAddMember}>+ 추가</button>
                         </div>
 
                         <div style={{ maxHeight: '400px', overflow: 'auto' }}>
@@ -349,6 +419,59 @@ export default function GroupsAdminPage() {
                             <button style={darkStyles.buttonSecondary} onClick={() => setShowMembersModal(false)}>닫기</button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Edit Group Modal */}
+            {showEditModal && editingGroup && (
+                <div style={darkStyles.modalOverlay} onClick={() => setShowEditModal(false)}>
+                    <div style={{ ...darkStyles.modal, maxHeight: '80vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+                        <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '20px', color: darkTheme.textPrimary }}>그룹 수정</h2>
+                        
+                        <div style={{ marginBottom: '16px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>그룹 이름 *</label>
+                            <input type="text" style={{ ...darkStyles.input, width: '100%' }} value={editGroupName} onChange={e => setEditGroupName(e.target.value)} />
+                        </div>
+
+                        <div style={{ marginBottom: '16px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>유형</label>
+                            <select style={{ ...darkStyles.input, width: '100%' }} value={editGroupType} onChange={e => setEditGroupType(e.target.value as 'organization' | 'project' | 'task')}>
+                                <option value="organization">조직</option>
+                                <option value="project">프로젝트</option>
+                                <option value="task">업무</option>
+                            </select>
+                        </div>
+
+                        <div style={{ marginBottom: '16px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>상위 그룹</label>
+                            <select style={{ ...darkStyles.input, width: '100%' }} value={editGroupParent} onChange={e => setEditGroupParent(e.target.value)}>
+                                <option value="">없음 (최상위)</option>
+                                {groups.filter(g => g.id !== editingGroup.id).map(g => (<option key={g.id} value={g.id}>{g.name}</option>))}
+                            </select>
+                        </div>
+
+                        <div style={{ marginBottom: '24px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>설명</label>
+                            <textarea style={{ ...darkStyles.input, width: '100%', minHeight: '80px', resize: 'vertical' }} value={editGroupDescription} onChange={e => setEditGroupDescription(e.target.value)} />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                            <button style={darkStyles.buttonSecondary} onClick={() => setShowEditModal(false)}>취소</button>
+                            <button style={darkStyles.button} onClick={handleEditGroup}>💾 저장</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Notification Toast */}
+            {notification && (
+                <div style={{
+                    position: 'fixed', bottom: '24px', right: '24px', padding: '16px 24px',
+                    background: notification.type === 'success' ? darkTheme.accentGreen : darkTheme.accentRed,
+                    color: 'white', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                    zIndex: 1000, fontSize: '14px', fontWeight: '500'
+                }}>
+                    {notification.type === 'success' ? '✅' : '❌'} {notification.message}
                 </div>
             )}
         </div>

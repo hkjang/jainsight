@@ -802,67 +802,106 @@ print(data)`;
                                     }}
                                 >
                                     {/* Card Header */}
-                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', marginBottom: '16px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', marginBottom: '12px' }}>
                                         <div style={{
                                             width: '44px',
                                             height: '44px',
                                             borderRadius: '12px',
-                                            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(139, 92, 246, 0.2))',
+                                            background: t.isActive !== false 
+                                                ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(139, 92, 246, 0.2))'
+                                                : 'rgba(75, 85, 99, 0.3)',
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'center',
                                             fontSize: '20px',
                                             flexShrink: 0,
+                                            opacity: t.isActive !== false ? 1 : 0.6,
                                         }}>
                                             🌐
                                         </div>
                                         <div style={{ flex: 1, minWidth: 0 }}>
-                                            <h3 style={{ 
-                                                fontSize: '16px', 
-                                                fontWeight: 600, 
-                                                color: '#e2e8f0', 
-                                                marginBottom: '4px',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                whiteSpace: 'nowrap',
-                                            }}>
-                                                {t.name}
-                                            </h3>
-                                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                                <h3 style={{ 
+                                                    fontSize: '16px', 
+                                                    fontWeight: 600, 
+                                                    color: t.isActive !== false ? '#e2e8f0' : '#9ca3af', 
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap',
+                                                    margin: 0,
+                                                }}>
+                                                    {t.name}
+                                                </h3>
+                                                {/* Active/Inactive Badge */}
                                                 <span style={{
-                                                    padding: '3px 8px',
+                                                    padding: '2px 6px',
+                                                    background: t.isActive !== false ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                                                    borderRadius: '4px',
+                                                    fontSize: '10px',
+                                                    color: t.isActive !== false ? '#10b981' : '#f87171',
+                                                    fontWeight: 600,
+                                                }}>
+                                                    {t.isActive !== false ? 'ON' : 'OFF'}
+                                                </span>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                                <span style={{
+                                                    padding: '2px 6px',
                                                     background: 'rgba(16, 185, 129, 0.15)',
-                                                    borderRadius: '6px',
-                                                    fontSize: '11px',
+                                                    borderRadius: '4px',
+                                                    fontSize: '10px',
                                                     color: '#10b981',
                                                     fontWeight: 500,
                                                 }}>
-                                                    GET/POST
+                                                    POST
                                                 </span>
                                                 <span style={{
-                                                    padding: '3px 8px',
+                                                    padding: '2px 6px',
                                                     background: 'rgba(139, 92, 246, 0.15)',
-                                                    borderRadius: '6px',
-                                                    fontSize: '11px',
+                                                    borderRadius: '4px',
+                                                    fontSize: '10px',
                                                     color: '#a78bfa',
                                                     fontWeight: 500,
                                                 }}>
                                                     {t.parameters?.length || 0} params
                                                 </span>
+                                                {/* Usage Count */}
+                                                <span style={{
+                                                    padding: '2px 6px',
+                                                    background: 'rgba(251, 191, 36, 0.15)',
+                                                    borderRadius: '4px',
+                                                    fontSize: '10px',
+                                                    color: '#fbbf24',
+                                                    fontWeight: 500,
+                                                }}>
+                                                    📊 {t.usageCount || 0} calls
+                                                </span>
                                             </div>
                                         </div>
                                     </div>
 
+                                    {/* Description */}
+                                    {t.description && (
+                                        <div style={{ 
+                                            fontSize: '12px', 
+                                            color: '#94a3b8', 
+                                            marginBottom: '12px',
+                                            lineHeight: 1.4,
+                                        }}>
+                                            {t.description}
+                                        </div>
+                                    )}
+
                                     {/* SQL Preview */}
                                     <div style={{
-                                        padding: '12px 14px',
+                                        padding: '10px 12px',
                                         background: 'rgba(15, 23, 42, 0.6)',
-                                        borderRadius: '10px',
-                                        marginBottom: '16px',
+                                        borderRadius: '8px',
+                                        marginBottom: '12px',
                                         overflow: 'hidden',
                                     }}>
                                         <code style={{ 
-                                            fontSize: '12px', 
+                                            fontSize: '11px', 
                                             color: '#94a3b8',
                                             display: 'block',
                                             overflow: 'hidden',
@@ -873,18 +912,32 @@ print(data)`;
                                         </code>
                                     </div>
 
+                                    {/* Last Used */}
+                                    <div style={{ 
+                                        fontSize: '11px', 
+                                        color: '#6b7280', 
+                                        marginBottom: '12px',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                    }}>
+                                        <span>🕐 {formatRelativeTime(t.lastUsedAt)}</span>
+                                        {t.cacheTtl && t.cacheTtl > 0 && (
+                                            <span>⚡ 캐시 {t.cacheTtl}초</span>
+                                        )}
+                                    </div>
+
                                     {/* API Key */}
-                                    <div style={{ marginBottom: '16px' }}>
-                                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 500 }}>
+                                    <div style={{ marginBottom: '12px' }}>
+                                        <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', fontWeight: 500 }}>
                                             API KEY
                                         </div>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
                                             <div style={{
                                                 flex: 1,
-                                                padding: '8px 12px',
+                                                padding: '6px 10px',
                                                 background: 'rgba(15, 23, 42, 0.6)',
-                                                borderRadius: '8px',
-                                                fontSize: '12px',
+                                                borderRadius: '6px',
+                                                fontSize: '11px',
                                                 fontFamily: 'monospace',
                                                 color: '#94a3b8',
                                                 overflow: 'hidden',
@@ -896,13 +949,13 @@ print(data)`;
                                             <button
                                                 onClick={() => setShowApiKey(showApiKey === t.id ? null : t.id)}
                                                 style={{
-                                                    padding: '8px 12px',
+                                                    padding: '6px 10px',
                                                     background: 'rgba(99, 102, 241, 0.1)',
                                                     border: 'none',
-                                                    borderRadius: '8px',
+                                                    borderRadius: '6px',
                                                     color: '#a5b4fc',
                                                     cursor: 'pointer',
-                                                    fontSize: '12px',
+                                                    fontSize: '11px',
                                                 }}
                                                 title={showApiKey === t.id ? '숨기기' : '보기'}
                                             >
@@ -911,27 +964,74 @@ print(data)`;
                                             <button
                                                 onClick={() => handleCopyKey(t.apiKey, t.id)}
                                                 style={{
-                                                    padding: '8px 12px',
+                                                    padding: '6px 10px',
                                                     background: copiedKey === t.id ? 'rgba(16, 185, 129, 0.15)' : 'rgba(99, 102, 241, 0.1)',
                                                     border: 'none',
-                                                    borderRadius: '8px',
+                                                    borderRadius: '6px',
                                                     color: copiedKey === t.id ? '#10b981' : '#a5b4fc',
                                                     cursor: 'pointer',
-                                                    fontSize: '12px',
+                                                    fontSize: '11px',
                                                 }}
                                             >
                                                 {copiedKey === t.id ? '✓' : '📋'}
                                             </button>
+                                            <button
+                                                onClick={() => handleRegenerateKey(t.id)}
+                                                style={{
+                                                    padding: '6px 10px',
+                                                    background: 'rgba(251, 191, 36, 0.1)',
+                                                    border: 'none',
+                                                    borderRadius: '6px',
+                                                    color: '#fbbf24',
+                                                    cursor: 'pointer',
+                                                    fontSize: '11px',
+                                                }}
+                                                title="키 재생성"
+                                            >
+                                                🔄
+                                            </button>
                                         </div>
                                     </div>
 
-                                    {/* Actions */}
-                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                    {/* Primary Actions */}
+                                    <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+                                        <button
+                                            onClick={() => openTestModal(t)}
+                                            style={{
+                                                flex: 1,
+                                                padding: '8px',
+                                                background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.2), rgba(16, 185, 129, 0.1))',
+                                                border: '1px solid rgba(16, 185, 129, 0.3)',
+                                                borderRadius: '8px',
+                                                color: '#10b981',
+                                                cursor: 'pointer',
+                                                fontSize: '12px',
+                                                fontWeight: 500,
+                                            }}
+                                        >
+                                            🧪 테스트
+                                        </button>
+                                        <button
+                                            onClick={() => openSnippetModal(t)}
+                                            style={{
+                                                flex: 1,
+                                                padding: '8px',
+                                                background: 'rgba(139, 92, 246, 0.1)',
+                                                border: '1px solid rgba(139, 92, 246, 0.2)',
+                                                borderRadius: '8px',
+                                                color: '#a78bfa',
+                                                cursor: 'pointer',
+                                                fontSize: '12px',
+                                                fontWeight: 500,
+                                            }}
+                                        >
+                                            💻 코드
+                                        </button>
                                         <button
                                             onClick={() => handleCopyEndpoint(t.id)}
                                             style={{
                                                 flex: 1,
-                                                padding: '10px',
+                                                padding: '8px',
                                                 background: copiedKey === `endpoint-${t.id}` ? 'rgba(16, 185, 129, 0.15)' : 'rgba(99, 102, 241, 0.1)',
                                                 border: `1px solid ${copiedKey === `endpoint-${t.id}` ? 'rgba(16, 185, 129, 0.3)' : 'rgba(99, 102, 241, 0.2)'}`,
                                                 borderRadius: '8px',
@@ -939,53 +1039,87 @@ print(data)`;
                                                 cursor: 'pointer',
                                                 fontSize: '12px',
                                                 fontWeight: 500,
-                                                transition: 'all 0.2s',
                                             }}
                                         >
-                                            {copiedKey === `endpoint-${t.id}` ? '✓ 복사됨' : '🔗 엔드포인트 복사'}
+                                            {copiedKey === `endpoint-${t.id}` ? '✓' : '🔗 URL'}
+                                        </button>
+                                    </div>
+
+                                    {/* Secondary Actions */}
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                        <button
+                                            onClick={() => handleToggleActive(t.id)}
+                                            style={{
+                                                padding: '6px 10px',
+                                                background: t.isActive !== false ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                                                border: `1px solid ${t.isActive !== false ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)'}`,
+                                                borderRadius: '6px',
+                                                color: t.isActive !== false ? '#f87171' : '#10b981',
+                                                cursor: 'pointer',
+                                                fontSize: '11px',
+                                            }}
+                                            title={t.isActive !== false ? '비활성화' : '활성화'}
+                                        >
+                                            {t.isActive !== false ? '⏸️' : '▶️'}
+                                        </button>
+                                        <button
+                                            onClick={() => handleDuplicate(t.id)}
+                                            style={{
+                                                padding: '6px 10px',
+                                                background: 'rgba(99, 102, 241, 0.1)',
+                                                border: '1px solid rgba(99, 102, 241, 0.2)',
+                                                borderRadius: '6px',
+                                                color: '#a5b4fc',
+                                                cursor: 'pointer',
+                                                fontSize: '11px',
+                                            }}
+                                            title="복제"
+                                        >
+                                            📄
                                         </button>
                                         <button
                                             onClick={() => window.open(`/api/sql-api/${t.id}/openapi`, '_blank')}
                                             style={{
-                                                padding: '10px 16px',
+                                                padding: '6px 10px',
                                                 background: 'rgba(251, 191, 36, 0.1)',
                                                 border: '1px solid rgba(251, 191, 36, 0.2)',
-                                                borderRadius: '8px',
+                                                borderRadius: '6px',
                                                 color: '#fbbf24',
                                                 cursor: 'pointer',
-                                                fontSize: '12px',
-                                                fontWeight: 500,
+                                                fontSize: '11px',
                                             }}
+                                            title="API 문서"
                                         >
-                                            📄 Docs
+                                            📖
                                         </button>
+                                        <div style={{ flex: 1 }} />
                                         <button
                                             onClick={() => handleEditApi(t)}
-                                            title="수정"
                                             style={{
-                                                padding: '10px 16px',
+                                                padding: '6px 10px',
                                                 background: 'rgba(59, 130, 246, 0.1)',
                                                 border: '1px solid rgba(59, 130, 246, 0.2)',
-                                                borderRadius: '8px',
+                                                borderRadius: '6px',
                                                 color: '#60a5fa',
                                                 cursor: 'pointer',
-                                                fontSize: '12px',
-                                                fontWeight: 500,
+                                                fontSize: '11px',
                                             }}
+                                            title="수정"
                                         >
                                             ✏️
                                         </button>
                                         <button
                                             onClick={() => handleDelete(t.id)}
                                             style={{
-                                                padding: '10px 16px',
+                                                padding: '6px 10px',
                                                 background: 'rgba(239, 68, 68, 0.1)',
                                                 border: '1px solid rgba(239, 68, 68, 0.2)',
-                                                borderRadius: '8px',
+                                                borderRadius: '6px',
                                                 color: '#f87171',
                                                 cursor: 'pointer',
-                                                fontSize: '12px',
+                                                fontSize: '11px',
                                             }}
+                                            title="삭제"
                                         >
                                             🗑️
                                         </button>

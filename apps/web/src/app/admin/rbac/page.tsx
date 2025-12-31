@@ -61,6 +61,14 @@ export default function RbacAdminPage() {
     const [simAction, setSimAction] = useState('read');
     const [simResult, setSimResult] = useState<SimulationResult | null>(null);
 
+    // Edit modal state
+    const [showEditRoleModal, setShowEditRoleModal] = useState(false);
+    const [editingRole, setEditingRole] = useState<Role | null>(null);
+    const [editRoleName, setEditRoleName] = useState('');
+    const [editRoleDescription, setEditRoleDescription] = useState('');
+    const [editRolePriority, setEditRolePriority] = useState(50);
+    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
     const fetchRoles = useCallback(async () => {
         try {
             const response = await fetch(`${API_URL}/rbac/roles`);
@@ -97,8 +105,52 @@ export default function RbacAdminPage() {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: newRoleName, description: newRoleDescription || undefined, type: 'custom', parentRoleId: newRoleParent || undefined, priority: newRolePriority })
             });
-            if (response.ok) { fetchRoles(); setShowCreateModal(false); setNewRoleName(''); setNewRoleDescription(''); setNewRoleParent(''); setNewRolePriority(50); }
-        } catch (error) { console.error('Failed to create role:', error); }
+            if (response.ok) { fetchRoles(); setShowCreateModal(false); setNewRoleName(''); setNewRoleDescription(''); setNewRoleParent(''); setNewRolePriority(50); showNotification('역할이 생성되었습니다.', 'success'); }
+        } catch (error) { console.error('Failed to create role:', error); showNotification('역할 생성 실패', 'error'); }
+    };
+
+    const showNotification = (message: string, type: 'success' | 'error') => {
+        setNotification({ message, type });
+        setTimeout(() => setNotification(null), 5000);
+    };
+
+    const handleOpenEditRoleModal = (role: Role) => {
+        setEditingRole(role);
+        setEditRoleName(role.name);
+        setEditRoleDescription(role.description || '');
+        setEditRolePriority(role.priority);
+        setShowEditRoleModal(true);
+    };
+
+    const handleEditRole = async () => {
+        if (!editingRole || !editRoleName) return;
+        try {
+            const response = await fetch(`${API_URL}/rbac/roles/${editingRole.id}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: editRoleName, description: editRoleDescription || undefined, priority: editRolePriority })
+            });
+            if (response.ok) {
+                fetchRoles();
+                setShowEditRoleModal(false);
+                showNotification('역할이 수정되었습니다.', 'success');
+            } else {
+                showNotification('수정 실패', 'error');
+            }
+        } catch (error) { console.error('Edit role failed:', error); showNotification('수정 실패', 'error'); }
+    };
+
+    const handleDeleteRole = async (roleId: string) => {
+        if (!confirm('이 역할을 삭제하시겠습니까?')) return;
+        try {
+            const response = await fetch(`${API_URL}/rbac/roles/${roleId}`, { method: 'DELETE' });
+            if (response.ok) {
+                fetchRoles();
+                if (selectedRole?.id === roleId) setSelectedRole(null);
+                showNotification('역할이 삭제되었습니다.', 'success');
+            } else {
+                showNotification('삭제 실패', 'error');
+            }
+        } catch (error) { console.error('Delete role failed:', error); showNotification('삭제 실패', 'error'); }
     };
 
     const handleAddPermission = async () => {
@@ -207,7 +259,15 @@ export default function RbacAdminPage() {
                                             <div style={{ fontSize: '12px', color: darkTheme.textMuted, marginTop: '2px' }}>권한 {role.permissionCount}개 · 사용자 {role.userCount}명</div>
                                         </div>
                                     </div>
-                                    <div style={{ padding: '4px 8px', background: `${darkTheme.textMuted}20`, borderRadius: '4px', fontSize: '12px', color: darkTheme.textSecondary }}>우선순위: {role.priority}</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ padding: '4px 8px', background: `${darkTheme.textMuted}20`, borderRadius: '4px', fontSize: '12px', color: darkTheme.textSecondary }}>우선순위: {role.priority}</span>
+                                        {role.type === 'custom' && (
+                                            <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
+                                                <button onClick={() => handleOpenEditRoleModal(role)} style={{ padding: '4px 8px', background: `${darkTheme.accentBlue}20`, color: darkTheme.accentBlue, border: 'none', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}>✏️</button>
+                                                <button onClick={() => handleDeleteRole(role.id)} style={{ padding: '4px 8px', background: `${darkTheme.accentRed}20`, color: darkTheme.accentRed, border: 'none', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}>🗑️</button>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         ))}
@@ -385,6 +445,43 @@ export default function RbacAdminPage() {
                             <button style={darkStyles.button} onClick={handleAddPermission}>추가</button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Edit Role Modal */}
+            {showEditRoleModal && editingRole && (
+                <div style={darkStyles.modalOverlay} onClick={() => setShowEditRoleModal(false)}>
+                    <div style={darkStyles.modal} onClick={e => e.stopPropagation()}>
+                        <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '20px', color: darkTheme.textPrimary }}>역할 수정</h2>
+                        <div style={{ marginBottom: '16px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>역할 이름 *</label>
+                            <input type="text" style={{ ...darkStyles.input, width: '100%' }} value={editRoleName} onChange={e => setEditRoleName(e.target.value)} />
+                        </div>
+                        <div style={{ marginBottom: '16px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>설명</label>
+                            <textarea style={{ ...darkStyles.input, width: '100%', minHeight: '60px' }} value={editRoleDescription} onChange={e => setEditRoleDescription(e.target.value)} />
+                        </div>
+                        <div style={{ marginBottom: '24px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>우선순위 (1-100)</label>
+                            <input type="number" style={{ ...darkStyles.input, width: '100%' }} value={editRolePriority} onChange={e => setEditRolePriority(Number(e.target.value))} min={1} max={100} />
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                            <button style={darkStyles.buttonSecondary} onClick={() => setShowEditRoleModal(false)}>취소</button>
+                            <button style={darkStyles.button} onClick={handleEditRole}>💾 저장</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Notification Toast */}
+            {notification && (
+                <div style={{
+                    position: 'fixed', bottom: '24px', right: '24px', padding: '16px 24px',
+                    background: notification.type === 'success' ? darkTheme.accentGreen : darkTheme.accentRed,
+                    color: 'white', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                    zIndex: 1000, fontSize: '14px', fontWeight: '500'
+                }}>
+                    {notification.type === 'success' ? '✅' : '❌'} {notification.message}
                 </div>
             )}
         </div>

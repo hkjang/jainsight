@@ -78,6 +78,20 @@ export class UsersController {
         return this.usersService.forceLogout(id);
     }
 
+    @Post(':id/reset-password')
+    @HttpCode(HttpStatus.OK)
+    async resetPassword(@Param('id') id: string): Promise<{ tempPassword: string }> {
+        return this.usersService.resetPassword(id);
+    }
+
+    @Put(':id')
+    async updateUser(
+        @Param('id') id: string,
+        @Body() data: { name?: string; email?: string; role?: string }
+    ): Promise<User> {
+        return this.usersService.updateUser(id, data);
+    }
+
     @Put(':id/status')
     async updateStatus(
         @Param('id') id: string,
