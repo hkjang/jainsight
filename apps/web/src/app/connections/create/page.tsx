@@ -15,7 +15,7 @@ interface DBTypeInfo {
 }
 
 const DB_TYPES: DBTypeInfo[] = [
-    { id: 'postgresql', name: 'PostgreSQL', icon: '🐘', color: '#336791', gradient: 'linear-gradient(135deg, #336791, #4A90A4)', defaultPort: 5432, description: '고급 오픈소스 관계형 DB' },
+    { id: 'postgres', name: 'PostgreSQL', icon: '🐘', color: '#336791', gradient: 'linear-gradient(135deg, #336791, #4A90A4)', defaultPort: 5432, description: '고급 오픈소스 관계형 DB' },
     { id: 'mysql', name: 'MySQL', icon: '🐬', color: '#00758f', gradient: 'linear-gradient(135deg, #00758f, #f29111)', defaultPort: 3306, description: '가장 널리 사용되는 오픈소스 DB' },
     { id: 'mariadb', name: 'MariaDB', icon: '🦭', color: '#003545', gradient: 'linear-gradient(135deg, #003545, #00728C)', defaultPort: 3306, description: 'MySQL 호환 포크' },
     { id: 'mssql', name: 'SQL Server', icon: '🔷', color: '#CC2927', gradient: 'linear-gradient(135deg, #CC2927, #5C2D91)', defaultPort: 1433, description: 'Microsoft 엔터프라이즈 DB' },

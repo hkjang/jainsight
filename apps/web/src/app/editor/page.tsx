@@ -390,10 +390,13 @@ export default function EditorPage() {
     const [wordWrap, setWordWrap] = useState(false);
     const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
     const editorRef = useRef<any>(null);
+    const monacoRef = useRef<Monaco | null>(null);
+    const completionProviderRef = useRef<any>(null);
     const isDragging = useRef(false);
     const resizeRef = useRef<HTMLDivElement>(null);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const autoSaveRef = useRef<NodeJS.Timeout | null>(null);
+
     
     // Toast helper
     const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -716,6 +719,145 @@ export default function EditorPage() {
         showToast('Snippet inserted', 'success');
     };
     
+    // SQL Keywords for autocomplete
+    const SQL_KEYWORDS = [
+        'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'BETWEEN',
+        'JOIN', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL JOIN', 'CROSS JOIN',
+        'ON', 'USING', 'GROUP BY', 'HAVING', 'ORDER BY', 'ASC', 'DESC', 'LIMIT', 'OFFSET',
+        'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM', 'CREATE TABLE', 'ALTER TABLE',
+        'DROP TABLE', 'CREATE INDEX', 'DROP INDEX', 'DISTINCT', 'AS', 'CASE', 'WHEN', 'THEN',
+        'ELSE', 'END', 'NULL', 'IS NULL', 'IS NOT NULL', 'COUNT', 'SUM', 'AVG', 'MAX', 'MIN',
+        'COALESCE', 'NULLIF', 'CAST', 'CONVERT', 'UNION', 'UNION ALL', 'EXCEPT', 'INTERSECT',
+        'EXISTS', 'ANY', 'ALL', 'WITH', 'RECURSIVE', 'OVER', 'PARTITION BY', 'ROW_NUMBER',
+        'RANK', 'DENSE_RANK', 'FIRST_VALUE', 'LAST_VALUE', 'LAG', 'LEAD'
+    ];
+    
+    // Handle Editor Mount - Register SQL Autocomplete
+    const handleEditorMount = (editor: any, monaco: Monaco) => {
+        editorRef.current = editor;
+        monacoRef.current = monaco;
+        
+        // Track cursor position
+        editor.onDidChangeCursorPosition((e: any) => {
+            setCursorPosition({ line: e.position.lineNumber, column: e.position.column });
+        });
+        
+        // Register SQL completion provider
+        if (completionProviderRef.current) {
+            completionProviderRef.current.dispose();
+        }
+        
+        completionProviderRef.current = monaco.languages.registerCompletionItemProvider('sql', {
+            triggerCharacters: [' ', '.', '(', ','],
+            provideCompletionItems: (model: any, position: any) => {
+                const word = model.getWordUntilPosition(position);
+                const range = {
+                    startLineNumber: position.lineNumber,
+                    endLineNumber: position.lineNumber,
+                    startColumn: word.startColumn,
+                    endColumn: word.endColumn
+                };
+                
+                // Get text before cursor for context analysis
+                const textBeforeCursor = model.getValueInRange({
+                    startLineNumber: 1,
+                    startColumn: 1,
+                    endLineNumber: position.lineNumber,
+                    endColumn: position.column
+                }).toUpperCase();
+                
+                const lineContent = model.getLineContent(position.lineNumber);
+                const textBeforeOnLine = lineContent.substring(0, position.column - 1);
+                
+                const suggestions: any[] = [];
+                
+                // Check for table.column pattern (after a dot)
+                const dotMatch = textBeforeOnLine.match(/(\w+)\.\s*$/);
+                if (dotMatch) {
+                    const tableName = dotMatch[1].toLowerCase();
+                    const tableColumns = schemaData.columns[tableName];
+                    if (tableColumns && Array.isArray(tableColumns)) {
+                        tableColumns.forEach((col: any) => {
+                            const colName = typeof col === 'string' ? col : col.name;
+                            const colType = typeof col === 'object' ? col.type : '';
+                            suggestions.push({
+                                label: colName,
+                                kind: monaco.languages.CompletionItemKind.Field,
+                                insertText: colName,
+                                detail: colType ? `Column (${colType})` : 'Column',
+                                documentation: `Column from table ${tableName}`,
+                                range
+                            });
+                        });
+                        return { suggestions };
+                    }
+                }
+                
+                // Check context for table suggestions (after FROM, JOIN, INTO, UPDATE, DELETE FROM)
+                const tableContext = /\b(FROM|JOIN|INTO|UPDATE|DELETE\s+FROM)\s+(\w*)$/i.test(textBeforeCursor);
+                
+                // Check context for column suggestions (after SELECT, WHERE, SET, ORDER BY, GROUP BY, AND, OR)
+                const columnContext = /\b(SELECT|WHERE|SET|ORDER\s+BY|GROUP\s+BY|AND|OR|ON|HAVING)\s+(\w*)$/i.test(textBeforeCursor) ||
+                                      /,\s*(\w*)$/i.test(textBeforeOnLine);
+                
+                // Suggest tables when in table context
+                if (tableContext && schemaData.tables?.length > 0) {
+                    schemaData.tables.forEach(table => {
+                        const translation = schemaTranslations[table];
+                        suggestions.push({
+                            label: table,
+                            kind: monaco.languages.CompletionItemKind.Class,
+                            insertText: table,
+                            detail: translation?.koreanName || 'Table',
+                            documentation: `Table: ${table}${translation?.koreanName ? ` (${translation.koreanName})` : ''}`,
+                            range,
+                            sortText: '0' + table // Tables first
+                        });
+                    });
+                }
+                
+                // Suggest columns when in column context
+                if (columnContext) {
+                    // Add columns from all known tables
+                    Object.entries(schemaData.columns).forEach(([tableName, columns]) => {
+                        if (Array.isArray(columns)) {
+                            columns.forEach((col: any) => {
+                                const colName = typeof col === 'string' ? col : col.name;
+                                const colType = typeof col === 'object' ? col.type : '';
+                                const koreanName = schemaTranslations[tableName]?.columns?.[colName];
+                                suggestions.push({
+                                    label: `${tableName}.${colName}`,
+                                    kind: monaco.languages.CompletionItemKind.Field,
+                                    insertText: `${tableName}.${colName}`,
+                                    detail: koreanName || colType || 'Column',
+                                    documentation: `${colName} from ${tableName}${koreanName ? ` (${koreanName})` : ''}`,
+                                    range,
+                                    sortText: '1' + colName
+                                });
+                            });
+                        }
+                    });
+                }
+                
+                // Always suggest SQL keywords
+                SQL_KEYWORDS.forEach(keyword => {
+                    if (keyword.toUpperCase().startsWith(word.word.toUpperCase())) {
+                        suggestions.push({
+                            label: keyword,
+                            kind: monaco.languages.CompletionItemKind.Keyword,
+                            insertText: keyword + ' ',
+                            detail: 'SQL Keyword',
+                            range,
+                            sortText: '2' + keyword // Keywords after tables/columns
+                        });
+                    }
+                });
+                
+                return { suggestions };
+            }
+        });
+    };
+    
     // Get error suggestion
     const getErrorSuggestion = (errorMessage: string) => {
         for (const [pattern, suggestion] of Object.entries(ERROR_SUGGESTIONS)) {
@@ -899,8 +1041,49 @@ export default function EditorPage() {
             const updated = [selectedConnection, ...recentConnections.filter(id => id !== selectedConnection)].slice(0, 5);
             setRecentConnections(updated);
             localStorage.setItem('editorRecentConnections', JSON.stringify(updated));
+            
+            // Auto-fetch schema for autocomplete
+            const fetchSchemaForAutocomplete = async () => {
+                const token = localStorage.getItem('token');
+                if (!token) return;
+                try {
+                    const res = await fetch('/api/query/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ 
+                            connectionId: selectedConnection, 
+                            query: `SELECT table_name, column_name, data_type, is_nullable
+                                    FROM information_schema.columns 
+                                    WHERE table_schema = 'public' 
+                                    ORDER BY table_name, ordinal_position` 
+                        }),
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        const tables: string[] = [];
+                        const columns: Record<string, Array<{ name: string; type: string; nullable: string }>> = {};
+                        data.rows?.forEach((row: any) => {
+                            if (!tables.includes(row.table_name)) {
+                                tables.push(row.table_name);
+                                columns[row.table_name] = [];
+                            }
+                            columns[row.table_name].push({
+                                name: row.column_name,
+                                type: row.data_type,
+                                nullable: row.is_nullable
+                            });
+                        });
+                        setSchemaData({ tables, columns: columns as any });
+                    }
+                } catch (e) {
+                    // Silent fail - autocomplete will just not have suggestions
+                    console.log('Failed to fetch schema for autocomplete:', e);
+                }
+            };
+            fetchSchemaForAutocomplete();
         }
     }, [selectedConnection]);
+
     
     // Fetch AI suggested questions when modal opens (새로 열릴 때마다 재생성)
     useEffect(() => {
@@ -1406,11 +1589,6 @@ export default function EditorPage() {
     const handleCopyQuery = () => {
         navigator.clipboard.writeText(query);
         showToast('Query copied to clipboard', 'success');
-    };
-    
-    const handleEditorMount = (editor: any, monaco: Monaco) => {
-        editorRef.current = editor;
-        editor.onDidChangeCursorPosition((e: any) => setCursorPosition({ line: e.position.lineNumber, column: e.position.column }));
     };
 
     const formatDuration = (ms: number) => ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms / 1000).toFixed(2)}s`;

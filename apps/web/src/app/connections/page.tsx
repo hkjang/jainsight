@@ -176,7 +176,7 @@ export default function ConnectionsPage() {
         setSaving(true);
         try {
             const res = await fetch(`/api/connections/${editingConnection.id}`, {
-                method: 'PUT',
+                method: 'PATCH',
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
