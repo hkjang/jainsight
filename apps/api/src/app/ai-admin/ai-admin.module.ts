@@ -14,6 +14,7 @@ import {
 import {
     AiProviderService,
     AiModelService,
+    AiDiagnosticService,
     ModelRouterService,
     PromptManagerService,
     SqlSecurityService,
@@ -56,6 +57,7 @@ import { SchemaModule } from '../schema/schema.module';
     providers: [
         AiProviderService,
         AiModelService,
+        AiDiagnosticService,
         ModelRouterService,
         PromptManagerService,
         SqlSecurityService,
@@ -66,6 +68,7 @@ import { SchemaModule } from '../schema/schema.module';
     exports: [
         AiProviderService,
         AiModelService,
+        AiDiagnosticService,
         ModelRouterService,
         PromptManagerService,
         SqlSecurityService,

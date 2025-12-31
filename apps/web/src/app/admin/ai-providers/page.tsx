@@ -23,6 +23,30 @@ interface TestResult {
     testedAt?: string;
 }
 
+interface DiagnosticTestResult {
+    name: string;
+    success: boolean;
+    message: string;
+    latencyMs: number;
+    details?: any;
+}
+
+interface DiagnosticResult {
+    providerId: string;
+    providerName: string;
+    providerType: string;
+    endpoint: string;
+    timestamp: string;
+    tests: DiagnosticTestResult[];
+    summary: {
+        passed: number;
+        failed: number;
+        totalLatencyMs: number;
+        status: 'healthy' | 'degraded' | 'failed';
+    };
+    availableModels: string[];
+}
+
 const API_BASE = '/api';
 
 const providerIcons: Record<string, string> = {
@@ -52,6 +76,11 @@ export default function AiProvidersPage() {
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
     const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+    
+    // Diagnostic state
+    const [diagnosticResult, setDiagnosticResult] = useState<DiagnosticResult | null>(null);
+    const [showDiagnosticModal, setShowDiagnosticModal] = useState(false);
+    const [diagnosingId, setDiagnosingId] = useState<string | null>(null);
 
     const [form, setForm] = useState({
         name: '',
@@ -219,6 +248,20 @@ export default function AiProvidersPage() {
             await handleTest(provider.id);
         }
         setTestingAll(false);
+    };
+
+    const handleDiagnose = async (id: string) => {
+        setDiagnosingId(id);
+        try {
+            const res = await fetch(`${API_BASE}/admin/ai-providers/${id}/diagnose`, { method: 'POST' });
+            const data = await res.json();
+            setDiagnosticResult(data);
+            setShowDiagnosticModal(true);
+        } catch (error) {
+            showToast('진단 실패', 'error');
+        } finally {
+            setDiagnosingId(null);
+        }
     };
 
     const handleBulkToggle = async (isActive: boolean) => {
@@ -880,6 +923,18 @@ export default function AiProvidersPage() {
                                     테스트
                                 </button>
                                 <button
+                                    onClick={() => handleDiagnose(provider.id)}
+                                    disabled={diagnosingId === provider.id}
+                                    style={{
+                                        ...buttonStyle,
+                                        background: diagnosingId === provider.id ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.2)',
+                                        color: diagnosingId === provider.id ? '#6b7280' : '#10b981',
+                                        padding: '8px 14px',
+                                    }}
+                                >
+                                    {diagnosingId === provider.id ? '⏳' : '🔍'} 진단
+                                </button>
+                                <button
                                     onClick={() => handleDuplicate(provider)}
                                     style={{
                                         ...buttonStyle,
@@ -1139,6 +1194,194 @@ export default function AiProvidersPage() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Diagnostic Result Modal */}
+            {showDiagnosticModal && diagnosticResult && (
+                <div 
+                    onClick={() => setShowDiagnosticModal(false)}
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(0, 0, 0, 0.7)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 1000,
+                    }}
+                >
+                    <div 
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+                            borderRadius: '16px',
+                            padding: '28px',
+                            width: '90%',
+                            maxWidth: '600px',
+                            maxHeight: '80vh',
+                            overflow: 'auto',
+                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)',
+                        }}
+                    >
+                        {/* Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                            <div>
+                                <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#fff', marginBottom: '4px' }}>
+                                    🔍 진단 결과
+                                </h2>
+                                <p style={{ fontSize: '13px', color: '#6b7280' }}>
+                                    {diagnosticResult.providerName} ({diagnosticResult.providerType})
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setShowDiagnosticModal(false)}
+                                style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    borderRadius: '8px',
+                                    border: 'none',
+                                    background: 'rgba(239, 68, 68, 0.2)',
+                                    color: '#fca5a5',
+                                    cursor: 'pointer',
+                                    fontSize: '16px',
+                                }}
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {/* Summary */}
+                        <div style={{
+                            display: 'flex',
+                            gap: '12px',
+                            marginBottom: '20px',
+                            padding: '16px',
+                            background: diagnosticResult.summary.status === 'healthy' 
+                                ? 'rgba(16, 185, 129, 0.1)' 
+                                : diagnosticResult.summary.status === 'degraded' 
+                                ? 'rgba(251, 191, 36, 0.1)' 
+                                : 'rgba(239, 68, 68, 0.1)',
+                            borderRadius: '12px',
+                            border: `1px solid ${diagnosticResult.summary.status === 'healthy' 
+                                ? 'rgba(16, 185, 129, 0.3)' 
+                                : diagnosticResult.summary.status === 'degraded' 
+                                ? 'rgba(251, 191, 36, 0.3)' 
+                                : 'rgba(239, 68, 68, 0.3)'}`,
+                        }}>
+                            <div style={{ textAlign: 'center', flex: 1 }}>
+                                <div style={{ fontSize: '28px', fontWeight: 700, color: '#10b981' }}>{diagnosticResult.summary.passed}</div>
+                                <div style={{ fontSize: '11px', color: '#6b7280' }}>통과</div>
+                            </div>
+                            <div style={{ textAlign: 'center', flex: 1 }}>
+                                <div style={{ fontSize: '28px', fontWeight: 700, color: '#ef4444' }}>{diagnosticResult.summary.failed}</div>
+                                <div style={{ fontSize: '11px', color: '#6b7280' }}>실패</div>
+                            </div>
+                            <div style={{ textAlign: 'center', flex: 1 }}>
+                                <div style={{ fontSize: '28px', fontWeight: 700, color: '#a5b4fc' }}>{diagnosticResult.summary.totalLatencyMs}ms</div>
+                                <div style={{ fontSize: '11px', color: '#6b7280' }}>총 지연</div>
+                            </div>
+                            <div style={{ textAlign: 'center', flex: 1 }}>
+                                <div style={{ 
+                                    fontSize: '14px', 
+                                    fontWeight: 700, 
+                                    padding: '8px 12px',
+                                    borderRadius: '8px',
+                                    background: diagnosticResult.summary.status === 'healthy' 
+                                        ? 'rgba(16, 185, 129, 0.2)' 
+                                        : diagnosticResult.summary.status === 'degraded' 
+                                        ? 'rgba(251, 191, 36, 0.2)' 
+                                        : 'rgba(239, 68, 68, 0.2)',
+                                    color: diagnosticResult.summary.status === 'healthy' 
+                                        ? '#10b981' 
+                                        : diagnosticResult.summary.status === 'degraded' 
+                                        ? '#fbbf24' 
+                                        : '#ef4444',
+                                }}>
+                                    {diagnosticResult.summary.status === 'healthy' ? '✓ 정상' 
+                                        : diagnosticResult.summary.status === 'degraded' ? '⚠ 일부 문제' 
+                                        : '✗ 실패'}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Test Results */}
+                        <div style={{ marginBottom: '20px' }}>
+                            <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#a5b4fc', marginBottom: '12px' }}>테스트 결과</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {diagnosticResult.tests.map((test, idx) => (
+                                    <div key={idx} style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '12px',
+                                        padding: '12px 16px',
+                                        background: test.success ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+                                        borderRadius: '10px',
+                                        border: `1px solid ${test.success ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+                                    }}>
+                                        <span style={{ fontSize: '18px' }}>
+                                            {test.success ? '✅' : '❌'}
+                                        </span>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#fff', marginBottom: '2px' }}>
+                                                {test.name}
+                                            </div>
+                                            <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                                                {test.message}
+                                            </div>
+                                        </div>
+                                        <span style={{ 
+                                            fontSize: '12px', 
+                                            fontWeight: 600, 
+                                            color: '#a5b4fc',
+                                            padding: '4px 8px',
+                                            background: 'rgba(99, 102, 241, 0.1)',
+                                            borderRadius: '6px',
+                                        }}>
+                                            {test.latencyMs}ms
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Available Models */}
+                        {diagnosticResult.availableModels.length > 0 && (
+                            <div>
+                                <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#a5b4fc', marginBottom: '12px' }}>
+                                    사용 가능한 모델 ({diagnosticResult.availableModels.length})
+                                </h3>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                    {diagnosticResult.availableModels.map((model, idx) => (
+                                        <span key={idx} style={{
+                                            padding: '6px 12px',
+                                            background: 'rgba(99, 102, 241, 0.1)',
+                                            borderRadius: '6px',
+                                            fontSize: '12px',
+                                            color: '#a5b4fc',
+                                            fontFamily: 'monospace',
+                                        }}>
+                                            {model}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Endpoint Info */}
+                        <div style={{ 
+                            marginTop: '20px', 
+                            padding: '12px 16px', 
+                            background: 'rgba(99, 102, 241, 0.05)',
+                            borderRadius: '8px',
+                            fontSize: '11px',
+                            color: '#6b7280',
+                        }}>
+                            <strong>Endpoint:</strong> {diagnosticResult.endpoint}<br/>
+                            <strong>테스트 시간:</strong> {new Date(diagnosticResult.timestamp).toLocaleString('ko-KR')}
+                        </div>
                     </div>
                 </div>
             )}

@@ -1,5 +1,6 @@
 export * from './ai-provider.service';
 export * from './ai-model.service';
+export * from './ai-diagnostic.service';
 export * from './model-router.service';
 export * from './prompt-manager.service';
 export * from './sql-security.service';

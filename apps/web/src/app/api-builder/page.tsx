@@ -4,12 +4,22 @@ import React, { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import loader from '@monaco-editor/loader';
 import {
     BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 
+// Configure Monaco to load from local assets (offline support)
+// This prevents loading from CDN (cdn.jsdelivr.net)
+loader.config({
+  paths: {
+    vs: '/monaco-editor/min/vs'
+  }
+});
+
 // Dynamically import Monaco Editor to avoid SSR issues
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
+
 
 interface ApiTemplate {
     id: string;

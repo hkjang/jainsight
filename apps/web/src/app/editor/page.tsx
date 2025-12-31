@@ -1,8 +1,18 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import loader from '@monaco-editor/loader';
 import Editor, { Monaco } from '@monaco-editor/react';
 import { useRouter } from 'next/navigation';
+
+// Configure Monaco to load from local assets (offline support)
+// This prevents loading from CDN (cdn.jsdelivr.net)
+loader.config({
+  paths: {
+    vs: '/monaco-editor/min/vs'
+  }
+});
+
 
 // ============================================================================
 // TYPES
@@ -2679,11 +2689,11 @@ export default function EditorPage() {
                                     새로운 질문
                                 </button>
                             </div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, maxHeight: 200, overflowY: 'auto' }}>
                                 {suggestionsLoading ? (
-                                    // Skeleton loader
+                                    // Skeleton loader - 15개
                                     <>
-                                        {[1, 2, 3, 4, 5].map(i => (
+                                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map(i => (
                                             <div key={i} style={{
                                                 padding: '8px 16px',
                                                 background: 'rgba(99, 102, 241, 0.08)',
