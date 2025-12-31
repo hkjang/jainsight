@@ -14,7 +14,7 @@ export class QueryService {
         private securitySettingsService: SecuritySettingsService,
     ) { }
 
-    async executeQuery(executeQueryDto: ExecuteQueryDto): Promise<QueryResult> {
+    async executeQuery(executeQueryDto: ExecuteQueryDto, executedBy: string = 'Anonymous'): Promise<QueryResult> {
         // Use the service method to secure access to the decrypted password
         const connection = await this.connectionsService.getConnectionWithPassword(executeQueryDto.connectionId);
 
@@ -71,6 +71,7 @@ export class QueryService {
                 durationMs,
                 rowCount: result?.rowCount,
                 errorMessage,
+                executedBy,
             }).catch(err => console.error('Failed to log audit:', err));
         }
     }
