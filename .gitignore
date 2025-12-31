@@ -10,6 +10,8 @@ test.db
 *.tar
 build_error.txt
 build_success.txt
+api_build_err.txt
+api_build_success.txt
 
 # dependencies
 node_modules
