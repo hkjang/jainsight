@@ -86,6 +86,33 @@ export class ApiKeysService {
         return apiKey.allowedIps.includes(ip);
     }
 
+    // Get all API keys (for admin)
+    async getAllApiKeys(): Promise<ApiKey[]> {
+        return this.apiKeysRepository.find({
+            order: { createdAt: 'DESC' }
+        });
+    }
+
+    // Get overall stats
+    async getOverallStats(): Promise<{
+        totalKeys: number;
+        activeKeys: number;
+        expiredKeys: number;
+        revokedKeys: number;
+        totalCalls: number;
+    }> {
+        const allKeys = await this.apiKeysRepository.find();
+        const now = new Date();
+        
+        const totalKeys = allKeys.length;
+        const activeKeys = allKeys.filter(k => k.isActive && (!k.expiresAt || new Date(k.expiresAt) > now)).length;
+        const expiredKeys = allKeys.filter(k => k.expiresAt && new Date(k.expiresAt) <= now).length;
+        const revokedKeys = allKeys.filter(k => !k.isActive && k.revokedAt).length;
+        const totalCalls = allKeys.reduce((sum, k) => sum + (k.usageCount || 0), 0);
+
+        return { totalKeys, activeKeys, expiredKeys, revokedKeys, totalCalls };
+    }
+
     // Key Management
     async getApiKeys(userId: string): Promise<ApiKey[]> {
         return this.apiKeysRepository.find({ 

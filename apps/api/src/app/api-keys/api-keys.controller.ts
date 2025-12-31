@@ -8,6 +8,22 @@ import { ApiKeyUsage } from './entities/api-key-usage.entity';
 export class ApiKeysController {
     constructor(private readonly apiKeysService: ApiKeysService) { }
 
+    @Get()
+    async getAllApiKeys(): Promise<ApiKey[]> {
+        return this.apiKeysService.getAllApiKeys();
+    }
+
+    @Get('stats')
+    async getOverallStats(): Promise<{
+        totalKeys: number;
+        activeKeys: number;
+        expiredKeys: number;
+        revokedKeys: number;
+        totalCalls: number;
+    }> {
+        return this.apiKeysService.getOverallStats();
+    }
+
     @Get('user/:userId')
     async getApiKeys(@Param('userId') userId: string): Promise<ApiKey[]> {
         return this.apiKeysService.getApiKeys(userId);
