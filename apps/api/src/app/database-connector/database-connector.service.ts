@@ -174,17 +174,26 @@ export class DatabaseConnectorService implements OnModuleDestroy {
 
     private async getMysqlColumns(connDto: CreateConnectionDto, tableName: string): Promise<ColumnInfo[]> {
         const query = `
-        SELECT column_name, data_type, is_nullable, column_key
-        FROM information_schema.columns 
-        WHERE table_schema = ? AND table_name = ?
-        ORDER BY ordinal_position
-      `;
+            SELECT 
+                column_name, 
+                column_type,
+                data_type, 
+                is_nullable, 
+                column_key,
+                column_default,
+                column_comment
+            FROM information_schema.columns 
+            WHERE table_schema = ? AND table_name = ?
+            ORDER BY ordinal_position
+        `;
         const result = await this.executeMysqlQuery(connDto, mysql.format(query, [connDto.database, tableName]));
         return result.rows.map(row => ({
             name: row.column_name,
-            type: row.data_type,
+            type: row.column_type || row.data_type, // column_type includes length (e.g., varchar(255))
             nullable: row.is_nullable === 'YES',
-            primaryKey: row.column_key === 'PRI'
+            primaryKey: row.column_key === 'PRI',
+            defaultValue: row.column_default || undefined,
+            comment: row.column_comment || undefined,
         }));
     }
 
@@ -303,20 +312,83 @@ export class DatabaseConnectorService implements OnModuleDestroy {
     }
 
     private async getPostgresColumns(connDto: CreateConnectionDto, tableName: string): Promise<ColumnInfo[]> {
+        // PostgreSQL에서 대소문자 구분 테이블명 처리를 위해 파라미터화된 쿼리 사용
+        // information_schema는 실제 테이블명을 그대로 저장하므로 직접 비교
         const query = `
-        SELECT column_name, data_type, is_nullable 
-        FROM information_schema.columns 
-        WHERE table_schema = 'public' AND table_name = '${tableName}'
-        ORDER BY ordinal_position
-      `;
-        // Note: rudimentary SQL injection protection needed for production
-        const result = await this.executePostgresQuery(connDto, query);
-        return result.rows.map(row => ({
-            name: row.column_name,
-            type: row.data_type,
-            nullable: row.is_nullable === 'YES',
-            primaryKey: false // TODO: fetch PK info separately
-        }));
+            SELECT 
+                c.column_name, 
+                c.data_type, 
+                c.is_nullable,
+                c.column_default,
+                CASE 
+                    WHEN pk.column_name IS NOT NULL THEN true 
+                    ELSE false 
+                END as is_primary_key,
+                pgd.description as column_comment
+            FROM information_schema.columns c
+            LEFT JOIN (
+                SELECT kcu.column_name, kcu.table_name, kcu.table_schema
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu 
+                    ON tc.constraint_name = kcu.constraint_name 
+                    AND tc.table_schema = kcu.table_schema
+                WHERE tc.constraint_type = 'PRIMARY KEY'
+            ) pk ON c.column_name = pk.column_name 
+                AND c.table_name = pk.table_name 
+                AND c.table_schema = pk.table_schema
+            LEFT JOIN pg_catalog.pg_statio_all_tables st 
+                ON c.table_schema = st.schemaname AND c.table_name = st.relname
+            LEFT JOIN pg_catalog.pg_description pgd 
+                ON pgd.objoid = st.relid 
+                AND pgd.objsubid = c.ordinal_position
+            WHERE c.table_schema = 'public' AND c.table_name = $1
+            ORDER BY c.ordinal_position
+        `;
+        
+        // 파라미터화된 쿼리 실행
+        const poolKey = `postgres:${connDto.host}:${connDto.port}:${connDto.database}:${connDto.username}`;
+        let pool = this.pools.get(poolKey);
+        if (!pool) {
+            pool = new PgPool({
+                host: connDto.host,
+                port: connDto.port,
+                user: connDto.username,
+                password: connDto.password,
+                database: connDto.database,
+                max: 10,
+                idleTimeoutMillis: 30000,
+            });
+            this.pools.set(poolKey, pool);
+        }
+        
+        try {
+            const result = await pool.query(query, [tableName]);
+            return result.rows.map(row => ({
+                name: row.column_name,
+                type: row.data_type,
+                nullable: row.is_nullable === 'YES',
+                primaryKey: row.is_primary_key === true,
+                defaultValue: row.column_default || undefined,
+                comment: row.column_comment || undefined,
+            }));
+        } catch (error) {
+            console.error(`[PostgreSQL] Failed to fetch columns for table ${tableName}:`, error.message);
+            // 폴백: 기본 쿼리로 재시도
+            const fallbackQuery = `
+                SELECT column_name, data_type, is_nullable, column_default
+                FROM information_schema.columns 
+                WHERE table_schema = 'public' AND table_name = $1
+                ORDER BY ordinal_position
+            `;
+            const fallbackResult = await pool.query(fallbackQuery, [tableName]);
+            return fallbackResult.rows.map(row => ({
+                name: row.column_name,
+                type: row.data_type,
+                nullable: row.is_nullable === 'YES',
+                primaryKey: false,
+                defaultValue: row.column_default || undefined,
+            }));
+        }
     }
 
 
@@ -395,19 +467,79 @@ export class DatabaseConnectorService implements OnModuleDestroy {
     }
 
     private async getMssqlColumns(connDto: CreateConnectionDto, tableName: string): Promise<ColumnInfo[]> {
+        // 스키마와 테이블명 분리 처리 (schema.tableName 형식 지원)
+        let schemaName = 'dbo';
+        let tblName = tableName;
+        if (tableName.includes('.')) {
+            const parts = tableName.split('.');
+            schemaName = parts[0];
+            tblName = parts[1];
+        }
+        
         const query = `
-        SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
-        FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_NAME = '${tableName}'
-        ORDER BY ORDINAL_POSITION
-      `;
-        const result = await this.executeMssqlQuery(connDto, query);
-        return result.rows.map(row => ({
-            name: row.COLUMN_NAME,
-            type: row.DATA_TYPE,
-            nullable: row.IS_NULLABLE === 'YES',
-            primaryKey: false
-        }));
+            SELECT 
+                c.COLUMN_NAME,
+                c.DATA_TYPE,
+                c.IS_NULLABLE,
+                c.COLUMN_DEFAULT,
+                c.CHARACTER_MAXIMUM_LENGTH,
+                CASE 
+                    WHEN pk.COLUMN_NAME IS NOT NULL THEN 1 
+                    ELSE 0 
+                END as IS_PRIMARY_KEY,
+                sep.value as COLUMN_COMMENT
+            FROM INFORMATION_SCHEMA.COLUMNS c
+            LEFT JOIN (
+                SELECT ku.TABLE_SCHEMA, ku.TABLE_NAME, ku.COLUMN_NAME
+                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE ku
+                    ON tc.CONSTRAINT_NAME = ku.CONSTRAINT_NAME
+                    AND tc.TABLE_SCHEMA = ku.TABLE_SCHEMA
+                WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+            ) pk ON c.TABLE_SCHEMA = pk.TABLE_SCHEMA 
+                AND c.TABLE_NAME = pk.TABLE_NAME 
+                AND c.COLUMN_NAME = pk.COLUMN_NAME
+            LEFT JOIN sys.columns sc 
+                ON OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA) + '.' + QUOTENAME(c.TABLE_NAME)) = sc.object_id 
+                AND c.COLUMN_NAME = sc.name
+            LEFT JOIN sys.extended_properties sep 
+                ON sep.major_id = sc.object_id 
+                AND sep.minor_id = sc.column_id 
+                AND sep.name = 'MS_Description'
+            WHERE c.TABLE_SCHEMA = '${schemaName}' AND c.TABLE_NAME = '${tblName}'
+            ORDER BY c.ORDINAL_POSITION
+        `;
+        
+        try {
+            const result = await this.executeMssqlQuery(connDto, query);
+            return result.rows.map(row => ({
+                name: row.COLUMN_NAME,
+                type: row.CHARACTER_MAXIMUM_LENGTH 
+                    ? `${row.DATA_TYPE}(${row.CHARACTER_MAXIMUM_LENGTH})` 
+                    : row.DATA_TYPE,
+                nullable: row.IS_NULLABLE === 'YES',
+                primaryKey: row.IS_PRIMARY_KEY === 1,
+                defaultValue: row.COLUMN_DEFAULT || undefined,
+                comment: row.COLUMN_COMMENT || undefined,
+            }));
+        } catch (error) {
+            console.error(`[MSSQL] Failed to fetch columns for table ${tableName}:`, error.message);
+            // 폴백: 기본 쿼리로 재시도
+            const fallbackQuery = `
+                SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = '${schemaName}' AND TABLE_NAME = '${tblName}'
+                ORDER BY ORDINAL_POSITION
+            `;
+            const fallbackResult = await this.executeMssqlQuery(connDto, fallbackQuery);
+            return fallbackResult.rows.map(row => ({
+                name: row.COLUMN_NAME,
+                type: row.DATA_TYPE,
+                nullable: row.IS_NULLABLE === 'YES',
+                primaryKey: false,
+                defaultValue: row.COLUMN_DEFAULT || undefined,
+            }));
+        }
     }
 
     // --- SQLite Implementations ---
@@ -471,14 +603,17 @@ export class DatabaseConnectorService implements OnModuleDestroy {
     }
 
     private async getSqliteColumns(connDto: CreateConnectionDto, tableName: string): Promise<ColumnInfo[]> {
-        const query = `PRAGMA table_info('${tableName}')`;
+        // SQLite injection 방지를 위해 테이블명 검증
+        const safeTableName = tableName.replace(/[^a-zA-Z0-9_]/g, '');
+        const query = `PRAGMA table_info('${safeTableName}')`;
         const result = await this.executeSqliteQuery(connDto, query);
         // PRAGMA table_info returns: cid, name, type, notnull, dflt_value, pk
         return result.rows.map(row => ({
             name: row.name,
-            type: row.type,
+            type: row.type || 'TEXT',
             nullable: row.notnull === 0,
-            primaryKey: row.pk > 0
+            primaryKey: row.pk > 0,
+            defaultValue: row.dflt_value || undefined,
         }));
     }
 }

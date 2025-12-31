@@ -20,6 +20,11 @@ export class ConnectionsController {
         return this.connectionsService.testConnection(createConnectionDto);
     }
 
+    @Post(':id/test')
+    testById(@Param('id') id: string) {
+        return this.connectionsService.testConnectionById(id);
+    }
+
     @Get()
     findAll() {
         return this.connectionsService.findAll();

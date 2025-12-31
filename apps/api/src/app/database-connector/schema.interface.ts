@@ -10,5 +10,6 @@ export interface ColumnInfo {
     type: string;
     nullable: boolean;
     primaryKey: boolean;
+    defaultValue?: string;
     comment?: string; // Column description/Korean translation
 }

@@ -1,5 +1,5 @@
 
-import { Controller, Get, Post, Body, Param, UseGuards, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, NotFoundException } from '@nestjs/common';
 import { SqlApiService } from './sql-api.service';
 import { SqlApiDocService } from './sql-api-doc.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';

@@ -92,4 +92,24 @@ export class ConnectionsService {
         // Usually creation DTO has raw password from frontend
         return this.databaseConnectorService.testConnection(connectionDto);
     }
+
+    async testConnectionById(id: string): Promise<{ success: boolean; message: string }> {
+        const connection = await this.getConnectionWithPassword(id);
+        if (!connection) {
+            return { success: false, message: 'Connection not found' };
+        }
+        
+        // Convert the connection entity to the format expected by testConnection
+        const connectionDto: CreateConnectionDto = {
+            name: connection.name,
+            type: connection.type,
+            host: connection.host,
+            port: connection.port,
+            database: connection.database,
+            username: connection.username,
+            password: connection.password, // Already decrypted by getConnectionWithPassword
+        };
+        
+        return this.databaseConnectorService.testConnection(connectionDto);
+    }
 }
