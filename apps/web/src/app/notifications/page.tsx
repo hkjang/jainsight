@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { darkTheme, darkStyles, AnimatedCard, TabGroup, Pagination } from '../../components/admin/AdminUtils';
+import useAuth from '../../hooks/useAuth';
 
 const API_URL = '/api';
 
@@ -26,6 +27,7 @@ const typeStyles: Record<string, { bg: string; color: string; icon: string }> = 
 };
 
 export default function NotificationsPage() {
+    const { user, token, loading: authLoading, isAuthenticated } = useAuth();
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -33,52 +35,47 @@ export default function NotificationsPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [notification, setNotificationToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
     const itemsPerPage = 15;
-    const userId = 'current-user';
 
     const fetchNotifications = useCallback(async () => {
+        if (!user?.id || !token) return;
         try {
             const params = new URLSearchParams();
             if (filter === 'unread') params.append('unreadOnly', 'true');
-            const response = await fetch(`${API_URL}/users/${userId}/notifications?${params}`);
+            const response = await fetch(`${API_URL}/users/${user.id}/notifications?${params}`, { headers: { 'Authorization': `Bearer ${token}` } });
             if (response.ok) {
                 const data = await response.json();
                 setNotifications(data.notifications || []);
                 setUnreadCount(data.unreadCount || 0);
-            } else {
-                setNotifications([
-                    { id: '1', title: '쿼리 실행 완료', message: 'Sales Report 쿼리가 완료되었습니다.', type: 'success', isRead: false, category: 'query', createdAt: new Date().toISOString() },
-                    { id: '2', title: '새로운 리포트', message: '월간 요약 리포트가 생성되었습니다.', type: 'info', link: '/reports/monthly', isRead: false, category: 'report', createdAt: new Date(Date.now() - 3600000).toISOString() },
-                    { id: '3', title: '보안 알림', message: '새로운 기기에서 로그인이 감지되었습니다.', type: 'warning', isRead: true, category: 'security', createdAt: new Date(Date.now() - 86400000).toISOString() },
-                    { id: '4', title: '시스템 업데이트', message: '시스템이 업데이트되었습니다.', type: 'system', isRead: true, category: 'system', createdAt: new Date(Date.now() - 172800000).toISOString() }
-                ]);
-                setUnreadCount(2);
             }
         } catch (error) { console.error('Failed to fetch notifications:', error); }
         finally { setLoading(false); }
-    }, [userId, filter]);
+    }, [user, token, filter]);
 
     useEffect(() => {
-        fetchNotifications();
-    }, [fetchNotifications]);
+        if (!authLoading && isAuthenticated) fetchNotifications();
+    }, [fetchNotifications, authLoading, isAuthenticated]);
 
     const handleMarkRead = async (id: string) => {
+        if (!user?.id || !token) return;
         try {
-            await fetch(`${API_URL}/users/${userId}/notifications/${id}/read`, { method: 'POST' });
+            await fetch(`${API_URL}/users/${user.id}/notifications/${id}/read`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
             fetchNotifications();
         } catch { /* ignore */ }
     };
 
     const handleMarkAllRead = async () => {
+        if (!user?.id || !token) return;
         try {
-            await fetch(`${API_URL}/users/${userId}/notifications/read-all`, { method: 'POST' });
+            await fetch(`${API_URL}/users/${user.id}/notifications/read-all`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
             showToast('모든 알림을 읽음 처리했습니다.', 'success');
             fetchNotifications();
         } catch { showToast('처리 실패', 'error'); }
     };
 
     const handleDelete = async (id: string) => {
+        if (!user?.id || !token) return;
         try {
-            await fetch(`${API_URL}/users/${userId}/notifications/${id}`, { method: 'DELETE' });
+            await fetch(`${API_URL}/users/${user.id}/notifications/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
             fetchNotifications();
         } catch { /* ignore */ }
     };
@@ -100,7 +97,7 @@ export default function NotificationsPage() {
     const paginatedNotifications = filteredNotifications.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
     const totalPages = Math.ceil(filteredNotifications.length / itemsPerPage);
 
-    if (loading) {
+    if (authLoading || loading) {
         return (
             <div style={{ ...darkStyles.container, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
                 <div style={{ textAlign: 'center', color: darkTheme.textSecondary }}>⏳ 로딩 중...</div>

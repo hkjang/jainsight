@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { darkTheme, darkStyles, AnimatedCard, TabGroup } from '../../components/admin/AdminUtils';
+import useAuth from '../../hooks/useAuth';
 
 const API_URL = '/api';
 
@@ -11,12 +12,7 @@ interface SecurityInfo {
     lastLoginIp?: string;
     failedLoginAttempts: number;
     activeSessions: number;
-    recentSecurityEvents: {
-        id: string;
-        action: string;
-        createdAt: string;
-        ipAddress?: string;
-    }[];
+    recentSecurityEvents: { id: string; action: string; createdAt: string; ipAddress?: string; }[];
 }
 
 interface Session {
@@ -32,6 +28,7 @@ interface Session {
 }
 
 export default function SecurityPage() {
+    const { user, token, loading: authLoading, isAuthenticated } = useAuth();
     const [activeTab, setActiveTab] = useState('password');
     const [securityInfo, setSecurityInfo] = useState<SecurityInfo | null>(null);
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -42,63 +39,39 @@ export default function SecurityPage() {
     const [saving, setSaving] = useState(false);
     const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-    const userId = 'current-user';
-
     const fetchSecurityInfo = useCallback(async () => {
+        if (!user?.id || !token) return;
         try {
-            const response = await fetch(`${API_URL}/users/${userId}/security`);
-            if (response.ok) {
-                setSecurityInfo(await response.json());
-            } else {
-                setSecurityInfo({
-                    passwordChangedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-                    lastLoginAt: new Date().toISOString(),
-                    lastLoginIp: '192.168.1.1',
-                    failedLoginAttempts: 0,
-                    activeSessions: 2,
-                    recentSecurityEvents: [
-                        { id: '1', action: 'login', createdAt: new Date().toISOString(), ipAddress: '192.168.1.1' },
-                        { id: '2', action: 'password_change', createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString() }
-                    ]
-                });
-            }
+            const response = await fetch(`${API_URL}/users/${user.id}/security`, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (response.ok) setSecurityInfo(await response.json());
         } catch (error) { console.error('Failed to fetch security info:', error); }
-    }, [userId]);
+    }, [user, token]);
 
     const fetchSessions = useCallback(async () => {
+        if (!user?.id || !token) return;
         try {
-            const response = await fetch(`${API_URL}/users/${userId}/sessions`);
-            if (response.ok) {
-                setSessions(await response.json());
-            } else {
-                setSessions([
-                    { id: '1', deviceName: 'Chrome on Windows', deviceType: 'desktop', browser: 'Chrome', os: 'Windows 11', ipAddress: '192.168.1.1', location: 'Seoul, KR', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString() },
-                    { id: '2', deviceName: 'Safari on iPhone', deviceType: 'mobile', browser: 'Safari', os: 'iOS 17', ipAddress: '192.168.1.100', location: 'Seoul, KR', createdAt: new Date(Date.now() - 86400000).toISOString() }
-                ]);
-            }
+            const response = await fetch(`${API_URL}/users/${user.id}/sessions`, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (response.ok) setSessions(await response.json());
         } catch (error) { console.error('Failed to fetch sessions:', error); }
         finally { setLoading(false); }
-    }, [userId]);
+    }, [user, token]);
 
     useEffect(() => {
-        fetchSecurityInfo();
-        fetchSessions();
-    }, [fetchSecurityInfo, fetchSessions]);
+        if (!authLoading && isAuthenticated) {
+            fetchSecurityInfo();
+            fetchSessions();
+        }
+    }, [fetchSecurityInfo, fetchSessions, authLoading, isAuthenticated]);
 
     const handleChangePassword = async () => {
-        if (newPassword !== confirmPassword) {
-            showNotification('새 비밀번호가 일치하지 않습니다.', 'error');
-            return;
-        }
-        if (newPassword.length < 8) {
-            showNotification('비밀번호는 8자 이상이어야 합니다.', 'error');
-            return;
-        }
+        if (!user?.id || !token) return;
+        if (newPassword !== confirmPassword) { showNotification('새 비밀번호가 일치하지 않습니다.', 'error'); return; }
+        if (newPassword.length < 8) { showNotification('비밀번호는 8자 이상이어야 합니다.', 'error'); return; }
         setSaving(true);
         try {
-            const response = await fetch(`${API_URL}/users/${userId}/change-password`, {
+            const response = await fetch(`${API_URL}/users/${user.id}/change-password`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ currentPassword, newPassword })
             });
             const result = await response.json();
@@ -106,33 +79,26 @@ export default function SecurityPage() {
                 showNotification(result.message, 'success');
                 setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
                 fetchSecurityInfo();
-            } else {
-                showNotification(result.message, 'error');
-            }
+            } else { showNotification(result.message, 'error'); }
         } catch { showNotification('비밀번호 변경 실패', 'error'); }
         finally { setSaving(false); }
     };
 
     const handleTerminateSession = async (sessionId: string) => {
+        if (!user?.id || !token) return;
         try {
-            await fetch(`${API_URL}/users/${userId}/sessions/${sessionId}`, { method: 'DELETE' });
+            await fetch(`${API_URL}/users/${user.id}/sessions/${sessionId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
             showNotification('세션이 종료되었습니다.', 'success');
-            fetchSessions();
-            fetchSecurityInfo();
+            fetchSessions(); fetchSecurityInfo();
         } catch { showNotification('세션 종료 실패', 'error'); }
     };
 
     const handleTerminateAll = async () => {
-        if (!confirm('다른 모든 기기에서 로그아웃하시겠습니까?')) return;
+        if (!user?.id || !token || !confirm('다른 모든 기기에서 로그아웃하시겠습니까?')) return;
         try {
-            await fetch(`${API_URL}/users/${userId}/sessions`, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ exceptCurrentSession: 'current' })
-            });
+            await fetch(`${API_URL}/users/${user.id}/sessions`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ exceptCurrentSession: 'current' }) });
             showNotification('모든 세션이 종료되었습니다.', 'success');
-            fetchSessions();
-            fetchSecurityInfo();
+            fetchSessions(); fetchSecurityInfo();
         } catch { showNotification('세션 종료 실패', 'error'); }
     };
 
@@ -158,7 +124,7 @@ export default function SecurityPage() {
         password_change: { label: '비밀번호 변경', icon: '🔑' }
     };
 
-    if (loading) {
+    if (authLoading || loading) {
         return (
             <div style={{ ...darkStyles.container, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
                 <div style={{ textAlign: 'center', color: darkTheme.textSecondary }}>⏳ 로딩 중...</div>

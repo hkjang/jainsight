@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { darkTheme, darkStyles, AnimatedCard, TabGroup } from '../../components/admin/AdminUtils';
+import useAuth from '../../hooks/useAuth';
 
 const API_URL = '/api';
 
@@ -37,17 +38,20 @@ const timezoneOptions = [
 ];
 
 export default function SettingsPage() {
+    const { user, token, loading: authLoading, isAuthenticated } = useAuth();
     const [preferences, setPreferences] = useState<UserPreferences | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [activeTab, setActiveTab] = useState('general');
     const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-    const userId = 'current-user';
-
     const fetchPreferences = useCallback(async () => {
+        if (!user?.id || !token) return;
+        
         try {
-            const response = await fetch(`${API_URL}/users/${userId}/preferences`);
+            const response = await fetch(`${API_URL}/users/${user.id}/preferences`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (response.ok) {
                 const data = await response.json();
                 setPreferences(data);
@@ -57,18 +61,8 @@ export default function SettingsPage() {
                     theme: 'system',
                     language: 'ko',
                     timezone: 'Asia/Seoul',
-                    notifications: {
-                        email: true,
-                        browser: true,
-                        queryResults: true,
-                        systemAlerts: true
-                    },
-                    editor: {
-                        fontSize: 14,
-                        tabSize: 4,
-                        autoComplete: true,
-                        lineNumbers: true
-                    }
+                    notifications: { email: true, browser: true, queryResults: true, systemAlerts: true },
+                    editor: { fontSize: 14, tabSize: 4, autoComplete: true, lineNumbers: true }
                 });
             }
         } catch (error) {
@@ -76,19 +70,21 @@ export default function SettingsPage() {
         } finally {
             setLoading(false);
         }
-    }, [userId]);
+    }, [user, token]);
 
     useEffect(() => {
-        fetchPreferences();
-    }, [fetchPreferences]);
+        if (!authLoading && isAuthenticated) {
+            fetchPreferences();
+        }
+    }, [fetchPreferences, authLoading, isAuthenticated]);
 
     const handleSave = async () => {
-        if (!preferences) return;
+        if (!preferences || !user?.id || !token) return;
         setSaving(true);
         try {
-            const response = await fetch(`${API_URL}/users/${userId}/preferences`, {
+            const response = await fetch(`${API_URL}/users/${user.id}/preferences`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify(preferences)
             });
             if (response.ok) {
@@ -145,7 +141,7 @@ export default function SettingsPage() {
         background: 'white', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
     });
 
-    if (loading) {
+    if (authLoading || loading) {
         return (
             <div style={{ ...darkStyles.container, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
                 <div style={{ textAlign: 'center', color: darkTheme.textSecondary }}>

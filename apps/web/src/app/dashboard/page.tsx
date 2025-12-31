@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { darkTheme, darkStyles, AnimatedCard, MiniChart, ProgressRing } from '../../components/admin/AdminUtils';
+import useAuth from '../../hooks/useAuth';
 
 const API_URL = '/api';
 
@@ -31,6 +33,8 @@ const quickActions = [
 ];
 
 export default function DashboardPage() {
+    const { user, token, loading: authLoading, isAuthenticated, authFetch } = useAuth();
+    const router = useRouter();
     const [data, setData] = useState<DashboardData | null>(null);
     const [profileCompletion, setProfileCompletion] = useState<ProfileCompletion | null>(null);
     const [notifications, setNotifications] = useState<NotificationSummary | null>(null);
@@ -39,38 +43,57 @@ export default function DashboardPage() {
     const [showOnboarding, setShowOnboarding] = useState(false);
     const [activityChartData] = useState([5, 12, 8, 15, 10, 18, 14, 22, 16, 25, 20, 28]);
     const [systemStats, setSystemStats] = useState<{ connections: number; queries: number; failed: number } | null>(null);
-    const userId = 'current-user';
 
     const fetchAll = useCallback(async () => {
-        const token = localStorage.getItem('token');
+        if (!user?.id || !token) return;
+        
         try {
+            const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
             const [dashRes, completeRes, notifRes, favRes, sysRes] = await Promise.all([
-                fetch(`${API_URL}/users/${userId}/dashboard`).catch(() => null),
-                fetch(`${API_URL}/users/${userId}/profile-completion`).catch(() => null),
-                fetch(`${API_URL}/users/${userId}/notifications?limit=1`).catch(() => null),
-                fetch(`${API_URL}/users/${userId}/favorites?limit=5`).catch(() => null),
-                token ? fetch(`${API_URL}/dashboard/stats`, { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null) : null
+                fetch(`${API_URL}/users/${user.id}/dashboard`, { headers }).catch(() => null),
+                fetch(`${API_URL}/users/${user.id}/profile-completion`, { headers }).catch(() => null),
+                fetch(`${API_URL}/users/${user.id}/notifications?limit=1`, { headers }).catch(() => null),
+                fetch(`${API_URL}/users/${user.id}/favorites?limit=5`, { headers }).catch(() => null),
+                fetch(`${API_URL}/dashboard/stats`, { headers }).catch(() => null)
             ]);
 
-            if (dashRes?.ok) setData(await dashRes.json());
-            else setData({ profile: { name: '사용자', email: 'user@example.com', role: 'analyst' }, stats: { queriesExecuted: 127, reportsViewed: 34, lastLoginAt: new Date().toISOString(), accountAge: 45 }, recentActivity: [{ id: '1', action: 'query_execute', details: { queryName: 'Sales Report' }, createdAt: new Date().toISOString() }] });
+            if (dashRes?.ok) {
+                setData(await dashRes.json());
+            } else {
+                // 폴백: 사용자 정보가 없으면 기본값 사용
+                setData({
+                    profile: { name: user.name, email: user.email, role: user.role },
+                    stats: { queriesExecuted: 0, reportsViewed: 0, accountAge: 0 },
+                    recentActivity: []
+                });
+            }
 
-            if (completeRes?.ok) { const c = await completeRes.json(); setProfileCompletion(c); if (c.percentage < 50) setShowOnboarding(true); }
-            else { setProfileCompletion({ percentage: 67, missing: ['프로필 사진', '자기소개'], completed: ['이름', '이메일', '직책', '설정 저장'] }); }
+            if (completeRes?.ok) {
+                const c = await completeRes.json();
+                setProfileCompletion(c);
+                if (c.percentage < 50) setShowOnboarding(true);
+            }
 
-            if (notifRes?.ok) { const n = await notifRes.json(); setNotifications({ unreadCount: n.unreadCount || 0 }); }
-            else setNotifications({ unreadCount: 3 });
+            if (notifRes?.ok) {
+                const n = await notifRes.json();
+                setNotifications({ unreadCount: n.unreadCount || 0 });
+            }
 
             if (favRes?.ok) setFavorites(await favRes.json());
-            else setFavorites([{ id: '1', itemType: 'query', itemId: 'q1', name: 'Sales Report' }]);
 
-            if (sysRes?.ok) { const s = await sysRes.json(); setSystemStats({ connections: s.connectionsCount || 0, queries: s.queriesCount || 0, failed: s.failedQueriesCount || 0 }); }
-            else setSystemStats({ connections: 5, queries: 127, failed: 3 });
+            if (sysRes?.ok) {
+                const s = await sysRes.json();
+                setSystemStats({ connections: s.connectionsCount || 0, queries: s.queriesCount || 0, failed: s.failedQueriesCount || 0 });
+            }
         } catch (error) { console.error('Failed to fetch:', error); }
         finally { setLoading(false); }
-    }, [userId]);
+    }, [user, token]);
 
-    useEffect(() => { fetchAll(); }, [fetchAll]);
+    useEffect(() => {
+        if (!authLoading && isAuthenticated) {
+            fetchAll();
+        }
+    }, [fetchAll, authLoading, isAuthenticated]);
 
     const formatTimeAgo = (dateStr: string) => {
         const diff = Date.now() - new Date(dateStr).getTime();
@@ -80,7 +103,7 @@ export default function DashboardPage() {
         return `${Math.floor(diff / 86400000)}일 전`;
     };
 
-    if (loading) {
+    if (authLoading || loading) {
         return (
             <div style={{ ...darkStyles.container, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
                 <div style={{ textAlign: 'center', color: darkTheme.textSecondary }}>⏳ 로딩 중...</div>

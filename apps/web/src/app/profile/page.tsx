@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { darkTheme, darkStyles, AnimatedCard, Tooltip } from '../../components/admin/AdminUtils';
+import useAuth from '../../hooks/useAuth';
 
 const API_URL = '/api';
 
@@ -20,6 +21,7 @@ interface UserProfile {
 }
 
 export default function ProfilePage() {
+    const { user, token, loading: authLoading, isAuthenticated } = useAuth();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
@@ -28,12 +30,13 @@ export default function ProfilePage() {
     const [editJobTitle, setEditJobTitle] = useState('');
     const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-    // In real app, get userId from auth context
-    const userId = 'current-user';
-
     const fetchProfile = useCallback(async () => {
+        if (!user?.id || !token) return;
+        
         try {
-            const response = await fetch(`${API_URL}/users/${userId}/profile`);
+            const response = await fetch(`${API_URL}/users/${user.id}/profile`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (response.ok) {
                 const data = await response.json();
                 setProfile(data);
@@ -41,39 +44,38 @@ export default function ProfilePage() {
                 setEditBio(data.bio || '');
                 setEditJobTitle(data.jobTitle || '');
             } else {
-                // Mock data for development
-                const mockProfile: UserProfile = {
-                    id: userId,
-                    email: 'user@example.com',
-                    name: '사용자',
-                    bio: '데이터 분석가입니다.',
-                    jobTitle: '시니어 데이터 엔지니어',
-                    role: 'analyst',
+                // 폴백: 토큰에서 기본 정보 사용
+                setProfile({
+                    id: user.id,
+                    email: user.email,
+                    name: user.name,
+                    role: user.role,
                     status: 'active',
                     accountSource: 'local',
                     createdAt: new Date().toISOString()
-                };
-                setProfile(mockProfile);
-                setEditName(mockProfile.name);
-                setEditBio(mockProfile.bio || '');
-                setEditJobTitle(mockProfile.jobTitle || '');
+                });
+                setEditName(user.name);
             }
         } catch (error) {
             console.error('Failed to fetch profile:', error);
         } finally {
             setLoading(false);
         }
-    }, [userId]);
+    }, [user, token]);
 
     useEffect(() => {
-        fetchProfile();
-    }, [fetchProfile]);
+        if (!authLoading && isAuthenticated) {
+            fetchProfile();
+        }
+    }, [fetchProfile, authLoading, isAuthenticated]);
 
     const handleSave = async () => {
+        if (!user?.id || !token) return;
+        
         try {
-            const response = await fetch(`${API_URL}/users/${userId}/profile`, {
+            const response = await fetch(`${API_URL}/users/${user.id}/profile`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name: editName,
                     bio: editBio,
@@ -100,7 +102,7 @@ export default function ProfilePage() {
 
     const formatDate = (dateStr?: string) => dateStr ? new Date(dateStr).toLocaleDateString('ko-KR') : '-';
 
-    if (loading) {
+    if (authLoading || loading) {
         return (
             <div style={{ ...darkStyles.container, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
                 <div style={{ textAlign: 'center', color: darkTheme.textSecondary }}>

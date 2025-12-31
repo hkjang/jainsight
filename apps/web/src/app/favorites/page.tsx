@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { darkTheme, darkStyles, AnimatedCard, TabGroup } from '../../components/admin/AdminUtils';
+import useAuth from '../../hooks/useAuth';
 
 const API_URL = '/api';
 
@@ -23,37 +24,30 @@ const typeInfo: Record<string, { label: string; icon: string; href: (id: string)
 };
 
 export default function FavoritesPage() {
+    const { user, token, loading: authLoading, isAuthenticated } = useAuth();
     const [favorites, setFavorites] = useState<Favorite[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<string>('all');
     const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-    const userId = 'current-user';
 
     const fetchFavorites = useCallback(async () => {
+        if (!user?.id || !token) return;
         try {
             const params = filter !== 'all' ? `?type=${filter}` : '';
-            const response = await fetch(`${API_URL}/users/${userId}/favorites${params}`);
-            if (response.ok) {
-                setFavorites(await response.json());
-            } else {
-                setFavorites([
-                    { id: '1', itemType: 'query', itemId: 'q1', name: 'Sales Report Query', description: '월별 매출 분석', createdAt: new Date().toISOString() },
-                    { id: '2', itemType: 'report', itemId: 'r1', name: 'Monthly Summary', description: '월간 요약 리포트', createdAt: new Date(Date.now() - 86400000).toISOString() },
-                    { id: '3', itemType: 'connection', itemId: 'c1', name: 'Production DB', description: 'PostgreSQL 연결', createdAt: new Date(Date.now() - 172800000).toISOString() }
-                ]);
-            }
+            const response = await fetch(`${API_URL}/users/${user.id}/favorites${params}`, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (response.ok) setFavorites(await response.json());
         } catch (error) { console.error('Failed to fetch favorites:', error); }
         finally { setLoading(false); }
-    }, [userId, filter]);
+    }, [user, token, filter]);
 
     useEffect(() => {
-        fetchFavorites();
-    }, [fetchFavorites]);
+        if (!authLoading && isAuthenticated) fetchFavorites();
+    }, [fetchFavorites, authLoading, isAuthenticated]);
 
     const handleRemove = async (itemType: string, itemId: string) => {
-        if (!confirm('즐겨찾기에서 제거하시겠습니까?')) return;
+        if (!user?.id || !token || !confirm('즐겨찾기에서 제거하시겠습니까?')) return;
         try {
-            await fetch(`${API_URL}/users/${userId}/favorites/${itemType}/${itemId}`, { method: 'DELETE' });
+            await fetch(`${API_URL}/users/${user.id}/favorites/${itemType}/${itemId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
             showNotification('즐겨찾기에서 제거되었습니다.', 'success');
             fetchFavorites();
         } catch { showNotification('제거 실패', 'error'); }
@@ -68,7 +62,7 @@ export default function FavoritesPage() {
 
     const filteredFavorites = filter === 'all' ? favorites : favorites.filter(f => f.itemType === filter);
 
-    if (loading) {
+    if (authLoading || loading) {
         return (
             <div style={{ ...darkStyles.container, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
                 <div style={{ textAlign: 'center', color: darkTheme.textSecondary }}>⏳ 로딩 중...</div>
