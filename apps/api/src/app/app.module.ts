@@ -47,6 +47,7 @@ import { AuditLog } from './audit/entities/audit-log.entity';
 import { SavedQuery } from './saved-queries/entities/saved-query.entity';
 import { QueryVersion } from './saved-queries/entities/query-version.entity';
 import { AiProvider, AiModel, PromptTemplate, AiExecutionLog, Nl2SqlPolicy } from './ai-admin/entities';
+import { SecuritySettings } from './ai-admin/entities/security-settings.entity';
 
 // New Enterprise Entities
 import { Organization } from './organizations/entities/organization.entity';
@@ -83,6 +84,8 @@ import { TableTranslation } from './schema/entities/table-translation.entity';
         ApiKey, ApiKeyUsage,
         // Schema entities
         TableTranslation,
+        // Security Settings
+        SecuritySettings,
       ],
       synchronize: true, // Auto-create tables in dev
     }),
