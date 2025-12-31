@@ -3,6 +3,8 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpCode, HttpS
 import { UsersService, UserListOptions } from './users.service';
 import { User, UserStatus, UserPreferences } from './entities/user.entity';
 import { UserActivity, ActivityAction } from './entities/user-activity.entity';
+import { UserNotification } from './entities/user-notification.entity';
+import { UserFavorite, FavoriteType } from './entities/user-favorite.entity';
 import { Request } from 'express';
 
 @Controller('users')
@@ -205,5 +207,88 @@ export class UsersController {
     @Get(':id/security')
     async getSecurityInfo(@Param('id') id: string) {
         return this.usersService.getSecurityInfo(id);
+    }
+
+    // Notification Endpoints
+    @Get(':id/notifications')
+    async getNotifications(
+        @Param('id') id: string,
+        @Query('unreadOnly') unreadOnly?: string,
+        @Query('category') category?: string,
+        @Query('limit') limit?: string
+    ) {
+        return this.usersService.getNotifications(id, {
+            unreadOnly: unreadOnly === 'true',
+            category,
+            limit: limit ? parseInt(limit, 10) : undefined
+        });
+    }
+
+    @Post(':id/notifications/:notificationId/read')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    async markNotificationRead(
+        @Param('id') id: string,
+        @Param('notificationId') notificationId: string
+    ): Promise<void> {
+        return this.usersService.markNotificationRead(id, notificationId);
+    }
+
+    @Post(':id/notifications/read-all')
+    @HttpCode(HttpStatus.OK)
+    async markAllNotificationsRead(@Param('id') id: string): Promise<{ marked: number }> {
+        const marked = await this.usersService.markAllNotificationsRead(id);
+        return { marked };
+    }
+
+    @Delete(':id/notifications/:notificationId')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    async deleteNotification(
+        @Param('id') id: string,
+        @Param('notificationId') notificationId: string
+    ): Promise<void> {
+        return this.usersService.deleteNotification(id, notificationId);
+    }
+
+    // Favorites Endpoints
+    @Get(':id/favorites')
+    async getFavorites(
+        @Param('id') id: string,
+        @Query('type') itemType?: FavoriteType
+    ): Promise<UserFavorite[]> {
+        return this.usersService.getFavorites(id, itemType);
+    }
+
+    @Post(':id/favorites')
+    async addFavorite(
+        @Param('id') id: string,
+        @Body() data: { itemType: FavoriteType; itemId: string; name?: string; description?: string }
+    ): Promise<UserFavorite> {
+        return this.usersService.addFavorite({ userId: id, ...data });
+    }
+
+    @Delete(':id/favorites/:itemType/:itemId')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    async removeFavorite(
+        @Param('id') id: string,
+        @Param('itemType') itemType: FavoriteType,
+        @Param('itemId') itemId: string
+    ): Promise<void> {
+        return this.usersService.removeFavorite(id, itemType, itemId);
+    }
+
+    @Get(':id/favorites/:itemType/:itemId/check')
+    async isFavorite(
+        @Param('id') id: string,
+        @Param('itemType') itemType: FavoriteType,
+        @Param('itemId') itemId: string
+    ): Promise<{ isFavorite: boolean }> {
+        const result = await this.usersService.isFavorite(id, itemType, itemId);
+        return { isFavorite: result };
+    }
+
+    // Profile Completion
+    @Get(':id/profile-completion')
+    async getProfileCompletion(@Param('id') id: string) {
+        return this.usersService.getProfileCompletion(id);
     }
 }

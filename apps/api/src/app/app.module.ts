@@ -43,6 +43,8 @@ import { ReportsModule } from './reports/reports.module';
 import { User } from './users/entities/user.entity';
 import { UserActivity } from './users/entities/user-activity.entity';
 import { UserSession } from './users/entities/user-session.entity';
+import { UserNotification } from './users/entities/user-notification.entity';
+import { UserFavorite } from './users/entities/user-favorite.entity';
 import { Connection } from './connections/entities/connection.entity';
 import { SqlTemplate } from './sql-api/entities/sql-template.entity';
 import { AuditLog } from './audit/entities/audit-log.entity';
@@ -76,7 +78,7 @@ import { TableTranslation } from './schema/entities/table-translation.entity';
       database: 'jainsight.db',
       entities: [
         // Existing entities
-        User, UserActivity, UserSession, Connection, SqlTemplate, AuditLog, SavedQuery, QueryVersion,
+        User, UserActivity, UserSession, UserNotification, UserFavorite, Connection, SqlTemplate, AuditLog, SavedQuery, QueryVersion,
         AiProvider, AiModel, PromptTemplate, AiExecutionLog, Nl2SqlPolicy,
         // New enterprise entities
         Organization,

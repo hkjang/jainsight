@@ -4,6 +4,8 @@ import { Repository, In, MoreThanOrEqual } from 'typeorm';
 import { User, UserStatus, AccountSource, UserPreferences } from './entities/user.entity';
 import { UserActivity, ActivityAction } from './entities/user-activity.entity';
 import { UserSession } from './entities/user-session.entity';
+import { UserNotification, NotificationType } from './entities/user-notification.entity';
+import { UserFavorite, FavoriteType } from './entities/user-favorite.entity';
 import { randomBytes } from 'crypto';
 
 export interface UserListOptions {
@@ -24,6 +26,10 @@ export class UsersService {
         private activityRepository: Repository<UserActivity>,
         @InjectRepository(UserSession)
         private sessionRepository: Repository<UserSession>,
+        @InjectRepository(UserNotification)
+        private notificationRepository: Repository<UserNotification>,
+        @InjectRepository(UserFavorite)
+        private favoriteRepository: Repository<UserFavorite>,
     ) { }
 
     // Basic Operations
@@ -559,5 +565,128 @@ export class UsersService {
                 ['login', 'logout', 'login_failed', 'password_change'].includes(e.action)
             )
         };
+    }
+
+    // Notifications
+    async createNotification(data: {
+        userId: string;
+        title: string;
+        message?: string;
+        type?: NotificationType;
+        link?: string;
+        icon?: string;
+        category?: string;
+        metadata?: Record<string, unknown>;
+    }): Promise<UserNotification> {
+        const notification = this.notificationRepository.create({
+            ...data,
+            type: data.type || 'info',
+            isRead: false
+        });
+        return this.notificationRepository.save(notification);
+    }
+
+    async getNotifications(userId: string, options: {
+        unreadOnly?: boolean;
+        category?: string;
+        limit?: number;
+    } = {}): Promise<{ notifications: UserNotification[]; unreadCount: number }> {
+        const qb = this.notificationRepository.createQueryBuilder('n')
+            .where('n.userId = :userId', { userId })
+            .orderBy('n.createdAt', 'DESC');
+
+        if (options.unreadOnly) qb.andWhere('n.isRead = false');
+        if (options.category) qb.andWhere('n.category = :cat', { cat: options.category });
+        
+        const notifications = await qb.take(options.limit || 50).getMany();
+        const unreadCount = await this.notificationRepository.count({
+            where: { userId, isRead: false }
+        });
+
+        return { notifications, unreadCount };
+    }
+
+    async markNotificationRead(userId: string, notificationId: string): Promise<void> {
+        await this.notificationRepository.update(
+            { id: notificationId, userId },
+            { isRead: true, readAt: new Date() }
+        );
+    }
+
+    async markAllNotificationsRead(userId: string): Promise<number> {
+        const result = await this.notificationRepository.update(
+            { userId, isRead: false },
+            { isRead: true, readAt: new Date() }
+        );
+        return result.affected || 0;
+    }
+
+    async deleteNotification(userId: string, notificationId: string): Promise<void> {
+        await this.notificationRepository.delete({ id: notificationId, userId });
+    }
+
+    // Favorites
+    async addFavorite(data: {
+        userId: string;
+        itemType: FavoriteType;
+        itemId: string;
+        name?: string;
+        description?: string;
+        icon?: string;
+        metadata?: Record<string, unknown>;
+    }): Promise<UserFavorite> {
+        const existing = await this.favoriteRepository.findOne({
+            where: { userId: data.userId, itemType: data.itemType, itemId: data.itemId }
+        });
+        if (existing) return existing;
+
+        const favorite = this.favoriteRepository.create(data);
+        return this.favoriteRepository.save(favorite);
+    }
+
+    async getFavorites(userId: string, itemType?: FavoriteType): Promise<UserFavorite[]> {
+        const where: Record<string, unknown> = { userId };
+        if (itemType) where.itemType = itemType;
+        
+        return this.favoriteRepository.find({
+            where,
+            order: { sortOrder: 'ASC', createdAt: 'DESC' }
+        });
+    }
+
+    async removeFavorite(userId: string, itemType: FavoriteType, itemId: string): Promise<void> {
+        await this.favoriteRepository.delete({ userId, itemType, itemId });
+    }
+
+    async isFavorite(userId: string, itemType: FavoriteType, itemId: string): Promise<boolean> {
+        const count = await this.favoriteRepository.count({
+            where: { userId, itemType, itemId }
+        });
+        return count > 0;
+    }
+
+    // Profile Completion
+    async getProfileCompletion(userId: string): Promise<{
+        percentage: number;
+        missing: string[];
+        completed: string[];
+    }> {
+        const user = await this.findOneById(userId);
+        if (!user) throw new NotFoundException('User not found');
+
+        const fields = [
+            { name: 'name', label: '이름', completed: !!user.name },
+            { name: 'email', label: '이메일', completed: !!user.email },
+            { name: 'avatarUrl', label: '프로필 사진', completed: !!user.avatarUrl },
+            { name: 'bio', label: '자기소개', completed: !!user.bio },
+            { name: 'jobTitle', label: '직책', completed: !!user.jobTitle },
+            { name: 'preferences', label: '설정 저장', completed: !!user.preferences }
+        ];
+
+        const completed = fields.filter(f => f.completed).map(f => f.label);
+        const missing = fields.filter(f => !f.completed).map(f => f.label);
+        const percentage = Math.round((completed.length / fields.length) * 100);
+
+        return { percentage, missing, completed };
     }
 }
