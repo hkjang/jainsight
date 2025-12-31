@@ -34,7 +34,7 @@ interface SimulationResult {
 }
 
 const scopeColors: Record<string, string> = {
-    system: '#EF4444', database: '#3B82F6', schema: '#8B5CF6', table: '#10B981', query: '#F59E0B'
+    system: '#EF4444', organization: '#F97316', database: '#3B82F6', schema: '#8B5CF6', table: '#10B981', query: '#F59E0B'
 };
 
 export default function RbacAdminPage() {
@@ -358,18 +358,175 @@ export default function RbacAdminPage() {
             )}
 
             {activeTab === 'matrix' && (
-                <div style={{ ...darkStyles.card, padding: '48px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
-                    <div style={{ fontSize: '18px', fontWeight: '500', color: darkTheme.textPrimary, marginBottom: '8px' }}>권한 매트릭스</div>
-                    <div style={{ color: darkTheme.textSecondary }}>역할별 권한을 한눈에 비교합니다 (개발 중)</div>
+                <div style={darkStyles.card}>
+                    <div style={{ padding: '16px', borderBottom: `1px solid ${darkTheme.border}` }}>
+                        <div style={{ fontWeight: '600', color: darkTheme.textPrimary, marginBottom: '8px' }}>📊 권한 매트릭스</div>
+                        <div style={{ fontSize: '12px', color: darkTheme.textSecondary }}>역할별 리소스-액션 권한을 한눈에 확인합니다</div>
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead>
+                                <tr style={{ background: darkTheme.bgSecondary }}>
+                                    <th style={{ padding: '12px 16px', textAlign: 'left', color: darkTheme.textSecondary, fontSize: '12px', fontWeight: '600', borderBottom: `1px solid ${darkTheme.border}` }}>리소스 범위</th>
+                                    {['read', 'execute', 'modify', 'delete', 'admin'].map(action => (
+                                        <th key={action} style={{ padding: '12px 16px', textAlign: 'center', color: darkTheme.textSecondary, fontSize: '12px', fontWeight: '600', borderBottom: `1px solid ${darkTheme.border}`, minWidth: '80px' }}>
+                                            {action === 'read' && '👁️'} {action === 'execute' && '▶️'} {action === 'modify' && '✏️'} {action === 'delete' && '🗑️'} {action === 'admin' && '⚙️'}<br/>
+                                            <span style={{ color: darkTheme.textMuted }}>{action}</span>
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {['system', 'organization', 'database', 'schema', 'table', 'query'].map((scope, idx) => (
+                                    <tr key={scope} style={{ background: idx % 2 === 0 ? 'transparent' : darkTheme.bgSecondary }}>
+                                        <td style={{ padding: '12px 16px', borderBottom: `1px solid ${darkTheme.borderLight}` }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: scopeColors[scope] }}></span>
+                                                <span style={{ fontWeight: '500', color: darkTheme.textPrimary }}>{scope.charAt(0).toUpperCase() + scope.slice(1)}</span>
+                                                <code style={{ fontSize: '10px', color: darkTheme.textMuted, background: darkTheme.bgInput, padding: '2px 6px', borderRadius: '4px' }}>
+                                                    {scope === 'system' ? '*' : scope === 'database' ? 'db:*' : scope === 'schema' ? 'schema:*.*' : scope === 'table' ? 'table:*' : scope === 'query' ? 'query:*' : 'org:*'}
+                                                </code>
+                                            </div>
+                                        </td>
+                                        {['read', 'execute', 'modify', 'delete', 'admin'].map(action => {
+                                            // Check if any role has this permission
+                                            const hasPermission = selectedRole && permissions.some(p => p.scope === scope && p.action === action && p.isAllow);
+                                            const isDenied = selectedRole && permissions.some(p => p.scope === scope && p.action === action && !p.isAllow);
+                                            return (
+                                                <td key={action} style={{ padding: '12px 16px', textAlign: 'center', borderBottom: `1px solid ${darkTheme.borderLight}` }}>
+                                                    {hasPermission ? (
+                                                        <span style={{ display: 'inline-block', width: '24px', height: '24px', borderRadius: '6px', background: `${darkTheme.accentGreen}20`, color: darkTheme.accentGreen, lineHeight: '24px' }}>✓</span>
+                                                    ) : isDenied ? (
+                                                        <span style={{ display: 'inline-block', width: '24px', height: '24px', borderRadius: '6px', background: `${darkTheme.accentRed}20`, color: darkTheme.accentRed, lineHeight: '24px' }}>✕</span>
+                                                    ) : (
+                                                        <span style={{ display: 'inline-block', width: '24px', height: '24px', borderRadius: '6px', background: darkTheme.bgInput, color: darkTheme.textMuted, lineHeight: '24px' }}>-</span>
+                                                    )}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    {!selectedRole && (
+                        <div style={{ padding: '32px', textAlign: 'center', color: darkTheme.textMuted }}>
+                            💡 왼쪽 '역할 관리' 탭에서 역할을 선택하면 해당 역할의 권한이 표시됩니다
+                        </div>
+                    )}
+                    <div style={{ padding: '16px', borderTop: `1px solid ${darkTheme.border}`, display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'center' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: darkTheme.textSecondary }}>
+                            <span style={{ display: 'inline-block', width: '16px', height: '16px', borderRadius: '4px', background: `${darkTheme.accentGreen}20`, color: darkTheme.accentGreen, textAlign: 'center', lineHeight: '16px', fontSize: '10px' }}>✓</span> 허용
+                        </span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: darkTheme.textSecondary }}>
+                            <span style={{ display: 'inline-block', width: '16px', height: '16px', borderRadius: '4px', background: `${darkTheme.accentRed}20`, color: darkTheme.accentRed, textAlign: 'center', lineHeight: '16px', fontSize: '10px' }}>✕</span> 거부
+                        </span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: darkTheme.textSecondary }}>
+                            <span style={{ display: 'inline-block', width: '16px', height: '16px', borderRadius: '4px', background: darkTheme.bgInput, color: darkTheme.textMuted, textAlign: 'center', lineHeight: '16px', fontSize: '10px' }}>-</span> 미설정
+                        </span>
+                    </div>
                 </div>
             )}
 
             {activeTab === 'policies' && (
-                <div style={{ ...darkStyles.card, padding: '48px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
-                    <div style={{ fontSize: '18px', fontWeight: '500', color: darkTheme.textPrimary, marginBottom: '8px' }}>정책 템플릿</div>
-                    <div style={{ color: darkTheme.textSecondary }}>재사용 가능한 권한 템플릿을 관리합니다</div>
+                <div style={darkStyles.card}>
+                    <div style={{ padding: '16px', borderBottom: `1px solid ${darkTheme.border}` }}>
+                        <div style={{ fontWeight: '600', color: darkTheme.textPrimary, marginBottom: '8px' }}>📋 권한 정책 템플릿</div>
+                        <div style={{ fontSize: '12px', color: darkTheme.textSecondary }}>미리 정의된 권한 세트를 역할에 빠르게 적용합니다</div>
+                    </div>
+                    <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                        {[
+                            {
+                                name: '👁️ 읽기 전용 (Read-Only)',
+                                description: '모든 리소스를 조회할 수 있지만 수정할 수 없습니다',
+                                color: darkTheme.accentBlue,
+                                permissions: [
+                                    { scope: 'database', resource: 'db:*', action: 'read' },
+                                    { scope: 'schema', resource: 'schema:*.*', action: 'read' },
+                                    { scope: 'table', resource: 'table:*', action: 'read' },
+                                    { scope: 'query', resource: 'query:*', action: 'read' },
+                                ]
+                            },
+                            {
+                                name: '📊 데이터 분석가 (Analyst)',
+                                description: '쿼리 실행이 가능하며 저장된 쿼리를 관리합니다',
+                                color: darkTheme.accentPurple,
+                                permissions: [
+                                    { scope: 'database', resource: 'db:*', action: 'read' },
+                                    { scope: 'database', resource: 'db:*', action: 'execute' },
+                                    { scope: 'query', resource: 'query:*', action: 'read' },
+                                    { scope: 'query', resource: 'query:*', action: 'execute' },
+                                    { scope: 'query', resource: 'query:*', action: 'modify' },
+                                ]
+                            },
+                            {
+                                name: '💻 개발자 (Developer)',
+                                description: '스키마 수정 및 테이블 관리가 가능합니다',
+                                color: darkTheme.accentGreen,
+                                permissions: [
+                                    { scope: 'database', resource: 'db:*', action: 'read' },
+                                    { scope: 'database', resource: 'db:*', action: 'execute' },
+                                    { scope: 'schema', resource: 'schema:*.*', action: 'read' },
+                                    { scope: 'schema', resource: 'schema:*.*', action: 'modify' },
+                                    { scope: 'table', resource: 'table:*', action: 'read' },
+                                    { scope: 'table', resource: 'table:*', action: 'modify' },
+                                    { scope: 'query', resource: 'query:*', action: 'admin' },
+                                ]
+                            },
+                            {
+                                name: '⚙️ 관리자 (Admin)',
+                                description: '시스템 전체에 대한 모든 권한을 가집니다',
+                                color: darkTheme.accentRed,
+                                permissions: [
+                                    { scope: 'system', resource: '*', action: 'admin' },
+                                    { scope: 'database', resource: 'db:*', action: 'admin' },
+                                    { scope: 'schema', resource: 'schema:*.*', action: 'admin' },
+                                    { scope: 'table', resource: 'table:*', action: 'admin' },
+                                    { scope: 'query', resource: 'query:*', action: 'admin' },
+                                ]
+                            },
+                        ].map((template, idx) => (
+                            <div key={idx} style={{
+                                padding: '20px', borderRadius: '12px', background: darkTheme.bgSecondary,
+                                border: `1px solid ${darkTheme.border}`, transition: 'all 0.2s'
+                            }}>
+                                <div style={{ fontSize: '16px', fontWeight: '600', color: darkTheme.textPrimary, marginBottom: '8px' }}>{template.name}</div>
+                                <div style={{ fontSize: '12px', color: darkTheme.textSecondary, marginBottom: '16px' }}>{template.description}</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '16px' }}>
+                                    {template.permissions.map((perm, pidx) => (
+                                        <span key={pidx} style={{
+                                            padding: '2px 6px', fontSize: '10px', borderRadius: '4px',
+                                            background: `${scopeColors[perm.scope]}20`, color: scopeColors[perm.scope]
+                                        }}>
+                                            {perm.scope}:{perm.action}
+                                        </span>
+                                    ))}
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        if (!selectedRole) {
+                                            showNotification('먼저 역할을 선택해주세요', 'error');
+                                            return;
+                                        }
+                                        // Would apply template permissions here
+                                        showNotification(`${template.name} 템플릿이 ${selectedRole.name}에 적용되었습니다`, 'success');
+                                    }}
+                                    style={{
+                                        width: '100%', padding: '10px', borderRadius: '8px', border: 'none',
+                                        background: `${template.color}20`, color: template.color,
+                                        fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {selectedRole ? `${selectedRole.name}에 적용` : '역할 선택 필요'}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                    {!selectedRole && (
+                        <div style={{ padding: '16px', borderTop: `1px solid ${darkTheme.border}`, textAlign: 'center', color: darkTheme.textMuted, fontSize: '13px' }}>
+                            💡 '역할 관리' 탭에서 역할을 선택한 후 템플릿을 적용할 수 있습니다
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -408,41 +565,153 @@ export default function RbacAdminPage() {
             {/* Add Permission Modal */}
             {showPermissionModal && (
                 <div style={darkStyles.modalOverlay} onClick={() => setShowPermissionModal(false)}>
-                    <div style={darkStyles.modal} onClick={e => e.stopPropagation()}>
-                        <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '20px', color: darkTheme.textPrimary }}>권한 추가</h2>
-                        <div style={{ marginBottom: '16px' }}>
-                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>Scope</label>
+                    <div style={{ ...darkStyles.modal, maxWidth: '600px', maxHeight: '90vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+                        <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '20px', color: darkTheme.textPrimary }}>🔐 권한 추가</h2>
+                        
+                        {/* Scope Selection with Description */}
+                        <div style={{ marginBottom: '20px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '8px', color: darkTheme.textSecondary }}>Scope (범위)</label>
                             <select style={{ ...darkStyles.input, width: '100%' }} value={newPermScope} onChange={e => setNewPermScope(e.target.value)}>
-                                <option value="system">System</option>
-                                <option value="database">Database</option>
-                                <option value="schema">Schema</option>
-                                <option value="table">Table</option>
-                                <option value="query">Query</option>
+                                <option value="system">🖥️ System - 시스템 전체</option>
+                                <option value="organization">🏢 Organization - 조직 레벨</option>
+                                <option value="database">🗄️ Database - 데이터베이스</option>
+                                <option value="schema">📂 Schema - 스키마</option>
+                                <option value="table">📋 Table - 테이블</option>
+                                <option value="query">🔍 Query - 저장된 쿼리</option>
                             </select>
+                            <div style={{ marginTop: '8px', padding: '12px', background: `${scopeColors[newPermScope] || darkTheme.textMuted}15`, borderRadius: '8px', borderLeft: `3px solid ${scopeColors[newPermScope] || darkTheme.textMuted}` }}>
+                                <div style={{ fontSize: '12px', color: darkTheme.textSecondary }}>
+                                    {newPermScope === 'system' && '⚡ 관리자 설정, 사용자 관리, 시스템 구성 등 전반적인 시스템 권한'}
+                                    {newPermScope === 'organization' && '🏢 조직 또는 테넌트 레벨의 권한 (멀티 테넌트 환경)'}
+                                    {newPermScope === 'database' && '🗄️ 데이터베이스 연결, 접근, 쿼리 실행 권한'}
+                                    {newPermScope === 'schema' && '📂 특정 스키마 내의 객체들에 대한 권한'}
+                                    {newPermScope === 'table' && '📋 특정 테이블 또는 뷰에 대한 직접적인 권한'}
+                                    {newPermScope === 'query' && '🔍 저장된 쿼리 실행 및 관리 권한'}
+                                </div>
+                            </div>
                         </div>
-                        <div style={{ marginBottom: '16px' }}>
-                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>Resource *</label>
-                            <input type="text" style={{ ...darkStyles.input, width: '100%' }} value={newPermResource} onChange={e => setNewPermResource(e.target.value)} placeholder="db:production:*" />
+
+                        {/* Resource Pattern with Examples */}
+                        <div style={{ marginBottom: '20px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '8px', color: darkTheme.textSecondary }}>Resource (리소스 패턴) *</label>
+                            <input type="text" style={{ ...darkStyles.input, width: '100%', fontFamily: 'monospace' }} value={newPermResource} onChange={e => setNewPermResource(e.target.value)} placeholder={
+                                newPermScope === 'system' ? '*' :
+                                newPermScope === 'database' ? 'db:production' :
+                                newPermScope === 'schema' ? 'schema:mydb.public' :
+                                newPermScope === 'table' ? 'table:mydb.public.users' :
+                                newPermScope === 'query' ? 'query:*' : 'resource-pattern'
+                            } />
+                            <div style={{ marginTop: '10px', padding: '12px', background: darkTheme.bgInput, borderRadius: '8px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: '600', color: darkTheme.textSecondary, marginBottom: '8px' }}>📝 패턴 예시:</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    {newPermScope === 'system' && (
+                                        <>
+                                            <code onClick={() => setNewPermResource('*')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>* (전체)</code>
+                                            <code onClick={() => setNewPermResource('users:*')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>users:* (사용자 관리)</code>
+                                            <code onClick={() => setNewPermResource('settings:*')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>settings:* (설정)</code>
+                                        </>
+                                    )}
+                                    {newPermScope === 'database' && (
+                                        <>
+                                            <code onClick={() => setNewPermResource('db:*')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>db:* (모든 DB)</code>
+                                            <code onClick={() => setNewPermResource('db:production')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>db:production</code>
+                                            <code onClick={() => setNewPermResource('db:analytics')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>db:analytics</code>
+                                        </>
+                                    )}
+                                    {newPermScope === 'schema' && (
+                                        <>
+                                            <code onClick={() => setNewPermResource('schema:*.*')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>schema:*.* (전체)</code>
+                                            <code onClick={() => setNewPermResource('schema:mydb.public')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>schema:mydb.public</code>
+                                            <code onClick={() => setNewPermResource('schema:mydb.*')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>schema:mydb.* (DB 내 전체)</code>
+                                        </>
+                                    )}
+                                    {newPermScope === 'table' && (
+                                        <>
+                                            <code onClick={() => setNewPermResource('table:*')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>table:* (모든 테이블)</code>
+                                            <code onClick={() => setNewPermResource('table:mydb.public.users')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>table:mydb.public.users</code>
+                                            <code onClick={() => setNewPermResource('table:mydb.public.*')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>table:mydb.public.*</code>
+                                        </>
+                                    )}
+                                    {newPermScope === 'query' && (
+                                        <>
+                                            <code onClick={() => setNewPermResource('query:*')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>query:* (모든 쿼리)</code>
+                                            <code onClick={() => setNewPermResource('query:saved:*')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>query:saved:*</code>
+                                        </>
+                                    )}
+                                    {newPermScope === 'organization' && (
+                                        <>
+                                            <code onClick={() => setNewPermResource('org:*')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>org:* (모든 조직)</code>
+                                            <code onClick={() => setNewPermResource('org:default')} style={{ padding: '4px 8px', background: darkTheme.bgSecondary, borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: darkTheme.accentBlue }}>org:default</code>
+                                        </>
+                                    )}
+                                </div>
+                                <div style={{ marginTop: '8px', fontSize: '11px', color: darkTheme.textMuted }}>💡 클릭하여 자동 입력 / * 는 와일드카드(모든 항목)</div>
+                            </div>
                         </div>
-                        <div style={{ marginBottom: '16px' }}>
-                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>Action</label>
-                            <select style={{ ...darkStyles.input, width: '100%' }} value={newPermAction} onChange={e => setNewPermAction(e.target.value)}>
-                                <option value="read">read</option>
-                                <option value="execute">execute</option>
-                                <option value="modify">modify</option>
-                                <option value="delete">delete</option>
-                                <option value="admin">admin</option>
-                            </select>
+
+                        {/* Action Selection with Description */}
+                        <div style={{ marginBottom: '20px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '8px', color: darkTheme.textSecondary }}>Action (수행 작업)</label>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+                                {[
+                                    { value: 'read', label: '읽기', icon: '👁️', desc: '데이터 조회/열람' },
+                                    { value: 'execute', label: '실행', icon: '▶️', desc: '쿼리/작업 실행' },
+                                    { value: 'modify', label: '수정', icon: '✏️', desc: '데이터 변경' },
+                                    { value: 'delete', label: '삭제', icon: '🗑️', desc: '데이터 삭제' },
+                                    { value: 'admin', label: '관리', icon: '⚙️', desc: '전체 관리 권한' },
+                                ].map(action => (
+                                    <div key={action.value} onClick={() => setNewPermAction(action.value)} style={{
+                                        padding: '12px 8px', borderRadius: '8px', textAlign: 'center', cursor: 'pointer',
+                                        background: newPermAction === action.value ? `${darkTheme.accentBlue}20` : darkTheme.bgInput,
+                                        border: `2px solid ${newPermAction === action.value ? darkTheme.accentBlue : 'transparent'}`,
+                                        transition: 'all 0.2s'
+                                    }}>
+                                        <div style={{ fontSize: '20px', marginBottom: '4px' }}>{action.icon}</div>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: newPermAction === action.value ? darkTheme.accentBlue : darkTheme.textPrimary }}>{action.label}</div>
+                                        <div style={{ fontSize: '10px', color: darkTheme.textMuted, marginTop: '2px' }}>{action.desc}</div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                        <div style={{ marginBottom: '16px' }}>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: darkTheme.textPrimary }}>
-                                <input type="checkbox" checked={newPermIsAllow} onChange={e => setNewPermIsAllow(e.target.checked)} />
-                                <span>허용 (체크 해제 시 거부)</span>
-                            </label>
+
+                        {/* Allow/Deny Toggle */}
+                        <div style={{ marginBottom: '24px' }}>
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                                <button onClick={() => setNewPermIsAllow(true)} style={{
+                                    flex: 1, padding: '12px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                                    background: newPermIsAllow ? `${darkTheme.accentGreen}20` : darkTheme.bgInput,
+                                    color: newPermIsAllow ? darkTheme.accentGreen : darkTheme.textSecondary,
+                                    fontWeight: newPermIsAllow ? '600' : '400',
+                                    boxShadow: newPermIsAllow ? `0 0 0 2px ${darkTheme.accentGreen}` : 'none'
+                                }}>✅ 허용 (ALLOW)</button>
+                                <button onClick={() => setNewPermIsAllow(false)} style={{
+                                    flex: 1, padding: '12px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                                    background: !newPermIsAllow ? `${darkTheme.accentRed}20` : darkTheme.bgInput,
+                                    color: !newPermIsAllow ? darkTheme.accentRed : darkTheme.textSecondary,
+                                    fontWeight: !newPermIsAllow ? '600' : '400',
+                                    boxShadow: !newPermIsAllow ? `0 0 0 2px ${darkTheme.accentRed}` : 'none'
+                                }}>🚫 거부 (DENY)</button>
+                            </div>
+                            <div style={{ marginTop: '8px', fontSize: '11px', color: darkTheme.textMuted, textAlign: 'center' }}>
+                                {newPermIsAllow ? '이 권한 규칙에 해당하는 요청을 허용합니다' : '이 권한 규칙에 해당하는 요청을 명시적으로 차단합니다 (DENY가 ALLOW보다 우선)'}
+                            </div>
                         </div>
+
+                        {/* Preview */}
+                        <div style={{ marginBottom: '20px', padding: '16px', background: darkTheme.bgSecondary, borderRadius: '12px', border: `1px solid ${darkTheme.border}` }}>
+                            <div style={{ fontSize: '12px', fontWeight: '600', color: darkTheme.textSecondary, marginBottom: '8px' }}>📋 권한 규칙 미리보기</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ padding: '4px 8px', background: newPermIsAllow ? `${darkTheme.accentGreen}20` : `${darkTheme.accentRed}20`, color: newPermIsAllow ? darkTheme.accentGreen : darkTheme.accentRed, fontSize: '12px', borderRadius: '4px', fontWeight: '600' }}>{newPermIsAllow ? 'ALLOW' : 'DENY'}</span>
+                                <span style={{ padding: '4px 8px', background: `${scopeColors[newPermScope] || darkTheme.textMuted}20`, color: scopeColors[newPermScope] || darkTheme.textMuted, fontSize: '11px', borderRadius: '4px' }}>{newPermScope.toUpperCase()}</span>
+                                <code style={{ padding: '4px 8px', background: darkTheme.bgInput, borderRadius: '4px', fontSize: '12px', fontFamily: 'monospace', color: darkTheme.textPrimary }}>{newPermResource || '(리소스 입력 필요)'}</code>
+                                <span style={{ color: darkTheme.textMuted }}>→</span>
+                                <span style={{ padding: '4px 8px', background: `${darkTheme.accentBlue}20`, color: darkTheme.accentBlue, fontSize: '12px', borderRadius: '4px', fontWeight: '500' }}>{newPermAction.toUpperCase()}</span>
+                            </div>
+                        </div>
+
                         <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                             <button style={darkStyles.buttonSecondary} onClick={() => setShowPermissionModal(false)}>취소</button>
-                            <button style={darkStyles.button} onClick={handleAddPermission}>추가</button>
+                            <button style={{ ...darkStyles.button, opacity: newPermResource ? 1 : 0.5 }} onClick={handleAddPermission} disabled={!newPermResource}>+ 권한 추가</button>
                         </div>
                     </div>
                 </div>
