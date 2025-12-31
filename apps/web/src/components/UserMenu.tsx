@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import useAuth from '../../hooks/useAuth';
+import useAuth from '../hooks/useAuth';
 
 const menuItems = [
     { label: '대시보드', href: '/dashboard', icon: '🏠' },

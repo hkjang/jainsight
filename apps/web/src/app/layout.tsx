@@ -2,6 +2,7 @@ import './global.css';
 import { Sidebar } from '../components/Sidebar';
 import { ClientProviders } from '../components/ClientProviders';
 import { SkipLink } from '../components/SkipLink';
+import Header from '../components/Header';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,19 +31,22 @@ export default function RootLayout({
         <SkipLink />
 
         <Sidebar />
-        <main 
-          id="main-content"
-          role="main"
-          style={{
-            flex: 1,
-            overflow: 'auto',
-            background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 27, 75, 0.9) 100%)',
-          }}
-        >
-          <ClientProviders>
-            {children}
-          </ClientProviders>
-        </main>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+          <Header />
+          <main 
+            id="main-content"
+            role="main"
+            style={{
+              flex: 1,
+              overflow: 'auto',
+              background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 27, 75, 0.9) 100%)',
+            }}
+          >
+            <ClientProviders>
+              {children}
+            </ClientProviders>
+          </main>
+        </div>
       </body>
     </html>
   );
