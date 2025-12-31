@@ -38,15 +38,18 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(true);
     const [showOnboarding, setShowOnboarding] = useState(false);
     const [activityChartData] = useState([5, 12, 8, 15, 10, 18, 14, 22, 16, 25, 20, 28]);
+    const [systemStats, setSystemStats] = useState<{ connections: number; queries: number; failed: number } | null>(null);
     const userId = 'current-user';
 
     const fetchAll = useCallback(async () => {
+        const token = localStorage.getItem('token');
         try {
-            const [dashRes, completeRes, notifRes, favRes] = await Promise.all([
+            const [dashRes, completeRes, notifRes, favRes, sysRes] = await Promise.all([
                 fetch(`${API_URL}/users/${userId}/dashboard`).catch(() => null),
                 fetch(`${API_URL}/users/${userId}/profile-completion`).catch(() => null),
                 fetch(`${API_URL}/users/${userId}/notifications?limit=1`).catch(() => null),
-                fetch(`${API_URL}/users/${userId}/favorites?limit=5`).catch(() => null)
+                fetch(`${API_URL}/users/${userId}/favorites?limit=5`).catch(() => null),
+                token ? fetch(`${API_URL}/dashboard/stats`, { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null) : null
             ]);
 
             if (dashRes?.ok) setData(await dashRes.json());
@@ -60,6 +63,9 @@ export default function DashboardPage() {
 
             if (favRes?.ok) setFavorites(await favRes.json());
             else setFavorites([{ id: '1', itemType: 'query', itemId: 'q1', name: 'Sales Report' }]);
+
+            if (sysRes?.ok) { const s = await sysRes.json(); setSystemStats({ connections: s.connectionsCount || 0, queries: s.queriesCount || 0, failed: s.failedQueriesCount || 0 }); }
+            else setSystemStats({ connections: 5, queries: 127, failed: 3 });
         } catch (error) { console.error('Failed to fetch:', error); }
         finally { setLoading(false); }
     }, [userId]);
@@ -170,6 +176,45 @@ export default function DashboardPage() {
                     </div>
                 </AnimatedCard>
             </div>
+
+            {/* System Stats */}
+            {systemStats && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                    <AnimatedCard delay={0.3}>
+                        <a href="/connections" style={{ display: 'block', padding: '20px', textDecoration: 'none' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#6366f1' }}>{systemStats.connections}</div>
+                                    <div style={{ fontSize: '13px', color: darkTheme.textMuted }}>DB 연결</div>
+                                </div>
+                                <span style={{ fontSize: '24px' }}>🔗</span>
+                            </div>
+                        </a>
+                    </AnimatedCard>
+                    <AnimatedCard delay={0.35}>
+                        <a href="/audit" style={{ display: 'block', padding: '20px', textDecoration: 'none' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#8b5cf6' }}>{systemStats.queries}</div>
+                                    <div style={{ fontSize: '13px', color: darkTheme.textMuted }}>실행된 쿼리</div>
+                                </div>
+                                <span style={{ fontSize: '24px' }}>📊</span>
+                            </div>
+                        </a>
+                    </AnimatedCard>
+                    <AnimatedCard delay={0.4}>
+                        <a href="/editor" style={{ display: 'block', padding: '20px', textDecoration: 'none' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: darkTheme.accentGreen }}>{Math.round(((systemStats.queries - systemStats.failed) / (systemStats.queries || 1)) * 100)}%</div>
+                                    <div style={{ fontSize: '13px', color: darkTheme.textMuted }}>성공률</div>
+                                </div>
+                                <span style={{ fontSize: '24px' }}>✅</span>
+                            </div>
+                        </a>
+                    </AnimatedCard>
+                </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '24px' }}>
                 {/* Quick Actions */}
