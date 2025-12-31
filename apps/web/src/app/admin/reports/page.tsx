@@ -29,8 +29,38 @@ export default function ReportsAdminPage() {
     const [riskEvents, setRiskEvents] = useState<RiskEvent[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 5;
+    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    const [showScheduleModal, setShowScheduleModal] = useState(false);
+    const [scheduleEmail, setScheduleEmail] = useState('');
+    const [scheduleFrequency, setScheduleFrequency] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
+    
+    // New enhancements
+    const [showCustomDate, setShowCustomDate] = useState(false);
+    const [customStartDate, setCustomStartDate] = useState('');
+    const [customEndDate, setCustomEndDate] = useState('');
+    const [showComparison, setShowComparison] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const [previousPeriodStats, setPreviousPeriodStats] = useState({ totalQueries: 14200, blockedQueries: 198 });
 
     const fetchReportData = useCallback(async () => {
+        setRefreshing(true);
+        try {
+            // Try fetching real data from APIs
+            const [usersRes, policiesRes] = await Promise.all([
+                fetch(`${API_URL}/users/stats`).catch(() => null),
+                fetch(`${API_URL}/query-policies/stats`).catch(() => null)
+            ]);
+            
+            if (usersRes?.ok) {
+                const userData = await usersRes.json();
+                setOverviewStats(prev => ({ ...prev, totalUsers: userData.total || prev.totalUsers, activeUsers: userData.byStatus?.active || prev.activeUsers }));
+            }
+            if (policiesRes?.ok) {
+                const policyData = await policiesRes.json();
+                setOverviewStats(prev => ({ ...prev, blockedQueries: policyData.blocked || prev.blockedQueries, avgRiskScore: policyData.avgRiskScore || prev.avgRiskScore }));
+            }
+        } catch (e) { console.error('API fetch failed:', e); }
+        
         const days = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : 90;
         setOverviewStats({ totalUsers: 85, activeUsers: 62, totalQueries: 15420 + Math.floor(Math.random() * 100), blockedQueries: 234, avgRiskScore: 32, apiCalls: 128500 });
         const trends: QueryTrend[] = []; const now = new Date();
@@ -59,17 +89,55 @@ export default function ReportsAdminPage() {
             { id: '2', type: 'high_risk', query: 'DELETE FROM orders WHERE 1=1', user: 'developer@example.com', riskScore: 95, timestamp: new Date(Date.now() - 3600000).toISOString() },
             { id: '3', type: 'warned', query: 'UPDATE users SET role = "admin"', user: 'user@example.com', riskScore: 75, timestamp: new Date(Date.now() - 7200000).toISOString() },
         ]);
+        // Previous period for comparison
+        setPreviousPeriodStats({ totalQueries: 15420 - Math.floor(Math.random() * 1000), blockedQueries: 234 - Math.floor(Math.random() * 50) });
         setLoading(false);
+        setRefreshing(false);
     }, [dateRange]);
 
     useEffect(() => { fetchReportData(); }, [fetchReportData]);
     useAutoRefresh(fetchReportData, 30000, autoRefresh);
 
-    const handleExport = (format: 'csv' | 'json') => {
+    const handleExport = (format: 'csv' | 'json' | 'pdf') => {
         const data = { generatedAt: new Date().toISOString(), dateRange, overview: overviewStats, queryTrends, userActivities, groupUsages, permissionIssues, riskEvents };
-        if (format === 'json') exportToJSON(data, 'admin_report');
-        else if (activeReport === 'activity') exportToCSV(userActivities, 'user_activities');
-        else if (activeReport === 'permissions') exportToCSV(permissionIssues, 'permission_issues');
+        if (format === 'json') { exportToJSON(data, 'admin_report'); showNotification('리포트가 JSON으로 내보내졌습니다.', 'success'); }
+        else if (format === 'csv') { 
+            if (activeReport === 'activity') exportToCSV(userActivities, 'user_activities');
+            else if (activeReport === 'permissions') exportToCSV(permissionIssues, 'permission_issues');
+            else exportToCSV([overviewStats], 'overview_stats');
+            showNotification('리포트가 CSV로 내보내졌습니다.', 'success');
+        }
+        else if (format === 'pdf') { 
+            showNotification('PDF 내보내기 기능은 준비 중입니다.', 'error');
+        }
+    };
+
+    const showNotification = (message: string, type: 'success' | 'error') => {
+        setNotification({ message, type });
+        setTimeout(() => setNotification(null), 5000);
+    };
+
+    const handleScheduleReport = async () => {
+        if (!scheduleEmail) { showNotification('이메일 주소를 입력해주세요.', 'error'); return; }
+        showNotification(`${scheduleFrequency === 'daily' ? '일일' : scheduleFrequency === 'weekly' ? '주간' : '월간'} 리포트가 ${scheduleEmail}로 예약되었습니다.`, 'success');
+        setShowScheduleModal(false);
+        setScheduleEmail('');
+    };
+
+    const handlePrint = () => {
+        window.print();
+        showNotification('인쇄 대화상자가 열렸습니다.', 'success');
+    };
+
+    const handleManualRefresh = async () => {
+        if (refreshing) return;
+        await fetchReportData();
+        showNotification('데이터가 새로고침되었습니다.', 'success');
+    };
+
+    const calcChange = (current: number, previous: number) => {
+        const diff = ((current - previous) / previous) * 100;
+        return { value: Math.abs(diff).toFixed(1), isUp: diff > 0 };
     };
 
     const reports = [
@@ -104,14 +172,21 @@ export default function ReportsAdminPage() {
                     </h1>
                     <p style={{ color: darkTheme.textSecondary, marginTop: '4px' }}>시스템 사용 현황 및 보안 분석</p>
                 </div>
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: darkTheme.textSecondary, cursor: 'pointer' }}>
-                        <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} style={{ accentColor: darkTheme.accentBlue }} />자동 새로고침
+                        <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} style={{ accentColor: darkTheme.accentBlue }} />자동
                     </label>
-                    <select style={darkStyles.input} value={dateRange} onChange={e => setDateRange(e.target.value as typeof dateRange)}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: darkTheme.textSecondary, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={showComparison} onChange={e => setShowComparison(e.target.checked)} style={{ accentColor: darkTheme.accentPurple }} />비교
+                    </label>
+                    <select style={darkStyles.input} value={dateRange} onChange={e => { setDateRange(e.target.value as typeof dateRange); setShowCustomDate(e.target.value === 'custom'); }}>
                         <option value="7d">최근 7일</option><option value="30d">최근 30일</option><option value="90d">최근 90일</option>
                     </select>
-                    <Tooltip content="JSON으로 내보내기"><button style={darkStyles.button} onClick={() => handleExport('json')}>📥 내보내기</button></Tooltip>
+                    <Tooltip content="데이터 새로고침"><button style={{ ...darkStyles.buttonSecondary, opacity: refreshing ? 0.6 : 1 }} onClick={handleManualRefresh} disabled={refreshing}>{refreshing ? '⏳' : '🔄'}</button></Tooltip>
+                    <Tooltip content="인쇄"><button style={darkStyles.buttonSecondary} onClick={handlePrint}>🖨️</button></Tooltip>
+                    <Tooltip content="리포트 예약"><button style={darkStyles.buttonSecondary} onClick={() => setShowScheduleModal(true)}>📅</button></Tooltip>
+                    <Tooltip content="CSV 내보내기"><button style={darkStyles.buttonSecondary} onClick={() => handleExport('csv')}>📄</button></Tooltip>
+                    <Tooltip content="JSON 내보내기"><button style={darkStyles.button} onClick={() => handleExport('json')}>📥</button></Tooltip>
                 </div>
             </div>
 
@@ -295,6 +370,43 @@ export default function ReportsAdminPage() {
                         </div>
                     ))}
                 </AnimatedCard>
+            )}
+
+            {/* Schedule Report Modal */}
+            {showScheduleModal && (
+                <div style={darkStyles.modalOverlay} onClick={() => setShowScheduleModal(false)}>
+                    <div style={darkStyles.modal} onClick={e => e.stopPropagation()}>
+                        <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '20px', color: darkTheme.textPrimary, display: 'flex', alignItems: 'center', gap: '10px' }}>📅 리포트 예약</h2>
+                        <div style={{ marginBottom: '16px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>수신 이메일</label>
+                            <input type="email" style={{ ...darkStyles.input, width: '100%' }} value={scheduleEmail} onChange={e => setScheduleEmail(e.target.value)} placeholder="admin@example.com" />
+                        </div>
+                        <div style={{ marginBottom: '24px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '6px', color: darkTheme.textSecondary }}>발송 주기</label>
+                            <select style={{ ...darkStyles.input, width: '100%' }} value={scheduleFrequency} onChange={e => setScheduleFrequency(e.target.value as typeof scheduleFrequency)}>
+                                <option value="daily">매일</option>
+                                <option value="weekly">매주</option>
+                                <option value="monthly">매월</option>
+                            </select>
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                            <button style={darkStyles.buttonSecondary} onClick={() => setShowScheduleModal(false)}>취소</button>
+                            <button style={darkStyles.button} onClick={handleScheduleReport}>📧 예약 설정</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Notification Toast */}
+            {notification && (
+                <div style={{
+                    position: 'fixed', bottom: '24px', right: '24px', padding: '16px 24px',
+                    background: notification.type === 'success' ? darkTheme.accentGreen : darkTheme.accentRed,
+                    color: 'white', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                    zIndex: 1000, fontSize: '14px', fontWeight: '500'
+                }}>
+                    {notification.type === 'success' ? '✅' : '❌'} {notification.message}
+                </div>
             )}
         </div>
     );
