@@ -1,6 +1,6 @@
 'use strict';
 
-import { Controller, Get, Post, Put, Delete, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 
 @Controller('reports')
@@ -12,6 +12,32 @@ export class ReportsController {
         return this.reportsService.getOverviewStats();
     }
 
+    @Get('user-activities')
+    async getUserActivities(@Query('days') days?: string) {
+        return this.reportsService.getUserActivities(days ? parseInt(days, 10) : 7);
+    }
+
+    @Get('group-usages')
+    async getGroupUsages() {
+        return this.reportsService.getGroupUsages();
+    }
+
+    @Get('permission-issues')
+    async getPermissionIssues() {
+        return this.reportsService.getPermissionIssues();
+    }
+
+    @Get('risk-events')
+    async getRiskEvents(@Query('limit') limit?: string) {
+        return this.reportsService.getRiskEvents(limit ? parseInt(limit, 10) : 10);
+    }
+
+    @Get('query-trends')
+    async getQueryTrends(@Query('days') days?: string) {
+        return this.reportsService.getQueryTrends(days ? parseInt(days, 10) : 14);
+    }
+
+    // Scheduled Reports CRUD
     @Get('scheduled')
     async getScheduledReports() {
         return this.reportsService.getScheduledReports();

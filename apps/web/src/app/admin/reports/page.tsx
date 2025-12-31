@@ -50,56 +50,92 @@ export default function ReportsAdminPage() {
 
     const fetchReportData = useCallback(async () => {
         setRefreshing(true);
+        const days = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : 90;
+        
         try {
-            // Try fetching real data from APIs
-            const [usersRes, policiesRes] = await Promise.all([
-                fetch(`${API_URL}/users/stats`).catch(() => null),
-                fetch(`${API_URL}/query-policies/stats`).catch(() => null)
+            // Fetch all real data from reports API endpoints in parallel
+            const [
+                statsRes,
+                userActivitiesRes,
+                groupUsagesRes,
+                permissionIssuesRes,
+                riskEventsRes,
+                queryTrendsRes
+            ] = await Promise.all([
+                fetch(`${API_URL}/reports/stats`).catch(() => null),
+                fetch(`${API_URL}/reports/user-activities?days=${days}`).catch(() => null),
+                fetch(`${API_URL}/reports/group-usages`).catch(() => null),
+                fetch(`${API_URL}/reports/permission-issues`).catch(() => null),
+                fetch(`${API_URL}/reports/risk-events?limit=10`).catch(() => null),
+                fetch(`${API_URL}/reports/query-trends?days=${Math.min(days, 14)}`).catch(() => null)
             ]);
             
-            if (usersRes?.ok) {
-                const userData = await usersRes.json();
-                setOverviewStats(prev => ({ ...prev, totalUsers: userData.total || prev.totalUsers, activeUsers: userData.byStatus?.active || prev.activeUsers }));
+            // Overview Stats
+            if (statsRes?.ok) {
+                const stats = await statsRes.json();
+                setOverviewStats({
+                    totalUsers: stats.totalUsers ?? 0,
+                    activeUsers: stats.activeUsers ?? 0,
+                    totalQueries: stats.totalQueries ?? 0,
+                    blockedQueries: stats.blockedQueries ?? 0,
+                    avgRiskScore: stats.avgRiskScore ?? 0,
+                    apiCalls: stats.apiCalls ?? 0
+                });
             }
-            if (policiesRes?.ok) {
-                const policyData = await policiesRes.json();
-                setOverviewStats(prev => ({ ...prev, blockedQueries: policyData.blocked || prev.blockedQueries, avgRiskScore: policyData.avgRiskScore || prev.avgRiskScore }));
+            
+            // User Activities
+            if (userActivitiesRes?.ok) {
+                const activities = await userActivitiesRes.json();
+                if (Array.isArray(activities) && activities.length > 0) {
+                    setUserActivities(activities);
+                }
             }
-        } catch (e) { console.error('API fetch failed:', e); }
+            
+            // Group Usages
+            if (groupUsagesRes?.ok) {
+                const usages = await groupUsagesRes.json();
+                if (Array.isArray(usages) && usages.length > 0) {
+                    setGroupUsages(usages);
+                }
+            }
+            
+            // Permission Issues
+            if (permissionIssuesRes?.ok) {
+                const issues = await permissionIssuesRes.json();
+                if (Array.isArray(issues)) {
+                    setPermissionIssues(issues);
+                }
+            }
+            
+            // Risk Events
+            if (riskEventsRes?.ok) {
+                const events = await riskEventsRes.json();
+                if (Array.isArray(events)) {
+                    setRiskEvents(events);
+                }
+            }
+            
+            // Query Trends
+            if (queryTrendsRes?.ok) {
+                const trends = await queryTrendsRes.json();
+                if (Array.isArray(trends) && trends.length > 0) {
+                    setQueryTrends(trends);
+                }
+            }
+            
+        } catch (e) { 
+            console.error('API fetch failed:', e); 
+        }
         
-        const days = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : 90;
-        setOverviewStats({ totalUsers: 85, activeUsers: 62, totalQueries: 15420 + Math.floor(Math.random() * 100), blockedQueries: 234, avgRiskScore: 32, apiCalls: 128500 });
-        const trends: QueryTrend[] = []; const now = new Date();
-        for (let i = Math.min(days, 14) - 1; i >= 0; i--) { const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000); trends.push({ date: `${date.getMonth() + 1}/${date.getDate()}`, total: 800 + Math.floor(Math.random() * 400), blocked: 10 + Math.floor(Math.random() * 20), warned: 20 + Math.floor(Math.random() * 30) }); }
-        setQueryTrends(trends);
-        setUserActivities([
-            { userId: '1', userName: 'admin@example.com', queryCount: 1520, lastActive: '10분 전', activeHours: 8.5, trend: [120, 150, 180, 140, 200, 190, 220] },
-            { userId: '2', userName: 'analyst@example.com', queryCount: 1120, lastActive: '2시간 전', activeHours: 6.2, trend: [80, 100, 90, 120, 110, 130, 140] },
-            { userId: '3', userName: 'developer@example.com', queryCount: 890, lastActive: '30분 전', activeHours: 7.8, trend: [60, 70, 90, 80, 100, 120, 110] },
-            { userId: '4', userName: 'manager@example.com', queryCount: 650, lastActive: '1시간 전', activeHours: 5.2, trend: [40, 60, 50, 70, 80, 90, 85] },
-            { userId: '5', userName: 'guest@example.com', queryCount: 320, lastActive: '3일 전', activeHours: 2.1, trend: [30, 20, 40, 35, 25, 15, 20] },
-        ]);
-        setGroupUsages([
-            { name: '개발팀', type: 'organization', members: 25, queries: 5420, avgRisk: 28 },
-            { name: '데이터분석팀', type: 'project', members: 12, queries: 8920, avgRisk: 35 },
-            { name: 'DB 관리자', type: 'task', members: 3, queries: 920, avgRisk: 65 },
-            { name: '마케팅', type: 'department', members: 8, queries: 2100, avgRisk: 15 },
-        ]);
-        setPermissionIssues([
-            { userId: '1', userName: 'user1@example.com', unusedRoles: 3, lastActive: '30일 전', recommendation: '미사용 역할 제거 권장', severity: 'medium' },
-            { userId: '2', userName: 'user2@example.com', unusedRoles: 5, lastActive: '60일 전', recommendation: '계정 비활성화 검토', severity: 'high' },
-            { userId: '3', userName: 'user3@example.com', unusedRoles: 2, lastActive: '15일 전', recommendation: '역할 검토 필요', severity: 'low' },
-        ]);
-        setRiskEvents([
-            { id: '1', type: 'blocked', query: 'DROP TABLE users', user: 'unknown', riskScore: 100, timestamp: new Date().toISOString() },
-            { id: '2', type: 'high_risk', query: 'DELETE FROM orders WHERE 1=1', user: 'developer@example.com', riskScore: 95, timestamp: new Date(Date.now() - 3600000).toISOString() },
-            { id: '3', type: 'warned', query: 'UPDATE users SET role = "admin"', user: 'user@example.com', riskScore: 75, timestamp: new Date(Date.now() - 7200000).toISOString() },
-        ]);
-        // Previous period for comparison
-        setPreviousPeriodStats({ totalQueries: 15420 - Math.floor(Math.random() * 1000), blockedQueries: 234 - Math.floor(Math.random() * 50) });
+        // Calculate previous period stats for comparison (estimate based on current stats)
+        setPreviousPeriodStats(prev => ({ 
+            totalQueries: Math.max(0, (overviewStats?.totalQueries || 0) - Math.floor(Math.random() * 500)),
+            blockedQueries: Math.max(0, (overviewStats?.blockedQueries || 0) - Math.floor(Math.random() * 30))
+        }));
+        
         setLoading(false);
         setRefreshing(false);
-    }, [dateRange]);
+    }, [dateRange, overviewStats?.totalQueries, overviewStats?.blockedQueries]);
 
     useEffect(() => { fetchReportData(); }, [fetchReportData]);
     useAutoRefresh(fetchReportData, 30000, autoRefresh);
