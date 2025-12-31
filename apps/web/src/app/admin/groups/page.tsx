@@ -27,6 +27,14 @@ interface GroupMember {
     addedAt: string;
 }
 
+interface User {
+    id: string;
+    username: string;
+    email: string;
+    displayName?: string;
+    isActive: boolean;
+}
+
 const typeColors: Record<string, string> = {
     organization: '#8B5CF6',
     project: '#3B82F6',
@@ -49,6 +57,7 @@ export default function GroupsAdminPage() {
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
     const [members, setMembers] = useState<GroupMember[]>([]);
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+    const [users, setUsers] = useState<User[]>([]);
     
     const [newGroupName, setNewGroupName] = useState('');
     const [newGroupType, setNewGroupType] = useState<'organization' | 'project' | 'task'>('project');
@@ -65,7 +74,7 @@ export default function GroupsAdminPage() {
     const [editGroupDescription, setEditGroupDescription] = useState('');
     const [editGroupParent, setEditGroupParent] = useState<string>('');
     const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-    const [newMemberEmail, setNewMemberEmail] = useState('');
+    const [selectedUserId, setSelectedUserId] = useState<string>('');
 
     const fetchGroups = useCallback(async () => {
         try {
@@ -103,7 +112,19 @@ export default function GroupsAdminPage() {
         } catch (error) { console.error('Failed to fetch members:', error); }
     }, []);
 
-    useEffect(() => { fetchGroups(); }, [fetchGroups]);
+    const fetchUsers = useCallback(async () => {
+        try {
+            const response = await fetch(`${API_URL}/users?limit=100`);
+            if (response.ok) {
+                const data = await response.json();
+                // Handle both array and object with items property
+                const userList = Array.isArray(data) ? data : (data.items || data.users || []);
+                setUsers(userList.filter((u: User) => u.isActive !== false));
+            }
+        } catch (error) { console.error('Failed to fetch users:', error); }
+    }, []);
+
+    useEffect(() => { fetchGroups(); fetchUsers(); }, [fetchGroups, fetchUsers]);
 
     const handleCreateGroup = async () => {
         if (!newGroupName) return;
@@ -188,20 +209,26 @@ export default function GroupsAdminPage() {
     };
 
     const handleAddMember = async () => {
-        if (!selectedGroup || !newMemberEmail) return;
+        if (!selectedGroup || !selectedUserId) return;
         try {
             const response = await fetch(`${API_URL}/groups/${selectedGroup.id}/members`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: newMemberEmail, addedBy: 'admin' })
+                body: JSON.stringify({ userId: selectedUserId, addedBy: 'admin' })
             });
             if (response.ok) {
                 fetchMembers(selectedGroup.id);
-                setNewMemberEmail('');
+                setSelectedUserId('');
                 showNotification('멤버가 추가되었습니다.', 'success');
             } else {
                 showNotification('멤버 추가 실패', 'error');
             }
         } catch (error) { console.error('Add member failed:', error); showNotification('멤버 추가 실패', 'error'); }
+    };
+
+    // Filter out users already in the group
+    const getAvailableUsers = () => {
+        const memberUserIds = new Set(members.map(m => m.userId));
+        return users.filter(u => !memberUserIds.has(u.id));
     };
 
     const getChildren = (parentId: string): Group[] => groups.filter(g => g.parentId === parentId);
@@ -391,8 +418,28 @@ export default function GroupsAdminPage() {
 
                         {/* Add Member */}
                         <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                            <input type="text" placeholder="사용자 ID 입력..." style={{ ...darkStyles.input, flex: 1 }} value={newMemberEmail} onChange={e => setNewMemberEmail(e.target.value)} />
-                            <button style={{ ...darkStyles.button, padding: '8px 16px' }} onClick={handleAddMember}>+ 추가</button>
+                            <select 
+                                style={{ ...darkStyles.input, flex: 1, cursor: 'pointer' }} 
+                                value={selectedUserId} 
+                                onChange={e => setSelectedUserId(e.target.value)}
+                            >
+                                <option value="">-- 사용자 선택 --</option>
+                                {getAvailableUsers().map(user => (
+                                    <option key={user.id} value={user.id}>
+                                        {user.displayName || user.username} ({user.email})
+                                    </option>
+                                ))}
+                            </select>
+                            <button 
+                                style={{ 
+                                    ...darkStyles.button, 
+                                    padding: '8px 16px',
+                                    opacity: selectedUserId ? 1 : 0.5,
+                                    cursor: selectedUserId ? 'pointer' : 'not-allowed'
+                                }} 
+                                onClick={handleAddMember}
+                                disabled={!selectedUserId}
+                            >+ 추가</button>
                         </div>
 
                         <div style={{ maxHeight: '400px', overflow: 'auto' }}>
