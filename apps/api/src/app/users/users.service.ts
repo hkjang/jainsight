@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, MoreThanOrEqual } from 'typeorm';
-import { User, UserStatus, AccountSource } from './entities/user.entity';
+import { User, UserStatus, AccountSource, UserPreferences } from './entities/user.entity';
+import { UserActivity, ActivityAction } from './entities/user-activity.entity';
 import { randomBytes } from 'crypto';
 
 export interface UserListOptions {
@@ -18,6 +19,8 @@ export class UsersService {
     constructor(
         @InjectRepository(User)
         private usersRepository: Repository<User>,
+        @InjectRepository(UserActivity)
+        private activityRepository: Repository<UserActivity>,
     ) { }
 
     // Basic Operations
@@ -244,6 +247,206 @@ export class UsersService {
             byStatus: Object.fromEntries(statusCounts.map(s => [s.status, parseInt(s.count)])),
             bySource: Object.fromEntries(sourceCounts.map(s => [s.source, parseInt(s.count)])),
             recentLogins
+        };
+    }
+
+    // Profile Management
+    async getProfile(userId: string): Promise<{
+        id: string;
+        email: string;
+        name: string;
+        avatarUrl?: string;
+        bio?: string;
+        jobTitle?: string;
+        role: string;
+        status: UserStatus;
+        accountSource: AccountSource;
+        lastLoginAt?: Date;
+        createdAt: Date;
+    }> {
+        const user = await this.findOneById(userId);
+        if (!user) throw new NotFoundException('User not found');
+        
+        return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            avatarUrl: user.avatarUrl,
+            bio: user.bio,
+            jobTitle: user.jobTitle,
+            role: user.role,
+            status: user.status,
+            accountSource: user.accountSource,
+            lastLoginAt: user.lastLoginAt,
+            createdAt: user.createdAt
+        };
+    }
+
+    async updateProfile(userId: string, data: {
+        name?: string;
+        avatarUrl?: string;
+        bio?: string;
+        jobTitle?: string;
+    }): Promise<User> {
+        const user = await this.findOneById(userId);
+        if (!user) throw new NotFoundException('User not found');
+
+        if (data.name) user.name = data.name;
+        if (data.avatarUrl !== undefined) user.avatarUrl = data.avatarUrl;
+        if (data.bio !== undefined) user.bio = data.bio;
+        if (data.jobTitle !== undefined) user.jobTitle = data.jobTitle;
+
+        return this.usersRepository.save(user);
+    }
+
+    // Preferences Management
+    async getPreferences(userId: string): Promise<UserPreferences> {
+        const user = await this.findOneById(userId);
+        if (!user) throw new NotFoundException('User not found');
+        
+        // Return stored preferences or defaults
+        return user.preferences || {
+            theme: 'system',
+            language: 'ko',
+            timezone: 'Asia/Seoul',
+            notifications: {
+                email: true,
+                browser: true,
+                queryResults: true,
+                systemAlerts: true
+            },
+            editor: {
+                fontSize: 14,
+                tabSize: 4,
+                autoComplete: true,
+                lineNumbers: true
+            }
+        };
+    }
+
+    async updatePreferences(userId: string, preferences: Partial<UserPreferences>): Promise<UserPreferences> {
+        const user = await this.findOneById(userId);
+        if (!user) throw new NotFoundException('User not found');
+
+        const currentPrefs = await this.getPreferences(userId);
+        const newPrefs: UserPreferences = {
+            ...currentPrefs,
+            ...preferences,
+            notifications: { ...currentPrefs.notifications, ...preferences.notifications },
+            editor: { ...currentPrefs.editor, ...preferences.editor }
+        };
+
+        user.preferences = newPrefs;
+        await this.usersRepository.save(user);
+        
+        return newPrefs;
+    }
+
+    // Activity Logging
+    async logActivity(data: {
+        userId: string;
+        action: ActivityAction;
+        details?: Record<string, unknown>;
+        resourceType?: string;
+        resourceId?: string;
+        ipAddress?: string;
+        userAgent?: string;
+        sessionId?: string;
+        success?: boolean;
+        errorMessage?: string;
+        durationMs?: number;
+    }): Promise<UserActivity> {
+        const activity = this.activityRepository.create({
+            ...data,
+            success: data.success ?? true
+        });
+        return this.activityRepository.save(activity);
+    }
+
+    async getActivityLog(userId: string, options: {
+        action?: ActivityAction;
+        startDate?: Date;
+        endDate?: Date;
+        limit?: number;
+        offset?: number;
+    } = {}): Promise<{ activities: UserActivity[]; total: number }> {
+        const qb = this.activityRepository.createQueryBuilder('activity')
+            .where('activity.userId = :userId', { userId })
+            .orderBy('activity.createdAt', 'DESC');
+
+        if (options.action) {
+            qb.andWhere('activity.action = :action', { action: options.action });
+        }
+        if (options.startDate) {
+            qb.andWhere('activity.createdAt >= :startDate', { startDate: options.startDate });
+        }
+        if (options.endDate) {
+            qb.andWhere('activity.createdAt <= :endDate', { endDate: options.endDate });
+        }
+
+        const total = await qb.getCount();
+        
+        qb.take(options.limit || 50).skip(options.offset || 0);
+        const activities = await qb.getMany();
+
+        return { activities, total };
+    }
+
+    // User Dashboard
+    async getDashboard(userId: string): Promise<{
+        profile: {
+            name: string;
+            email: string;
+            avatarUrl?: string;
+            role: string;
+        };
+        stats: {
+            queriesExecuted: number;
+            reportsViewed: number;
+            lastLoginAt?: Date;
+            accountAge: number; // days
+        };
+        recentActivity: UserActivity[];
+    }> {
+        const user = await this.findOneById(userId);
+        if (!user) throw new NotFoundException('User not found');
+
+        // Get activity stats
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        
+        const queriesExecuted = await this.activityRepository.count({
+            where: { userId, action: 'query_execute' as ActivityAction }
+        });
+
+        const reportsViewed = await this.activityRepository.count({
+            where: { userId, action: 'report_view' as ActivityAction }
+        });
+
+        // Get recent activity
+        const recentActivity = await this.activityRepository.find({
+            where: { userId },
+            order: { createdAt: 'DESC' },
+            take: 10
+        });
+
+        const accountAge = Math.floor(
+            (Date.now() - new Date(user.createdAt).getTime()) / (24 * 60 * 60 * 1000)
+        );
+
+        return {
+            profile: {
+                name: user.name,
+                email: user.email,
+                avatarUrl: user.avatarUrl,
+                role: user.role
+            },
+            stats: {
+                queriesExecuted,
+                reportsViewed,
+                lastLoginAt: user.lastLoginAt,
+                accountAge
+            },
+            recentActivity
         };
     }
 }

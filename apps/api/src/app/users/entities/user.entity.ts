@@ -12,6 +12,26 @@ export interface AccessTimePolicy {
     timezone: string;
 }
 
+export type UserTheme = 'dark' | 'light' | 'system';
+
+export interface UserPreferences {
+    theme: UserTheme;
+    language: string;
+    timezone: string;
+    notifications: {
+        email: boolean;
+        browser: boolean;
+        queryResults: boolean;
+        systemAlerts: boolean;
+    };
+    editor: {
+        fontSize: number;
+        tabSize: number;
+        autoComplete: boolean;
+        lineNumbers: boolean;
+    };
+}
+
 @Entity()
 export class User {
     @PrimaryGeneratedColumn('uuid')
@@ -41,6 +61,19 @@ export class User {
 
     @Column({ type: 'simple-json', nullable: true })
     accessTimePolicy: AccessTimePolicy;
+
+    // User profile fields
+    @Column({ nullable: true })
+    avatarUrl: string;
+
+    @Column({ nullable: true })
+    bio: string;
+
+    @Column({ nullable: true })
+    jobTitle: string;
+
+    @Column({ type: 'simple-json', nullable: true })
+    preferences: UserPreferences;
 
     @Column({ nullable: true })
     externalId: string; // For SSO/LDAP/AD integration

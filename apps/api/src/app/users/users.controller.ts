@@ -1,7 +1,8 @@
 
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpCode, HttpStatus, Req } from '@nestjs/common';
 import { UsersService, UserListOptions } from './users.service';
-import { User, UserStatus } from './entities/user.entity';
+import { User, UserStatus, UserPreferences } from './entities/user.entity';
+import { UserActivity, ActivityAction } from './entities/user-activity.entity';
 import { Request } from 'express';
 
 @Controller('users')
@@ -112,5 +113,58 @@ export class UsersController {
     @HttpCode(HttpStatus.NO_CONTENT)
     async deleteUser(@Param('id') id: string): Promise<void> {
         return this.usersService.deleteUser(id);
+    }
+
+    // Profile Endpoints
+    @Get(':id/profile')
+    async getProfile(@Param('id') id: string) {
+        return this.usersService.getProfile(id);
+    }
+
+    @Put(':id/profile')
+    async updateProfile(
+        @Param('id') id: string,
+        @Body() data: { name?: string; avatarUrl?: string; bio?: string; jobTitle?: string }
+    ): Promise<User> {
+        return this.usersService.updateProfile(id, data);
+    }
+
+    // Preferences Endpoints
+    @Get(':id/preferences')
+    async getPreferences(@Param('id') id: string): Promise<UserPreferences> {
+        return this.usersService.getPreferences(id);
+    }
+
+    @Put(':id/preferences')
+    async updatePreferences(
+        @Param('id') id: string,
+        @Body() data: Partial<UserPreferences>
+    ): Promise<UserPreferences> {
+        return this.usersService.updatePreferences(id, data);
+    }
+
+    // Activity Endpoints
+    @Get(':id/activity')
+    async getActivityLog(
+        @Param('id') id: string,
+        @Query('action') action?: ActivityAction,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('limit') limit?: string,
+        @Query('offset') offset?: string
+    ): Promise<{ activities: UserActivity[]; total: number }> {
+        return this.usersService.getActivityLog(id, {
+            action,
+            startDate: startDate ? new Date(startDate) : undefined,
+            endDate: endDate ? new Date(endDate) : undefined,
+            limit: limit ? parseInt(limit, 10) : undefined,
+            offset: offset ? parseInt(offset, 10) : undefined
+        });
+    }
+
+    // Dashboard Endpoint
+    @Get(':id/dashboard')
+    async getDashboard(@Param('id') id: string) {
+        return this.usersService.getDashboard(id);
     }
 }
