@@ -120,6 +120,26 @@ export class SqlApiService implements OnModuleInit {
         return this.templateRepository.findOne({ where: { id } });
     }
 
+    async update(id: string, updateDto: Partial<SqlTemplate>) {
+        // If SQL is updated, re-extract parameters
+        if (updateDto.sql) {
+            const detectedParams = this.extractParameters(updateDto.sql);
+            const finalParams = detectedParams.map(p => {
+                const existing = updateDto.parameters?.find(ep => ep.name === p);
+                return existing || { name: p, type: 'string', required: true };
+            });
+            updateDto.parameters = finalParams as any;
+        }
+
+        await this.templateRepository.update(id, updateDto);
+        return this.findOne(id);
+    }
+
+    async delete(id: string) {
+        const result = await this.templateRepository.delete(id);
+        return { deleted: result.affected > 0 };
+    }
+
     async execute(templateId: string, params: Record<string, any>, apiKey?: string) {
         const template = await this.findOne(templateId);
         if (!template) throw new Error('Template not found');

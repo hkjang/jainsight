@@ -26,6 +26,29 @@ export class SqlApiController {
         return this.sqlApiService.findAll();
     }
 
+    @Get(':id')
+    async findOne(@Param('id') id: string) {
+        const template = await this.sqlApiService.findOne(id);
+        if (!template) throw new NotFoundException('Template not found');
+        return template;
+    }
+
+    @Put(':id')
+    @Roles('admin')
+    async update(@Param('id') id: string, @Body() body: any) {
+        const template = await this.sqlApiService.findOne(id);
+        if (!template) throw new NotFoundException('Template not found');
+        return this.sqlApiService.update(id, body);
+    }
+
+    @Delete(':id')
+    @Roles('admin')
+    async delete(@Param('id') id: string) {
+        const template = await this.sqlApiService.findOne(id);
+        if (!template) throw new NotFoundException('Template not found');
+        return this.sqlApiService.delete(id);
+    }
+
     @Get(':id/openapi')
     async getOpenApi(@Param('id') id: string) {
         const template = await this.sqlApiService.findOne(id);
@@ -40,17 +63,7 @@ export class SqlApiController {
     }
 
     @Post('execute/:templateId')
-    // Public endpoint protected by API Key in body/header?
-    // Requirement says: "Auth: JWT, API Key".
-    // If JWT is missing, we check API Key inside service?
-    // Let's make a specific public endpoint.
-    @Throttle({ default: { limit: 10, ttl: 60000 } }) // Higher strictness for public API
-    @Post('execute/:templateId')
-    // Public endpoint protected by API Key in body/header?
-    // Requirement says: "Auth: JWT, API Key".
-    // If JWT is missing, we check API Key inside service?
-    // Let's make a specific public endpoint.
-    @Throttle({ default: { limit: 10, ttl: 60000 } }) // Higher strictness for public API
+    @Throttle({ default: { limit: 10, ttl: 60000 } })
     async executePublic(@Param('templateId') templateId: string, @Body() body: { apiKey: string; params: any }) {
         return this.sqlApiService.execute(templateId, body.params, body.apiKey);
     }
