@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 
 interface SecuritySettings {
+    id?: string;
     enablePromptInjectionCheck: boolean;
     enableSqlInjectionCheck: boolean;
     enableDdlBlock: boolean;
@@ -17,12 +18,7 @@ interface SecuritySettings {
     retentionDays: number;
 }
 
-interface SecurityEvent {
-    id: string;
-    type: 'injection_blocked' | 'ddl_blocked' | 'pii_masked' | 'rate_limited';
-    message: string;
-    timestamp: string;
-}
+const API_URL = '/api';
 
 const defaultSettings: SecuritySettings = {
     enablePromptInjectionCheck: true,
@@ -91,27 +87,54 @@ export const dynamic = 'force-dynamic';
 
 export default function SecurityPage() {
     const [settings, setSettings] = useState<SecuritySettings>(defaultSettings);
-    const [recentEvents, setRecentEvents] = useState<SecurityEvent[]>([]);
+    const [originalSettings, setOriginalSettings] = useState<SecuritySettings>(defaultSettings);
+    const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [unsavedChanges, setUnsavedChanges] = useState(false);
-    const [activePreset, setActivePreset] = useState<string | null>('표준 모드');
+    const [activePreset, setActivePreset] = useState<string | null>(null);
+    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+    const showNotification = (message: string, type: 'success' | 'error') => {
+        setNotification({ message, type });
+        setTimeout(() => setNotification(null), 5000);
+    };
+
+    const unsavedChanges = useMemo(() => {
+        return JSON.stringify(settings) !== JSON.stringify(originalSettings);
+    }, [settings, originalSettings]);
 
     useEffect(() => {
-        // Load settings (mock)
-        const saved = localStorage.getItem('securitySettings');
-        if (saved) {
-            try {
-                setSettings(JSON.parse(saved));
-            } catch { }
-        }
-
-        // Mock recent events
-        setRecentEvents([
-            { id: '1', type: 'injection_blocked', message: 'Prompt injection attempt blocked', timestamp: new Date().toISOString() },
-            { id: '2', type: 'ddl_blocked', message: 'DROP TABLE employees blocked', timestamp: new Date(Date.now() - 3600000).toISOString() },
-            { id: '3', type: 'pii_masked', message: 'SSN column masked in query results', timestamp: new Date(Date.now() - 7200000).toISOString() },
-        ]);
+        fetchSettings();
     }, []);
+
+    const fetchSettings = async () => {
+        try {
+            const res = await fetch(`${API_URL}/admin/security-settings`);
+            if (res.ok) {
+                const data = await res.json();
+                setSettings(data);
+                setOriginalSettings(data);
+                checkPreset(data);
+            }
+        } catch (e) {
+            console.error('Failed to fetch settings:', e);
+            showNotification('설정을 불러오는데 실패했습니다', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const checkPreset = (data: SecuritySettings) => {
+        for (const preset of presetProfiles) {
+            const matches = Object.entries(preset.settings).every(
+                ([key, value]) => (data as any)[key] === value
+            );
+            if (matches) {
+                setActivePreset(preset.name);
+                return;
+            }
+        }
+        setActivePreset(null);
+    };
 
     // Security Score
     const securityScore = useMemo(() => {
@@ -128,22 +151,55 @@ export default function SecurityPage() {
 
     const updateSettings = (updates: Partial<SecuritySettings>) => {
         setSettings(prev => ({ ...prev, ...updates }));
-        setUnsavedChanges(true);
         setActivePreset(null);
     };
 
     const applyPreset = (preset: typeof presetProfiles[0]) => {
         setSettings(prev => ({ ...prev, ...preset.settings }));
         setActivePreset(preset.name);
-        setUnsavedChanges(true);
     };
 
     const handleSave = async () => {
         setSaving(true);
         try {
-            localStorage.setItem('securitySettings', JSON.stringify(settings));
-            await new Promise(r => setTimeout(r, 500)); // Simulate API call
-            setUnsavedChanges(false);
+            const res = await fetch(`${API_URL}/admin/security-settings`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setSettings(data);
+                setOriginalSettings(data);
+                showNotification('설정이 저장되었습니다', 'success');
+            } else {
+                showNotification('저장에 실패했습니다', 'error');
+            }
+        } catch (e) {
+            console.error('Failed to save:', e);
+            showNotification('저장에 실패했습니다', 'error');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleReset = async () => {
+        if (!confirm('모든 설정을 기본값으로 초기화하시겠습니까?')) return;
+        setSaving(true);
+        try {
+            const res = await fetch(`${API_URL}/admin/security-settings/reset`, { method: 'POST' });
+            if (res.ok) {
+                const data = await res.json();
+                setSettings(data);
+                setOriginalSettings(data);
+                showNotification('기본값으로 초기화되었습니다', 'success');
+                checkPreset(data);
+            } else {
+                showNotification('초기화에 실패했습니다', 'error');
+            }
+        } catch (e) {
+            console.error('Failed to reset:', e);
+            showNotification('초기화에 실패했습니다', 'error');
         } finally {
             setSaving(false);
         }
@@ -168,13 +224,14 @@ export default function SecurityPage() {
             try {
                 const imported = JSON.parse(event.target?.result as string);
                 setSettings({ ...defaultSettings, ...imported });
-                setUnsavedChanges(true);
                 setActivePreset(null);
+                showNotification('설정을 가져왔습니다 (저장 필요)', 'success');
             } catch {
-                alert('올바른 JSON 파일이 아닙니다.');
+                showNotification('올바른 JSON 파일이 아닙니다', 'error');
             }
         };
         reader.readAsText(file);
+        e.target.value = '';
     };
 
     const inputStyle = {
@@ -235,12 +292,13 @@ export default function SecurityPage() {
         </div>
     );
 
-    const eventTypeConfig: Record<string, { icon: string; color: string }> = {
-        injection_blocked: { icon: '🛡️', color: '#ef4444' },
-        ddl_blocked: { icon: '🚫', color: '#f59e0b' },
-        pii_masked: { icon: '🔒', color: '#a855f7' },
-        rate_limited: { icon: '⏱️', color: '#6366f1' },
-    };
+    if (loading) {
+        return (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+                <div style={{ color: '#6b7280' }}>로딩 중...</div>
+            </div>
+        );
+    }
 
     return (
         <div>
@@ -257,6 +315,9 @@ export default function SecurityPage() {
                             ● 저장되지 않은 변경사항
                         </span>
                     )}
+                    <button onClick={handleReset} style={{ ...buttonStyle, background: 'rgba(239, 68, 68, 0.2)', color: '#fca5a5', padding: '10px 16px' }}>
+                        🔄 초기화
+                    </button>
                     <label style={{ ...buttonStyle, background: 'rgba(99, 102, 241, 0.2)', color: '#a5b4fc', cursor: 'pointer', padding: '10px 16px' }}>
                         📥 가져오기
                         <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} />
@@ -274,7 +335,7 @@ export default function SecurityPage() {
                             opacity: saving ? 0.7 : 1,
                         }}
                     >
-                        {saving ? '저장 중...' : '설정 저장'}
+                        {saving ? '저장 중...' : '💾 설정 저장'}
                     </button>
                 </div>
             </div>
@@ -454,7 +515,7 @@ export default function SecurityPage() {
                                 <input
                                     type="number"
                                     value={settings.maxRequestsPerMinute}
-                                    onChange={(e) => updateSettings({ maxRequestsPerMinute: parseInt(e.target.value) })}
+                                    onChange={(e) => updateSettings({ maxRequestsPerMinute: parseInt(e.target.value) || 60 })}
                                     style={{ ...inputStyle, maxWidth: '120px' }}
                                     min={1}
                                 />
@@ -475,7 +536,7 @@ export default function SecurityPage() {
                                 <input
                                     type="number"
                                     value={settings.maxResultRows}
-                                    onChange={(e) => updateSettings({ maxResultRows: parseInt(e.target.value) })}
+                                    onChange={(e) => updateSettings({ maxResultRows: parseInt(e.target.value) || 1000 })}
                                     style={inputStyle}
                                     min={1}
                                 />
@@ -485,7 +546,7 @@ export default function SecurityPage() {
                                 <input
                                     type="number"
                                     value={settings.retentionDays}
-                                    onChange={(e) => updateSettings({ retentionDays: parseInt(e.target.value) })}
+                                    onChange={(e) => updateSettings({ retentionDays: parseInt(e.target.value) || 90 })}
                                     style={inputStyle}
                                     min={1}
                                 />
@@ -523,38 +584,6 @@ export default function SecurityPage() {
                         </div>
                     </div>
 
-                    {/* Recent Events */}
-                    <div style={{ padding: '18px', background: 'rgba(20, 20, 35, 0.6)', borderRadius: '14px', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
-                        <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#fff', marginBottom: '14px' }}>🔔 최근 보안 이벤트</h3>
-                        <div style={{ display: 'grid', gap: '10px' }}>
-                            {recentEvents.length === 0 ? (
-                                <div style={{ fontSize: '13px', color: '#6b7280', textAlign: 'center', padding: '20px' }}>
-                                    최근 이벤트 없음
-                                </div>
-                            ) : (
-                                recentEvents.map(event => {
-                                    const config = eventTypeConfig[event.type] || { icon: '📌', color: '#6b7280' };
-                                    return (
-                                        <div key={event.id} style={{ 
-                                            padding: '10px', 
-                                            background: 'rgba(10, 10, 20, 0.5)', 
-                                            borderRadius: '8px',
-                                            borderLeft: `3px solid ${config.color}`,
-                                        }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                                                <span style={{ fontSize: '14px' }}>{config.icon}</span>
-                                                <span style={{ fontSize: '12px', color: '#e0e0e0' }}>{event.message}</span>
-                                            </div>
-                                            <div style={{ fontSize: '10px', color: '#6b7280' }}>
-                                                {new Date(event.timestamp).toLocaleString('ko-KR')}
-                                            </div>
-                                        </div>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </div>
-
                     {/* Tips */}
                     <div style={{ padding: '18px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '14px', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
                         <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#f59e0b', marginBottom: '10px' }}>💡 보안 팁</h3>
@@ -566,6 +595,18 @@ export default function SecurityPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Notification Toast */}
+            {notification && (
+                <div style={{
+                    position: 'fixed', bottom: '24px', right: '24px', padding: '16px 24px',
+                    background: notification.type === 'success' ? '#10b981' : '#ef4444',
+                    color: 'white', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                    zIndex: 1000, fontSize: '14px', fontWeight: '500'
+                }}>
+                    {notification.type === 'success' ? '✅' : '❌'} {notification.message}
+                </div>
+            )}
         </div>
     );
 }

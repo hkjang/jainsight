@@ -9,6 +9,7 @@ import {
     AiExecutionLog, 
     Nl2SqlPolicy 
 } from './entities';
+import { SecuritySettings } from './entities/security-settings.entity';
 
 // Services
 import {
@@ -22,6 +23,7 @@ import {
     AiMonitorService,
     Nl2SqlPolicyService,
 } from './services';
+import { SecuritySettingsService } from './services/security-settings.service';
 
 // Controllers
 import {
@@ -32,6 +34,7 @@ import {
     AiMonitorController,
     Nl2SqlController,
 } from './controllers';
+import { SecuritySettingsController } from './controllers/security-settings.controller';
 
 import { SchemaModule } from '../schema/schema.module';
 
@@ -43,6 +46,7 @@ import { SchemaModule } from '../schema/schema.module';
             PromptTemplate,
             AiExecutionLog,
             Nl2SqlPolicy,
+            SecuritySettings,
         ]),
         SchemaModule,
     ],
@@ -53,6 +57,7 @@ import { SchemaModule } from '../schema/schema.module';
         Nl2SqlPolicyController,
         AiMonitorController,
         Nl2SqlController,
+        SecuritySettingsController,
     ],
     providers: [
         AiProviderService,
@@ -64,6 +69,7 @@ import { SchemaModule } from '../schema/schema.module';
         Nl2SqlPipelineService,
         AiMonitorService,
         Nl2SqlPolicyService,
+        SecuritySettingsService,
     ],
     exports: [
         AiProviderService,
@@ -75,6 +81,8 @@ import { SchemaModule } from '../schema/schema.module';
         Nl2SqlPipelineService,
         AiMonitorService,
         Nl2SqlPolicyService,
+        SecuritySettingsService,
     ],
 })
 export class AiAdminModule {}
+

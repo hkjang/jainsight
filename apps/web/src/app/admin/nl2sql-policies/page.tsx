@@ -52,6 +52,12 @@ export default function Nl2SqlPoliciesPage() {
     const [editingPolicy, setEditingPolicy] = useState<Nl2SqlPolicy | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [comparing, setComparing] = useState<string[]>([]);
+    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+    const showNotification = (message: string, type: 'success' | 'error') => {
+        setNotification({ message, type });
+        setTimeout(() => setNotification(null), 5000);
+    };
 
     const [form, setForm] = useState({
         name: '',
@@ -121,28 +127,44 @@ export default function Nl2SqlPoliciesPage() {
             if (res.ok) {
                 fetchPolicies();
                 closeModal();
+                showNotification(editingPolicy ? '정책이 수정되었습니다' : '정책이 생성되었습니다', 'success');
+            } else {
+                showNotification('저장에 실패했습니다', 'error');
             }
         } catch (error) {
             console.error('Failed to save policy:', error);
+            showNotification('저장에 실패했습니다', 'error');
         }
     };
 
     const handleDelete = async (id: string) => {
         if (!confirm('정말 삭제하시겠습니까?')) return;
         try {
-            await fetch(`${API_BASE}/admin/nl2sql-policies/${id}`, { method: 'DELETE' });
-            fetchPolicies();
+            const res = await fetch(`${API_BASE}/admin/nl2sql-policies/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                fetchPolicies();
+                showNotification('정책이 삭제되었습니다', 'success');
+            } else {
+                showNotification('삭제에 실패했습니다', 'error');
+            }
         } catch (error) {
             console.error('Failed to delete policy:', error);
+            showNotification('삭제에 실패했습니다', 'error');
         }
     };
 
     const handleActivate = async (id: string) => {
         try {
-            await fetch(`${API_BASE}/admin/nl2sql-policies/${id}/activate`, { method: 'POST' });
-            fetchPolicies();
+            const res = await fetch(`${API_BASE}/admin/nl2sql-policies/${id}/activate`, { method: 'POST' });
+            if (res.ok) {
+                fetchPolicies();
+                showNotification('정책이 활성화되었습니다', 'success');
+            } else {
+                showNotification('활성화에 실패했습니다', 'error');
+            }
         } catch (error) {
             console.error('Failed to activate policy:', error);
+            showNotification('활성화에 실패했습니다', 'error');
         }
     };
 
@@ -528,6 +550,19 @@ export default function Nl2SqlPoliciesPage() {
                     </div>
                 </div>
             )}
+
+            {/* Notification Toast */}
+            {notification && (
+                <div style={{
+                    position: 'fixed', bottom: '24px', right: '24px', padding: '16px 24px',
+                    background: notification.type === 'success' ? '#10b981' : '#ef4444',
+                    color: 'white', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                    zIndex: 1000, fontSize: '14px', fontWeight: '500'
+                }}>
+                    {notification.type === 'success' ? '✅' : '❌'} {notification.message}
+                </div>
+            )}
         </div>
     );
 }
+
