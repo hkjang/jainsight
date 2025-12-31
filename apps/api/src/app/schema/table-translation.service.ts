@@ -42,12 +42,13 @@ export class TableTranslationService {
             const provider = providers[0];
             let baseURL = provider.endpoint;
             
-            if (provider.type === 'ollama' && !baseURL.includes('/v1')) {
+            // Normalize endpoint for Ollama and vLLM (OpenAI compatible APIs)
+            if ((provider.type === 'ollama' || provider.type === 'vllm') && !baseURL.includes('/v1')) {
                 baseURL = baseURL.replace(/\/$/, '') + '/v1';
             }
 
             this.aiClient = new OpenAI({
-                apiKey: provider.apiKey || 'ollama',
+                apiKey: provider.apiKey || 'dummy-key', // Ollama/vLLM don't always need a real key
                 baseURL,
                 timeout: 300000, // 5 minute timeout for AI translation
                 maxRetries: 1,
