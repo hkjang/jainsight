@@ -122,5 +122,50 @@ export class AiProviderService {
             maxRetries: provider.retryCount,
         });
     }
+
+    /**
+     * Interactive chat with a specific provider for testing
+     */
+    async chatWithProvider(id: string, prompt: string): Promise<{ response: string; latencyMs: number }> {
+        const provider = await this.findOne(id);
+        const client = this.createOpenAIClient(provider);
+        
+        const startTime = Date.now();
+        
+        try {
+            // Get available models for this provider
+            let modelId = 'gpt-3.5-turbo'; // Default for OpenAI
+            
+            if (provider.type === 'ollama' || provider.type === 'vllm') {
+                // Try to get the first available model
+                try {
+                    const models = await client.models.list();
+                    if (models.data && models.data.length > 0) {
+                        modelId = models.data[0].id;
+                    }
+                } catch {
+                    // Fallback to common model names
+                    modelId = provider.type === 'ollama' ? 'llama2' : 'default';
+                }
+            }
+
+            const response = await client.chat.completions.create({
+                model: modelId,
+                messages: [
+                    { role: 'system', content: '당신은 친절하고 도움이 되는 AI 어시스턴트입니다. 한국어로 답변하세요.' },
+                    { role: 'user', content: prompt }
+                ],
+                max_tokens: 500,
+                temperature: 0.7,
+            });
+
+            const latencyMs = Date.now() - startTime;
+            const content = response.choices[0]?.message?.content || '응답 없음';
+
+            return { response: content, latencyMs };
+        } catch (error) {
+            throw new BadRequestException(`AI 호출 실패: ${error.message}`);
+        }
+    }
 }
 

@@ -66,5 +66,16 @@ export class AiProviderController {
     async diagnoseAllProviders() {
         return this.diagnosticService.diagnoseAllProviders();
     }
+
+    /**
+     * Chat with a specific provider for interactive testing
+     */
+    @Post(':id/chat')
+    async chatWithProvider(
+        @Param('id') id: string,
+        @Body() body: { prompt: string }
+    ) {
+        return this.providerService.chatWithProvider(id, body.prompt);
+    }
 }
 

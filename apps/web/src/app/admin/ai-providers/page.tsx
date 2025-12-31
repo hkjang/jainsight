@@ -81,6 +81,15 @@ export default function AiProvidersPage() {
     const [diagnosticResult, setDiagnosticResult] = useState<DiagnosticResult | null>(null);
     const [showDiagnosticModal, setShowDiagnosticModal] = useState(false);
     const [diagnosingId, setDiagnosingId] = useState<string | null>(null);
+    
+    // Interactive Test Modal state
+    const [showTestModal, setShowTestModal] = useState(false);
+    const [testingProvider, setTestingProvider] = useState<AiProvider | null>(null);
+    const [testPrompt, setTestPrompt] = useState('안녕하세요! 간단히 자기소개해 주세요.');
+    const [testResponse, setTestResponse] = useState('');
+    const [testLoading, setTestLoading] = useState(false);
+    const [testLatency, setTestLatency] = useState<number | null>(null);
+    const [testError, setTestError] = useState('');
 
     const [form, setForm] = useState({
         name: '',
@@ -261,6 +270,49 @@ export default function AiProvidersPage() {
             showToast('진단 실패', 'error');
         } finally {
             setDiagnosingId(null);
+        }
+    };
+
+    // Interactive Test Modal
+    const openInteractiveTest = (provider: AiProvider) => {
+        setTestingProvider(provider);
+        setTestResponse('');
+        setTestError('');
+        setTestLatency(null);
+        setShowTestModal(true);
+    };
+
+    const runInteractiveTest = async () => {
+        if (!testingProvider || !testPrompt.trim()) return;
+        
+        setTestLoading(true);
+        setTestResponse('');
+        setTestError('');
+        setTestLatency(null);
+        
+        const startTime = performance.now();
+        
+        try {
+            const res = await fetch(`${API_BASE}/admin/ai-providers/${testingProvider.id}/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: testPrompt }),
+            });
+            
+            const endTime = performance.now();
+            setTestLatency(Math.round(endTime - startTime));
+            
+            if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.message || 'API 호출 실패');
+            }
+            
+            const data = await res.json();
+            setTestResponse(data.response || data.content || JSON.stringify(data, null, 2));
+        } catch (error: any) {
+            setTestError(error.message || '테스트 실패');
+        } finally {
+            setTestLoading(false);
         }
     };
 
@@ -935,6 +987,17 @@ export default function AiProvidersPage() {
                                     {diagnosingId === provider.id ? '⏳' : '🔍'} 진단
                                 </button>
                                 <button
+                                    onClick={() => openInteractiveTest(provider)}
+                                    style={{
+                                        ...buttonStyle,
+                                        background: 'rgba(245, 158, 11, 0.2)',
+                                        color: '#fbbf24',
+                                        padding: '8px 14px',
+                                    }}
+                                >
+                                    💬 AI 채팅
+                                </button>
+                                <button
                                     onClick={() => handleDuplicate(provider)}
                                     style={{
                                         ...buttonStyle,
@@ -1382,6 +1445,148 @@ export default function AiProvidersPage() {
                             <strong>Endpoint:</strong> {diagnosticResult.endpoint}<br/>
                             <strong>테스트 시간:</strong> {new Date(diagnosticResult.timestamp).toLocaleString('ko-KR')}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Interactive Test Modal */}
+            {showTestModal && testingProvider && (
+                <div style={{
+                    position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.7)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+                }} onClick={() => setShowTestModal(false)}>
+                    <div style={{
+                        background: 'linear-gradient(180deg, #1e1e3f 0%, #0f0f1a 100%)',
+                        borderRadius: '16px', padding: '24px', width: '700px', maxHeight: '85vh', overflowY: 'auto',
+                        border: '1px solid rgba(99, 102, 241, 0.3)',
+                    }} onClick={e => e.stopPropagation()}>
+                        {/* Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <span style={{ 
+                                    fontSize: '28px',
+                                    background: providerGradients[testingProvider.type],
+                                    padding: '8px',
+                                    borderRadius: '10px',
+                                }}>{providerIcons[testingProvider.type]}</span>
+                                <div>
+                                    <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700 }}>
+                                        {testingProvider.name} 테스트
+                                    </h2>
+                                    <div style={{ fontSize: '12px', color: '#6b7280' }}>{testingProvider.endpoint}</div>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowTestModal(false)} style={{ 
+                                background: 'transparent', border: 'none', color: '#fff', fontSize: '24px', cursor: 'pointer',
+                            }}>×</button>
+                        </div>
+
+                        {/* Prompt Input */}
+                        <div style={{ marginBottom: '16px' }}>
+                            <label style={{ display: 'block', fontSize: '13px', color: '#a5b4fc', marginBottom: '8px', fontWeight: 600 }}>
+                                💬 프롬프트
+                            </label>
+                            <textarea
+                                value={testPrompt}
+                                onChange={(e) => setTestPrompt(e.target.value)}
+                                placeholder="AI에게 보낼 메시지를 입력하세요..."
+                                style={{
+                                    ...inputStyle,
+                                    minHeight: '100px',
+                                    resize: 'vertical',
+                                }}
+                            />
+                        </div>
+
+                        {/* Example Prompts */}
+                        <div style={{ marginBottom: '16px' }}>
+                            <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '8px' }}>예시 프롬프트:</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                {['안녕하세요!', '1부터 10까지 더하면?', 'SQL 쿼리 작성 도와줘', '오늘 날씨 어때?'].map(p => (
+                                    <button 
+                                        key={p} 
+                                        onClick={() => setTestPrompt(p)}
+                                        style={{
+                                            padding: '6px 12px',
+                                            background: 'rgba(99, 102, 241, 0.1)',
+                                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                                            borderRadius: '6px',
+                                            color: '#a5b4fc',
+                                            fontSize: '12px',
+                                            cursor: 'pointer',
+                                        }}
+                                    >{p}</button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Run Button */}
+                        <button
+                            onClick={runInteractiveTest}
+                            disabled={testLoading || !testPrompt.trim()}
+                            style={{
+                                ...buttonStyle,
+                                width: '100%',
+                                background: testLoading ? 'rgba(99, 102, 241, 0.3)' : 'linear-gradient(90deg, #6366f1, #8b5cf6)',
+                                color: '#fff',
+                                padding: '14px',
+                                fontSize: '15px',
+                                fontWeight: 600,
+                                marginBottom: '16px',
+                            }}
+                        >
+                            {testLoading ? '⏳ AI 응답 대기 중...' : '🚀 테스트 실행'}
+                        </button>
+
+                        {/* Response Section */}
+                        {(testResponse || testError || testLoading) && (
+                            <div style={{
+                                background: 'rgba(20, 20, 35, 0.8)',
+                                borderRadius: '12px',
+                                padding: '16px',
+                                border: testError ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                                    <span style={{ fontSize: '13px', fontWeight: 600, color: testError ? '#fca5a5' : '#86efac' }}>
+                                        {testError ? '❌ 에러' : '✅ AI 응답'}
+                                    </span>
+                                    {testLatency && (
+                                        <span style={{ 
+                                            fontSize: '11px', 
+                                            padding: '4px 10px', 
+                                            background: 'rgba(99, 102, 241, 0.2)', 
+                                            borderRadius: '6px',
+                                            color: '#a5b4fc',
+                                        }}>
+                                            ⏱ {testLatency}ms
+                                        </span>
+                                    )}
+                                </div>
+                                {testLoading ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#6b7280' }}>
+                                        <div style={{ 
+                                            width: '16px', height: '16px', borderRadius: '50%',
+                                            border: '2px solid rgba(99, 102, 241, 0.3)', borderTopColor: '#6366f1',
+                                            animation: 'spin 1s linear infinite',
+                                        }} />
+                                        응답 생성 중...
+                                    </div>
+                                ) : testError ? (
+                                    <div style={{ color: '#fca5a5', fontSize: '13px' }}>{testError}</div>
+                                ) : (
+                                    <pre style={{ 
+                                        margin: 0, 
+                                        whiteSpace: 'pre-wrap', 
+                                        wordBreak: 'break-word',
+                                        fontSize: '13px',
+                                        lineHeight: 1.6,
+                                        color: '#e0e0e0',
+                                        maxHeight: '300px',
+                                        overflowY: 'auto',
+                                    }}>{testResponse}</pre>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
