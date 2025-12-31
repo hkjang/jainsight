@@ -17,9 +17,17 @@ export class GroupsService {
         private groupHistoryRepository: Repository<GroupHistory>,
     ) { }
 
+    // Default organization ID for single-tenant or when not specified
+    private readonly DEFAULT_ORGANIZATION_ID = 'default';
+
     // Group CRUD
     async create(data: Partial<Group>, createdBy: string): Promise<Group> {
-        const group = this.groupsRepository.create(data);
+        // Ensure organizationId is set (required field)
+        const groupData = {
+            ...data,
+            organizationId: data.organizationId || this.DEFAULT_ORGANIZATION_ID,
+        };
+        const group = this.groupsRepository.create(groupData);
         const saved = await this.groupsRepository.save(group);
         
         await this.logHistory(saved.id, 'created', createdBy, null, saved);
