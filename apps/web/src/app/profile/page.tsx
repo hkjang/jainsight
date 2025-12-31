@@ -263,6 +263,17 @@ export default function ProfilePage() {
                     </a>
                 </AnimatedCard>
                 <AnimatedCard delay={0.5}>
+                    <a href="/security" style={{ display: 'block', padding: '20px', textDecoration: 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <span style={{ fontSize: '24px' }}>🔒</span>
+                            <div>
+                                <div style={{ fontWeight: '500', color: darkTheme.textPrimary }}>보안</div>
+                                <div style={{ fontSize: '13px', color: darkTheme.textMuted }}>비밀번호, 세션</div>
+                            </div>
+                        </div>
+                    </a>
+                </AnimatedCard>
+                <AnimatedCard delay={0.6}>
                     <a href="/dashboard" style={{ display: 'block', padding: '20px', textDecoration: 'none' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <span style={{ fontSize: '24px' }}>🏠</span>

@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, MoreThanOrEqual } from 'typeorm';
 import { User, UserStatus, AccountSource, UserPreferences } from './entities/user.entity';
 import { UserActivity, ActivityAction } from './entities/user-activity.entity';
+import { UserSession } from './entities/user-session.entity';
 import { randomBytes } from 'crypto';
 
 export interface UserListOptions {
@@ -21,6 +22,8 @@ export class UsersService {
         private usersRepository: Repository<User>,
         @InjectRepository(UserActivity)
         private activityRepository: Repository<UserActivity>,
+        @InjectRepository(UserSession)
+        private sessionRepository: Repository<UserSession>,
     ) { }
 
     // Basic Operations
@@ -447,6 +450,114 @@ export class UsersService {
                 accountAge
             },
             recentActivity
+        };
+    }
+
+    // Security - Self Password Change
+    async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+        const user = await this.findOneById(userId);
+        if (!user) throw new NotFoundException('User not found');
+
+        const bcrypt = await import('bcrypt');
+        const isValid = await bcrypt.compare(currentPassword, user.password);
+        if (!isValid) {
+            return { success: false, message: '현재 비밀번호가 올바르지 않습니다.' };
+        }
+
+        user.password = await bcrypt.hash(newPassword, 10);
+        user.passwordChangedAt = new Date();
+        await this.usersRepository.save(user);
+
+        // Log activity
+        await this.logActivity({
+            userId,
+            action: 'password_change',
+            success: true
+        });
+
+        return { success: true, message: '비밀번호가 변경되었습니다.' };
+    }
+
+    // Session Management
+    async createSession(data: {
+        userId: string;
+        deviceName?: string;
+        deviceType?: string;
+        browser?: string;
+        os?: string;
+        ipAddress?: string;
+        location?: string;
+    }): Promise<UserSession> {
+        const session = this.sessionRepository.create({
+            ...data,
+            sessionToken: randomBytes(32).toString('hex'),
+            isActive: true,
+            lastActivityAt: new Date(),
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+        });
+        return this.sessionRepository.save(session);
+    }
+
+    async getSessions(userId: string): Promise<UserSession[]> {
+        return this.sessionRepository.find({
+            where: { userId, isActive: true },
+            order: { lastActivityAt: 'DESC' }
+        });
+    }
+
+    async terminateSession(userId: string, sessionId: string): Promise<void> {
+        await this.sessionRepository.update(
+            { id: sessionId, userId },
+            { isActive: false }
+        );
+    }
+
+    async terminateAllSessions(userId: string, exceptSessionId?: string): Promise<number> {
+        const qb = this.sessionRepository.createQueryBuilder()
+            .update(UserSession)
+            .set({ isActive: false })
+            .where('userId = :userId', { userId })
+            .andWhere('isActive = true');
+        
+        if (exceptSessionId) {
+            qb.andWhere('id != :exceptId', { exceptId: exceptSessionId });
+        }
+
+        const result = await qb.execute();
+        return result.affected || 0;
+    }
+
+    // Security Stats
+    async getSecurityInfo(userId: string): Promise<{
+        passwordChangedAt?: Date;
+        lastLoginAt?: Date;
+        lastLoginIp?: string;
+        failedLoginAttempts: number;
+        activeSessions: number;
+        recentSecurityEvents: UserActivity[];
+    }> {
+        const user = await this.findOneById(userId);
+        if (!user) throw new NotFoundException('User not found');
+
+        const activeSessions = await this.sessionRepository.count({
+            where: { userId, isActive: true }
+        });
+
+        const recentSecurityEvents = await this.activityRepository.find({
+            where: { userId },
+            order: { createdAt: 'DESC' },
+            take: 10
+        });
+
+        return {
+            passwordChangedAt: user.passwordChangedAt,
+            lastLoginAt: user.lastLoginAt,
+            lastLoginIp: user.lastLoginIp,
+            failedLoginAttempts: user.failedLoginAttempts || 0,
+            activeSessions,
+            recentSecurityEvents: recentSecurityEvents.filter(e => 
+                ['login', 'logout', 'login_failed', 'password_change'].includes(e.action)
+            )
         };
     }
 }

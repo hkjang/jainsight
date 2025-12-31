@@ -167,4 +167,43 @@ export class UsersController {
     async getDashboard(@Param('id') id: string) {
         return this.usersService.getDashboard(id);
     }
+
+    // Security Endpoints
+    @Post(':id/change-password')
+    @HttpCode(HttpStatus.OK)
+    async changePassword(
+        @Param('id') id: string,
+        @Body() data: { currentPassword: string; newPassword: string }
+    ): Promise<{ success: boolean; message: string }> {
+        return this.usersService.changePassword(id, data.currentPassword, data.newPassword);
+    }
+
+    @Get(':id/sessions')
+    async getSessions(@Param('id') id: string) {
+        return this.usersService.getSessions(id);
+    }
+
+    @Delete(':id/sessions/:sessionId')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    async terminateSession(
+        @Param('id') id: string,
+        @Param('sessionId') sessionId: string
+    ): Promise<void> {
+        return this.usersService.terminateSession(id, sessionId);
+    }
+
+    @Delete(':id/sessions')
+    @HttpCode(HttpStatus.OK)
+    async terminateAllSessions(
+        @Param('id') id: string,
+        @Body() data: { exceptCurrentSession?: string }
+    ): Promise<{ terminated: number }> {
+        const terminated = await this.usersService.terminateAllSessions(id, data.exceptCurrentSession);
+        return { terminated };
+    }
+
+    @Get(':id/security')
+    async getSecurityInfo(@Param('id') id: string) {
+        return this.usersService.getSecurityInfo(id);
+    }
 }
