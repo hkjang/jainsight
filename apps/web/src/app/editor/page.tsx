@@ -737,6 +737,33 @@ export default function EditorPage() {
         editorRef.current = editor;
         monacoRef.current = monaco;
         
+        // Register keyboard shortcuts in Monaco editor
+        // Ctrl+Enter or F5 to execute query
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+            const executeBtn = document.querySelector('[data-execute-btn]') as HTMLButtonElement;
+            if (executeBtn && !executeBtn.disabled) {
+                executeBtn.click();
+            }
+        });
+        
+        editor.addCommand(monaco.KeyCode.F5, () => {
+            const executeBtn = document.querySelector('[data-execute-btn]') as HTMLButtonElement;
+            if (executeBtn && !executeBtn.disabled) {
+                executeBtn.click();
+            }
+        });
+        
+        // Ctrl+S to save
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+            setShowSaveModal(true);
+        });
+        
+        // Ctrl+Shift+F to format
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF, () => {
+            const formatBtn = document.querySelector('[data-format-btn]') as HTMLButtonElement;
+            if (formatBtn) formatBtn.click();
+        });
+        
         // Track cursor position
         editor.onDidChangeCursorPosition((e: any) => {
             setCursorPosition({ line: e.position.lineNumber, column: e.position.column });
@@ -1211,9 +1238,14 @@ export default function EditorPage() {
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            // F5 or Ctrl+Enter - Execute query by clicking the execute button
             if (e.key === 'F5' || (e.ctrlKey && e.key === 'Enter')) {
                 e.preventDefault();
-                handleExecute();
+                // Trigger click on execute button instead of calling handleExecute directly
+                const executeBtn = document.querySelector('[data-execute-btn]') as HTMLButtonElement;
+                if (executeBtn && !executeBtn.disabled) {
+                    executeBtn.click();
+                }
             }
             if (e.ctrlKey && e.key === 's') {
                 e.preventDefault();
@@ -1225,29 +1257,32 @@ export default function EditorPage() {
             }
             if (e.ctrlKey && e.shiftKey && e.key === 'F') {
                 e.preventDefault();
-                handleFormatQuery();
+                // Trigger format button
+                const formatBtn = document.querySelector('[data-format-btn]') as HTMLButtonElement;
+                if (formatBtn) formatBtn.click();
             }
             if (e.ctrlKey && e.key === 't') {
                 e.preventDefault();
-                addNewTab();
+                // Trigger add tab button
+                const addTabBtn = document.querySelector('[data-add-tab-btn]') as HTMLButtonElement;
+                if (addTabBtn) addTabBtn.click();
             }
             if (e.key === 'F1') {
                 e.preventDefault();
                 setShowShortcuts(s => !s);
             }
-            // Ctrl+1-9 to switch tabs
+            // Ctrl+1-9 to switch tabs - use data attributes to find tabs
             if (e.ctrlKey && e.key >= '1' && e.key <= '9') {
                 e.preventDefault();
                 const tabIndex = parseInt(e.key) - 1;
-                if (tabIndex < queryTabs.length) {
-                    setActiveTabId(queryTabs[tabIndex].id);
-                    showToast(`Switched to ${queryTabs[tabIndex].name}`, 'info');
-                }
+                const tabBtn = document.querySelector(`[data-tab-index="${tabIndex}"]`) as HTMLButtonElement;
+                if (tabBtn) tabBtn.click();
             }
             // Ctrl+W to close current tab
-            if (e.ctrlKey && e.key === 'w' && queryTabs.length > 1) {
+            if (e.ctrlKey && e.key === 'w') {
                 e.preventDefault();
-                closeTab(activeTabId, { stopPropagation: () => {} } as any);
+                const closeBtn = document.querySelector('[data-close-active-tab]') as HTMLButtonElement;
+                if (closeBtn) closeBtn.click();
             }
             if (e.key === 'Escape') {
                 setShowSaveModal(false);
@@ -1264,7 +1299,7 @@ export default function EditorPage() {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [query, selectedConnection]);
+    }, []);
 
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
@@ -2135,7 +2170,7 @@ export default function EditorPage() {
                         <button onClick={fetchSchemaData} disabled={schemaLoading} style={{ ...styles.btnIcon, opacity: schemaLoading ? 0.5 : 1 }} title="Schema Browser">
                             {schemaLoading ? '⏳' : '🗄️'}
                         </button>
-                        <button onClick={handleFormatQuery} style={styles.btnIcon} title="Format SQL">
+                        <button data-format-btn onClick={handleFormatQuery} style={styles.btnIcon} title="Format SQL">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 10h16M4 14h10M4 18h6"/></svg>
                         </button>
                         <button onClick={handleCopyQuery} style={styles.btnIcon} title="Copy Query">📋</button>
@@ -2198,7 +2233,7 @@ export default function EditorPage() {
                                         ▶▶ All
                                     </button>
                                 )}
-                                <button onClick={handleExecute} disabled={!selectedConnection} style={{ ...styles.btn, ...styles.btnPrimary, opacity: !selectedConnection ? 0.5 : 1 }}>
+                                <button data-execute-btn onClick={handleExecute} disabled={!selectedConnection} style={{ ...styles.btn, ...styles.btnPrimary, opacity: !selectedConnection ? 0.5 : 1 }}>
                                     ▶ Execute
                                 </button>
                             </>
@@ -2208,12 +2243,13 @@ export default function EditorPage() {
 
                 {/* Query Tabs */}
                 <div style={styles.tabs}>
-                    {queryTabs.map(tab => (
+                    {queryTabs.map((tab, index) => (
                         <div 
                             key={tab.id} 
+                            data-tab-index={index}
                             onClick={() => setActiveTabId(tab.id)} 
                             onDoubleClick={() => startEditingTab(tab.id, tab.name)}
-                            style={{ ...styles.tab, backgroundColor: activeTabId === tab.id ? theme.bgCard : 'transparent', color: activeTabId === tab.id ? theme.text : theme.textMuted }}
+                            style={{ ...styles.tab, backgroundColor: activeTabId === tab.id ? theme.bgCard : 'transparent', color: activeTabId === tab.id ? theme.text : theme.textMuted, cursor: 'pointer' }}
                         >
                             {editingTabId === tab.id ? (
                                 <input 
@@ -2230,10 +2266,16 @@ export default function EditorPage() {
                                     {tab.name}{tab.unsaved && <span style={{ color: theme.warning }}>•</span>}
                                 </>
                             )}
-                            {queryTabs.length > 1 && <button onClick={(e) => closeTab(tab.id, e)} style={{ marginLeft: 4, background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: 12 }}>×</button>}
+                            {queryTabs.length > 1 && (
+                                <button 
+                                    {...(activeTabId === tab.id ? { 'data-close-active-tab': true } : {})}
+                                    onClick={(e) => closeTab(tab.id, e)} 
+                                    style={{ marginLeft: 4, background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: 12 }}
+                                >×</button>
+                            )}
                         </div>
                     ))}
-                    <button onClick={addNewTab} style={{ ...styles.btnIcon, fontSize: 16 }} title="New Tab">+</button>
+                    <button data-add-tab-btn onClick={addNewTab} style={{ ...styles.btnIcon, fontSize: 16 }} title="New Tab">+</button>
                 </div>
 
                 {/* Editor & Results */}
