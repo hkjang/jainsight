@@ -7,6 +7,7 @@ import { UserSession } from './entities/user-session.entity';
 import { UserNotification, NotificationType } from './entities/user-notification.entity';
 import { UserFavorite, FavoriteType } from './entities/user-favorite.entity';
 import { randomBytes } from 'crypto';
+import { CacheService, CACHE_KEYS, CACHE_TTL } from '../../common/cache.service';
 
 export interface UserListOptions {
     status?: UserStatus;
@@ -30,6 +31,7 @@ export class UsersService {
         private notificationRepository: Repository<UserNotification>,
         @InjectRepository(UserFavorite)
         private favoriteRepository: Repository<UserFavorite>,
+        private cacheService: CacheService,
     ) { }
 
     // Basic Operations
@@ -230,33 +232,39 @@ export class UsersService {
         bySource: Record<string, number>;
         recentLogins: number;
     }> {
-        const total = await this.usersRepository.count();
-        
-        const statusCounts = await this.usersRepository
-            .createQueryBuilder('user')
-            .select('user.status', 'status')
-            .addSelect('COUNT(*)', 'count')
-            .groupBy('user.status')
-            .getRawMany();
+        return this.cacheService.getOrCompute(
+            CACHE_KEYS.USER_STATS,
+            async () => {
+                const total = await this.usersRepository.count();
+                
+                const statusCounts = await this.usersRepository
+                    .createQueryBuilder('user')
+                    .select('user.status', 'status')
+                    .addSelect('COUNT(*)', 'count')
+                    .groupBy('user.status')
+                    .getRawMany();
 
-        const sourceCounts = await this.usersRepository
-            .createQueryBuilder('user')
-            .select('user.accountSource', 'source')
-            .addSelect('COUNT(*)', 'count')
-            .groupBy('user.accountSource')
-            .getRawMany();
+                const sourceCounts = await this.usersRepository
+                    .createQueryBuilder('user')
+                    .select('user.accountSource', 'source')
+                    .addSelect('COUNT(*)', 'count')
+                    .groupBy('user.accountSource')
+                    .getRawMany();
 
-        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const recentLogins = await this.usersRepository.count({
-            where: { lastLoginAt: MoreThanOrEqual(oneDayAgo) }
-        });
+                const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+                const recentLogins = await this.usersRepository.count({
+                    where: { lastLoginAt: MoreThanOrEqual(oneDayAgo) }
+                });
 
-        return {
-            total,
-            byStatus: Object.fromEntries(statusCounts.map(s => [s.status, parseInt(s.count)])),
-            bySource: Object.fromEntries(sourceCounts.map(s => [s.source, parseInt(s.count)])),
-            recentLogins
-        };
+                return {
+                    total,
+                    byStatus: Object.fromEntries(statusCounts.map(s => [s.status, parseInt(s.count)])),
+                    bySource: Object.fromEntries(sourceCounts.map(s => [s.source, parseInt(s.count)])),
+                    recentLogins
+                };
+            },
+            CACHE_TTL.DEFAULT // 60 seconds
+        );
     }
 
     // Profile Management

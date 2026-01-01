@@ -5,12 +5,13 @@ import { DashboardController } from './dashboard.controller';
 import { DashboardService } from './dashboard.service';
 import { Connection } from '../connections/entities/connection.entity';
 import { AuditLog } from '../audit/entities/audit-log.entity';
+import { CacheService } from '../../common/cache.service';
 
 @Module({
     imports: [
         TypeOrmModule.forFeature([Connection, AuditLog]),
     ],
     controllers: [DashboardController],
-    providers: [DashboardService],
+    providers: [DashboardService, CacheService],
 })
 export class DashboardModule { }
