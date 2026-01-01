@@ -43,9 +43,10 @@ export default function ConnectionsPage() {
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({});
     const [refreshing, setRefreshing] = useState(false);
     const [editingConnection, setEditingConnection] = useState<Connection | null>(null);
-    const [editForm, setEditForm] = useState({ name: '', host: '', port: 0, database: '', username: '', password: '' });
+    const [editForm, setEditForm] = useState({ name: '', host: '', port: 0, database: '', username: '', password: '', visibility: 'private' as 'private' | 'team' | 'group' | 'public', sharedWithGroups: [] as string[] });
     const [showPassword, setShowPassword] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [groups, setGroups] = useState<{id: string; name: string}[]>([]);
     const router = useRouter();
 
     const fetchConnections = useCallback(async () => {
@@ -77,6 +78,16 @@ export default function ConnectionsPage() {
 
     useEffect(() => {
         fetchConnections();
+        // Fetch groups for visibility editing
+        const fetchGroups = async () => {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+            try {
+                const res = await fetch('/api/groups', { headers: { 'Authorization': `Bearer ${token}` } });
+                if (res.ok) setGroups(await res.json());
+            } catch { /* ignore */ }
+        };
+        fetchGroups();
     }, [fetchConnections]);
 
     // Keyboard shortcuts
@@ -170,7 +181,9 @@ export default function ConnectionsPage() {
             port: conn.port,
             database: conn.database,
             username: '',
-            password: ''
+            password: '',
+            visibility: conn.visibility || 'private',
+            sharedWithGroups: conn.sharedWithGroups || [],
         });
         setShowPassword(false);
     };
@@ -191,6 +204,8 @@ export default function ConnectionsPage() {
                     host: editForm.host,
                     port: editForm.port,
                     database: editForm.database,
+                    visibility: editForm.visibility,
+                    sharedWithGroups: editForm.visibility === 'group' ? editForm.sharedWithGroups : [],
                     ...(editForm.username && { username: editForm.username }),
                     ...(editForm.password && { password: editForm.password }),
                 })
@@ -1021,6 +1036,66 @@ export default function ConnectionsPage() {
                                         </button>
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* Visibility Section */}
+                            <div style={{
+                                padding: '16px',
+                                background: 'rgba(16, 185, 129, 0.05)',
+                                borderRadius: '10px',
+                                border: '1px solid rgba(16, 185, 129, 0.2)',
+                            }}>
+                                <div style={{ fontSize: '12px', color: '#10b981', marginBottom: '12px', fontWeight: 500 }}>
+                                    🔐 접근 권한
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                                    {[
+                                        { id: 'private', label: '🔒 비공개', color: '#6366f1' },
+                                        { id: 'group', label: '👥 그룹', color: '#10b981' },
+                                        { id: 'public', label: '🌐 공개', color: '#f59e0b' },
+                                    ].map((opt) => (
+                                        <button
+                                            key={opt.id}
+                                            type="button"
+                                            onClick={() => setEditForm(prev => ({ ...prev, visibility: opt.id as 'private' | 'group' | 'public', sharedWithGroups: opt.id !== 'group' ? [] : prev.sharedWithGroups }))}
+                                            style={{
+                                                flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer', textAlign: 'center', fontSize: '12px', fontWeight: 500,
+                                                background: editForm.visibility === opt.id ? `${opt.color}20` : 'rgba(15, 23, 42, 0.6)',
+                                                color: editForm.visibility === opt.id ? opt.color : '#94a3b8',
+                                                border: editForm.visibility === opt.id ? `2px solid ${opt.color}` : '1px solid rgba(99, 102, 241, 0.2)',
+                                                transition: 'all 0.2s',
+                                            }}
+                                        >
+                                            {opt.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                {editForm.visibility === 'group' && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                        {groups.length === 0 ? (
+                                            <span style={{ fontSize: '12px', color: '#64748b' }}>그룹이 없습니다</span>
+                                        ) : groups.map((g) => (
+                                            <button
+                                                key={g.id}
+                                                type="button"
+                                                onClick={() => setEditForm(prev => ({
+                                                    ...prev,
+                                                    sharedWithGroups: prev.sharedWithGroups.includes(g.id)
+                                                        ? prev.sharedWithGroups.filter(id => id !== g.id)
+                                                        : [...prev.sharedWithGroups, g.id]
+                                                }))}
+                                                style={{
+                                                    padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 500, cursor: 'pointer',
+                                                    background: editForm.sharedWithGroups.includes(g.id) ? '#10b981' : 'rgba(15, 23, 42, 0.6)',
+                                                    color: editForm.sharedWithGroups.includes(g.id) ? 'white' : '#e2e8f0',
+                                                    border: editForm.sharedWithGroups.includes(g.id) ? '2px solid #10b981' : '1px solid rgba(99, 102, 241, 0.2)',
+                                                }}
+                                            >
+                                                {editForm.sharedWithGroups.includes(g.id) ? '✓ ' : ''}{g.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
