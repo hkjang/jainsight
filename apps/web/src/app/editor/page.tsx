@@ -1828,8 +1828,12 @@ export default function EditorPage() {
 
     const addNewTab = () => {
         const newId = String(Date.now());
-        setQueryTabs([...queryTabs, { id: newId, name: `Query ${queryTabs.length + 1}`, query: '-- New query\n', unsaved: false }]);
+        const newTabs = [...queryTabs, { id: newId, name: `Query ${queryTabs.length + 1}`, query: '-- New query\n', unsaved: false }];
+        setQueryTabs(newTabs);
         setActiveTabId(newId);
+        // Save to localStorage
+        localStorage.setItem('editorQueryTabs', JSON.stringify(newTabs));
+        localStorage.setItem('editorActiveTabId', newId);
     };
 
     const closeTab = (tabId: string, e: React.MouseEvent) => {
@@ -1837,7 +1841,11 @@ export default function EditorPage() {
         if (queryTabs.length === 1) return;
         const newTabs = queryTabs.filter(t => t.id !== tabId);
         setQueryTabs(newTabs);
-        if (activeTabId === tabId) setActiveTabId(newTabs[newTabs.length - 1].id);
+        const newActiveId = activeTabId === tabId ? newTabs[newTabs.length - 1].id : activeTabId;
+        if (activeTabId === tabId) setActiveTabId(newActiveId);
+        // Save to localStorage
+        localStorage.setItem('editorQueryTabs', JSON.stringify(newTabs));
+        localStorage.setItem('editorActiveTabId', newActiveId);
     };
 
     const handleFormatQuery = () => {
