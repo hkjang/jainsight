@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { FavoriteIcon } from '../../components/FavoriteButton';
 
 interface Connection {
     id: string;
@@ -603,6 +604,7 @@ export default function ConnectionsPage() {
                                 {/* Connection Info */}
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                                        <FavoriteIcon itemType="connection" itemId={conn.id} name={conn.name} size={18} />
                                         <span style={{ fontSize: '17px', fontWeight: 600, color: '#e2e8f0' }}>{conn.name}</span>
                                         <span style={{
                                             padding: '3px 10px',
