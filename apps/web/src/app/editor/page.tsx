@@ -1372,6 +1372,35 @@ export default function EditorPage() {
                 }
             };
             fetchSchemaForAutocomplete();
+            
+            // Auto-fetch translations for Korean column names
+            const fetchTranslations = async () => {
+                const token = localStorage.getItem('token');
+                if (!token) return;
+                try {
+                    const res = await fetch(`/api/schema/${selectedConnection}/translations`, {
+                        headers: { 'Authorization': `Bearer ${token}` },
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        // data is an array of translations, convert to Record format
+                        const translationsMap: Record<string, { koreanName: string; columns: Record<string, string> }> = {};
+                        if (Array.isArray(data)) {
+                            data.forEach((t: any) => {
+                                translationsMap[t.tableName] = {
+                                    koreanName: t.koreanName || '',
+                                    columns: t.columnTranslations || {}
+                                };
+                            });
+                        }
+                        setSchemaTranslations(translationsMap);
+                        console.log('[Translations] Loaded translations for', Object.keys(translationsMap).length, 'tables');
+                    }
+                } catch (e) {
+                    console.log('Failed to fetch translations:', e);
+                }
+            };
+            fetchTranslations();
         }
     }, [selectedConnection]);
 
@@ -4362,22 +4391,46 @@ export default function EditorPage() {
                             </div>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            {results?.fields?.map((field: string, i: number) => (
-                                <div key={i} style={{ padding: 12, backgroundColor: theme.bgHover, borderRadius: 6, border: `1px solid ${theme.border}` }}>
-                                    <div style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted, marginBottom: 4, textTransform: 'uppercase' }}>{field}</div>
-                                    <div style={{ fontSize: 14, fontFamily: selectedRow[field] === null || typeof selectedRow[field] === 'number' ? 'monospace' : 'inherit', wordBreak: 'break-all' }}>
-                                        {selectedRow[field] === null ? (
-                                            <span style={{ color: theme.textMuted, fontStyle: 'italic' }}>NULL</span>
-                                        ) : typeof selectedRow[field] === 'boolean' ? (
-                                            <span style={{ color: selectedRow[field] ? theme.success : theme.error }}>{selectedRow[field] ? '✓ true' : '✗ false'}</span>
-                                        ) : typeof selectedRow[field] === 'object' ? (
-                                            <pre style={{ margin: 0, fontSize: 12, overflow: 'auto' }}>{JSON.stringify(selectedRow[field], null, 2)}</pre>
-                                        ) : (
-                                            String(selectedRow[field])
-                                        )}
+                            {results?.fields?.map((field: string, i: number) => {
+                                // Find Korean translation for this column
+                                let koreanName = '';
+                                Object.entries(schemaTranslations).forEach(([tableName, trans]) => {
+                                    if (trans.columns && trans.columns[field]) {
+                                        koreanName = trans.columns[field];
+                                    }
+                                });
+                                
+                                return (
+                                    <div key={i} style={{ padding: 12, backgroundColor: theme.bgHover, borderRadius: 6, border: `1px solid ${theme.border}` }}>
+                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
+                                            <span style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase' }}>{field}</span>
+                                            {koreanName && (
+                                                <span style={{ fontSize: 12, color: theme.primary, fontWeight: 500 }}>
+                                                    ({koreanName})
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div style={{ fontSize: 14, fontFamily: selectedRow[field] === null || typeof selectedRow[field] === 'number' ? 'monospace' : 'inherit', wordBreak: 'break-all' }}>
+                                            {selectedRow[field] === null ? (
+                                                <span style={{ color: theme.textMuted, fontStyle: 'italic', backgroundColor: `${theme.warning}10`, padding: '2px 6px', borderRadius: 4 }}>NULL</span>
+                                            ) : typeof selectedRow[field] === 'boolean' ? (
+                                                <span style={{ color: selectedRow[field] ? theme.success : theme.error }}>{selectedRow[field] ? '✓ true' : '✗ false'}</span>
+                                            ) : typeof selectedRow[field] === 'object' ? (
+                                                <pre style={{ margin: 0, fontSize: 12, overflow: 'auto', backgroundColor: theme.bg, padding: 8, borderRadius: 4 }}>{JSON.stringify(selectedRow[field], null, 2)}</pre>
+                                            ) : typeof selectedRow[field] === 'string' && /^\d{4}-\d{2}-\d{2}/.test(selectedRow[field]) ? (
+                                                <span style={{ color: theme.textSecondary }}>
+                                                    {new Date(selectedRow[field]).toLocaleDateString('ko-KR')} {new Date(selectedRow[field]).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                                                    <span style={{ color: theme.textMuted, fontSize: 11, marginLeft: 8 }}>
+                                                        (원본: {selectedRow[field]})
+                                                    </span>
+                                                </span>
+                                            ) : (
+                                                String(selectedRow[field])
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
