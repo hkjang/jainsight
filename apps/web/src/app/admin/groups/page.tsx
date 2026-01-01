@@ -81,13 +81,10 @@ export default function GroupsAdminPage() {
             const response = await fetch(`${API_URL}/groups`);
             if (response.ok) {
                 const data = await response.json();
-                setGroups(data);
+                setGroups(Array.isArray(data) ? data : []);
             } else {
-                setGroups([
-                    { id: '1', name: '개발팀', type: 'organization', isAutoGroup: false, memberCount: 15, createdAt: new Date().toISOString() },
-                    { id: '2', name: 'AI 프로젝트', type: 'project', parentId: '1', isAutoGroup: false, memberCount: 8, createdAt: new Date().toISOString() },
-                    { id: '3', name: 'DB 최적화', type: 'task', parentId: '2', isAutoGroup: false, memberCount: 3, createdAt: new Date().toISOString() },
-                ]);
+                console.warn('Failed to fetch groups, API returned:', response.status);
+                setGroups([]);
             }
         } catch (error) {
             console.error('Failed to fetch groups:', error);
@@ -102,14 +99,15 @@ export default function GroupsAdminPage() {
             const response = await fetch(`${API_URL}/groups/${groupId}/members`);
             if (response.ok) {
                 const data = await response.json();
-                setMembers(data);
+                setMembers(Array.isArray(data) ? data : []);
             } else {
-                setMembers([
-                    { id: '1', userId: 'u1', userName: 'John Doe', userEmail: 'john@example.com', role: 'member', addedAt: new Date().toISOString() },
-                    { id: '2', userId: 'u2', userName: 'Jane Smith', userEmail: 'jane@example.com', role: 'admin', addedAt: new Date().toISOString() },
-                ]);
+                console.warn('Failed to fetch members, API returned:', response.status);
+                setMembers([]);
             }
-        } catch (error) { console.error('Failed to fetch members:', error); }
+        } catch (error) {
+            console.error('Failed to fetch members:', error);
+            setMembers([]);
+        }
     }, []);
 
     const fetchUsers = useCallback(async () => {

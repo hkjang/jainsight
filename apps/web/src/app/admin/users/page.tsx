@@ -55,20 +55,18 @@ export default function UsersAdminPage() {
             const response = await fetch(`${API_URL}/users?limit=100`);
             if (response.ok) {
                 const data = await response.json();
-                const mappedUsers = (data.users || []).map((u: Record<string, unknown>) => ({
+                const mappedUsers = (data.users || data || []).map((u: Record<string, unknown>) => ({
                     ...u, status: u.status || 'active', accountSource: u.accountSource || 'local'
                 }));
-                setUsers(mappedUsers);
+                setUsers(Array.isArray(mappedUsers) ? mappedUsers : []);
             } else {
-                setUsers([
-                    { id: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin', status: 'active', accountSource: 'local', createdAt: new Date().toISOString(), lastLoginAt: new Date().toISOString() },
-                    { id: '2', email: 'user@example.com', name: 'Regular User', role: 'user', status: 'active', accountSource: 'local', createdAt: new Date().toISOString() },
-                    { id: '3', email: 'analyst@example.com', name: 'Data Analyst', role: 'analyst', status: 'active', accountSource: 'sso', createdAt: new Date().toISOString() },
-                    { id: '4', email: 'dev@example.com', name: 'Developer', role: 'developer', status: 'locked', accountSource: 'local', createdAt: new Date().toISOString(), lockReason: '비정상 접근 시도' },
-                    { id: '5', email: 'invited@example.com', name: 'New User', role: 'user', status: 'invited', accountSource: 'local', createdAt: new Date().toISOString() },
-                ]);
+                console.warn('Failed to fetch users, API returned:', response.status);
+                setUsers([]);
             }
-        } catch (error) { console.error('Failed to fetch users:', error); setUsers([]); }
+        } catch (error) { 
+            console.error('Failed to fetch users:', error); 
+            setUsers([]); 
+        }
         finally { setLoading(false); }
     }, []);
 
