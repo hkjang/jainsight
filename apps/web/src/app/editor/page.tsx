@@ -1839,6 +1839,15 @@ export default function EditorPage() {
     const closeTab = (tabId: string, e: React.MouseEvent) => {
         e.stopPropagation();
         if (queryTabs.length === 1) return;
+        
+        // Check for unsaved changes
+        const tabToClose = queryTabs.find(t => t.id === tabId);
+        if (tabToClose?.unsaved) {
+            if (!confirm(`"${tabToClose.name}"에 저장되지 않은 변경사항이 있습니다. 닫으시겠습니까?`)) {
+                return;
+            }
+        }
+        
         const newTabs = queryTabs.filter(t => t.id !== tabId);
         setQueryTabs(newTabs);
         const newActiveId = activeTabId === tabId ? newTabs[newTabs.length - 1].id : activeTabId;
@@ -1846,7 +1855,71 @@ export default function EditorPage() {
         // Save to localStorage
         localStorage.setItem('editorQueryTabs', JSON.stringify(newTabs));
         localStorage.setItem('editorActiveTabId', newActiveId);
+        showToast('탭이 닫혔습니다', 'info');
     };
+
+    // 탭 복제
+    const duplicateTab = (tabId: string) => {
+        const tabToDuplicate = queryTabs.find(t => t.id === tabId);
+        if (!tabToDuplicate) return;
+        
+        const newId = String(Date.now());
+        const newTab = {
+            id: newId,
+            name: `${tabToDuplicate.name} (복사)`,
+            query: tabToDuplicate.query,
+            unsaved: false
+        };
+        const newTabs = [...queryTabs, newTab];
+        setQueryTabs(newTabs);
+        setActiveTabId(newId);
+        localStorage.setItem('editorQueryTabs', JSON.stringify(newTabs));
+        localStorage.setItem('editorActiveTabId', newId);
+        showToast('탭이 복제되었습니다', 'success');
+    };
+
+    // 다른 탭 모두 닫기
+    const closeOtherTabs = (tabId: string) => {
+        const unsavedTabs = queryTabs.filter(t => t.id !== tabId && t.unsaved);
+        if (unsavedTabs.length > 0) {
+            if (!confirm(`${unsavedTabs.length}개의 저장되지 않은 탭이 있습니다. 닫으시겠습니까?`)) {
+                return;
+            }
+        }
+        
+        const newTabs = queryTabs.filter(t => t.id === tabId);
+        setQueryTabs(newTabs);
+        setActiveTabId(tabId);
+        localStorage.setItem('editorQueryTabs', JSON.stringify(newTabs));
+        localStorage.setItem('editorActiveTabId', tabId);
+        showToast('다른 탭이 모두 닫혔습니다', 'info');
+    };
+
+    // 오른쪽 탭 모두 닫기
+    const closeTabsToRight = (tabId: string) => {
+        const tabIndex = queryTabs.findIndex(t => t.id === tabId);
+        if (tabIndex === -1) return;
+        
+        const tabsToClose = queryTabs.slice(tabIndex + 1);
+        const unsavedTabs = tabsToClose.filter(t => t.unsaved);
+        if (unsavedTabs.length > 0) {
+            if (!confirm(`${unsavedTabs.length}개의 저장되지 않은 탭이 있습니다. 닫으시겠습니까?`)) {
+                return;
+            }
+        }
+        
+        const newTabs = queryTabs.slice(0, tabIndex + 1);
+        setQueryTabs(newTabs);
+        if (!newTabs.find(t => t.id === activeTabId)) {
+            setActiveTabId(tabId);
+        }
+        localStorage.setItem('editorQueryTabs', JSON.stringify(newTabs));
+        localStorage.setItem('editorActiveTabId', activeTabId);
+        showToast(`${tabsToClose.length}개 탭이 닫혔습니다`, 'info');
+    };
+
+    // 탭 우클릭 메뉴 상태
+    const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
 
     const handleFormatQuery = () => {
         setQuery(formatSQL(query));
@@ -2474,14 +2547,30 @@ export default function EditorPage() {
                 </div>
 
                 {/* Query Tabs */}
-                <div style={styles.tabs}>
+                <div style={{ ...styles.tabs, position: 'relative' }}>
                     {queryTabs.map((tab, index) => (
                         <div 
                             key={tab.id} 
                             data-tab-index={index}
                             onClick={() => setActiveTabId(tab.id)} 
                             onDoubleClick={() => startEditingTab(tab.id, tab.name)}
-                            style={{ ...styles.tab, backgroundColor: activeTabId === tab.id ? theme.bgCard : 'transparent', color: activeTabId === tab.id ? theme.text : theme.textMuted, cursor: 'pointer' }}
+                            onContextMenu={(e) => {
+                                e.preventDefault();
+                                setTabContextMenu({ x: e.clientX, y: e.clientY, tabId: tab.id });
+                            }}
+                            title={tab.query.substring(0, 100) + (tab.query.length > 100 ? '...' : '')}
+                            style={{ 
+                                ...styles.tab, 
+                                backgroundColor: activeTabId === tab.id ? theme.bgCard : 'transparent', 
+                                color: activeTabId === tab.id ? theme.text : theme.textMuted, 
+                                cursor: 'pointer',
+                                maxWidth: 150,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                position: 'relative',
+                                borderBottom: activeTabId === tab.id ? `2px solid ${theme.primary}` : '2px solid transparent',
+                            }}
                         >
                             {editingTabId === tab.id ? (
                                 <input 
@@ -2494,21 +2583,166 @@ export default function EditorPage() {
                                     style={{ background: 'transparent', border: 'none', outline: 'none', color: theme.text, width: 80, fontSize: 13 }}
                                 />
                             ) : (
-                                <>
-                                    {tab.name}{tab.unsaved && <span style={{ color: theme.warning }}>•</span>}
-                                </>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {tab.name}{tab.unsaved && <span style={{ color: theme.warning, marginLeft: 2 }}>•</span>}
+                                </span>
                             )}
                             {queryTabs.length > 1 && (
                                 <button 
                                     {...(activeTabId === tab.id ? { 'data-close-active-tab': true } : {})}
                                     onClick={(e) => closeTab(tab.id, e)} 
-                                    style={{ marginLeft: 4, background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: 12 }}
+                                    style={{ 
+                                        marginLeft: 4, 
+                                        background: 'none', 
+                                        border: 'none', 
+                                        color: theme.textMuted, 
+                                        cursor: 'pointer', 
+                                        fontSize: 12,
+                                        opacity: 0.6,
+                                        transition: 'opacity 0.2s',
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                                    onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
                                 >×</button>
                             )}
                         </div>
                     ))}
-                    <button data-add-tab-btn onClick={addNewTab} style={{ ...styles.btnIcon, fontSize: 16 }} title="New Tab">+</button>
+                    <button data-add-tab-btn onClick={addNewTab} style={{ ...styles.btnIcon, fontSize: 16 }} title="New Tab (Ctrl+T)">+</button>
+                    
+                    {/* Tab Context Menu */}
+                    {tabContextMenu && (
+                        <div 
+                            style={{
+                                position: 'fixed',
+                                left: tabContextMenu.x,
+                                top: tabContextMenu.y,
+                                backgroundColor: theme.bgCard,
+                                border: `1px solid ${theme.border}`,
+                                borderRadius: 8,
+                                boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                                zIndex: 1000,
+                                minWidth: 160,
+                                overflow: 'hidden',
+                            }}
+                            onClick={() => setTabContextMenu(null)}
+                        >
+                            <button
+                                onClick={() => duplicateTab(tabContextMenu.tabId)}
+                                style={{
+                                    width: '100%',
+                                    padding: '10px 14px',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: theme.text,
+                                    textAlign: 'left',
+                                    cursor: 'pointer',
+                                    fontSize: 13,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bgHover}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                                📋 탭 복제
+                            </button>
+                            <button
+                                onClick={() => startEditingTab(tabContextMenu.tabId, queryTabs.find(t => t.id === tabContextMenu.tabId)?.name || '')}
+                                style={{
+                                    width: '100%',
+                                    padding: '10px 14px',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: theme.text,
+                                    textAlign: 'left',
+                                    cursor: 'pointer',
+                                    fontSize: 13,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bgHover}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                                ✏️ 이름 변경
+                            </button>
+                            <div style={{ height: 1, backgroundColor: theme.border, margin: '4px 0' }} />
+                            {queryTabs.length > 1 && (
+                                <>
+                                    <button
+                                        onClick={() => closeOtherTabs(tabContextMenu.tabId)}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px 14px',
+                                            border: 'none',
+                                            background: 'transparent',
+                                            color: theme.text,
+                                            textAlign: 'left',
+                                            cursor: 'pointer',
+                                            fontSize: 13,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 8,
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bgHover}
+                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                    >
+                                        🗂️ 다른 탭 닫기
+                                    </button>
+                                    <button
+                                        onClick={() => closeTabsToRight(tabContextMenu.tabId)}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px 14px',
+                                            border: 'none',
+                                            background: 'transparent',
+                                            color: theme.text,
+                                            textAlign: 'left',
+                                            cursor: 'pointer',
+                                            fontSize: 13,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 8,
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bgHover}
+                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                    >
+                                        ➡️ 오른쪽 탭 닫기
+                                    </button>
+                                    <div style={{ height: 1, backgroundColor: theme.border, margin: '4px 0' }} />
+                                    <button
+                                        onClick={(e) => { closeTab(tabContextMenu.tabId, e as any); setTabContextMenu(null); }}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px 14px',
+                                            border: 'none',
+                                            background: 'transparent',
+                                            color: theme.error,
+                                            textAlign: 'left',
+                                            cursor: 'pointer',
+                                            fontSize: 13,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 8,
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bgHover}
+                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                    >
+                                        ✕ 탭 닫기
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    )}
                 </div>
+
+                {/* Click outside to close tab context menu */}
+                {tabContextMenu && (
+                    <div 
+                        style={{ position: 'fixed', inset: 0, zIndex: 999 }}
+                        onClick={() => setTabContextMenu(null)}
+                    />
+                )}
 
                 {/* Editor & Results */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -2539,8 +2773,34 @@ export default function EditorPage() {
                             />
                         </div>
                         <div style={styles.statusBar}>
-                            <span>Ln {cursorPosition.line}, Col {cursorPosition.column} | {query.split('\n').length} lines | {query.length} chars</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <span>Ln {cursorPosition.line}, Col {cursorPosition.column}</span>
+                                <span style={{ color: theme.textMuted }}>|</span>
+                                <span>{query.split('\n').length} lines, {query.length} chars</span>
+                                {queryTabs.find(t => t.id === activeTabId)?.unsaved && (
+                                    <>
+                                        <span style={{ color: theme.textMuted }}>|</span>
+                                        <span style={{ color: theme.warning, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                            • 저장되지 않음
+                                        </span>
+                                    </>
+                                )}
+                                {lastAutoSave && (
+                                    <>
+                                        <span style={{ color: theme.textMuted }}>|</span>
+                                        <span style={{ color: theme.textMuted, fontSize: 10 }}>
+                                            💾 {lastAutoSave.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 저장됨
+                                        </span>
+                                    </>
+                                )}
+                            </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                {connectionStatus === 'connected' && (
+                                    <span style={{ fontSize: 10, color: theme.success, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                        <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: theme.success }} />
+                                        연결됨
+                                    </span>
+                                )}
                                 <button onClick={() => setShowMinimap(!showMinimap)} style={{ ...styles.btnIcon, padding: '2px 6px', fontSize: 10 }} title="Toggle Minimap">{showMinimap ? '🗺️' : '🗺️'}</button>
                                 <button onClick={() => setShowLineNumbers(!showLineNumbers)} style={{ ...styles.btnIcon, padding: '2px 6px', fontSize: 10 }} title="Toggle Line Numbers">{showLineNumbers ? '#' : '−'}</button>
                                 <select value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} style={{ ...styles.select, padding: '2px 4px', fontSize: 10, minWidth: 50 }}>
@@ -3458,6 +3718,8 @@ export default function EditorPage() {
                                     ['새 탭', 'Ctrl+T'],
                                     ['탭 닫기', 'Ctrl+W'],
                                     ['탭 전환', 'Ctrl+1~9'],
+                                    ['탭 이름 변경', '더블클릭'],
+                                    ['탭 메뉴', '우클릭'],
                                     ['모달 닫기', 'Esc'],
                                 ].map(([action, keys]) => (
                                     <div key={action} style={{ padding: 10, backgroundColor: theme.bgHover, borderRadius: 6 }}>
@@ -3468,8 +3730,14 @@ export default function EditorPage() {
                             </div>
                         </div>
                         
-                        <div style={{ fontSize: 11, color: theme.textMuted, textAlign: 'center', marginTop: 8 }}>
-                            💡 팁: 쿼리 일부를 선택 후 Ctrl+Enter로 선택한 부분만 실행할 수 있습니다
+                        <div style={{ padding: 12, backgroundColor: theme.bgHover, borderRadius: 8, marginBottom: 12 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: theme.textSecondary, marginBottom: 6 }}>💡 유용한 팁</div>
+                            <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: theme.textMuted, lineHeight: 1.6 }}>
+                                <li>쿼리 일부를 선택 후 Ctrl+Enter로 선택한 부분만 실행</li>
+                                <li>탭을 우클릭하면 복제, 다른 탭 닫기 등 메뉴 사용 가능</li>
+                                <li>저장 모달에서 AI가 자동으로 쿼리명을 제안해줍니다</li>
+                                <li>탭에 마우스를 올리면 쿼리 미리보기가 표시됩니다</li>
+                            </ul>
                         </div>
                         
                         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>

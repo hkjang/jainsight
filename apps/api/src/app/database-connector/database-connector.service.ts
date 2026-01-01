@@ -69,9 +69,30 @@ export class DatabaseConnectorService implements OnModuleDestroy {
                     throw new Error(`Unsupported database type: ${connDto.type}`);
             }
         } catch (error) {
-            const errorMsg = error.message || error.toString() || 'Unknown error';
+            // AggregateError 처리 (연결 실패 시 발생)
+            let errorMsg = error.message || 'Unknown error';
+            
+            if (error.name === 'AggregateError' || errorMsg === 'AggregateError') {
+                // 연결 실패 상세 분석
+                const errors = error.errors || [];
+                if (errors.length > 0) {
+                    const firstError = errors[0];
+                    errorMsg = firstError.message || firstError.code || 'Connection failed';
+                } else {
+                    errorMsg = `데이터베이스 연결 실패: ${connDto.host}:${connDto.port}에 연결할 수 없습니다. 호스트가 실행 중인지, 포트가 올바른지 확인해주세요.`;
+                }
+            } else if (errorMsg.includes('ECONNREFUSED')) {
+                errorMsg = `연결 거부됨: ${connDto.host}:${connDto.port}. 데이터베이스 서버가 실행 중인지 확인해주세요.`;
+            } else if (errorMsg.includes('ENOTFOUND')) {
+                errorMsg = `호스트를 찾을 수 없음: ${connDto.host}. 호스트 주소를 확인해주세요.`;
+            } else if (errorMsg.includes('ETIMEDOUT')) {
+                errorMsg = `연결 타임아웃: ${connDto.host}:${connDto.port}. 네트워크 연결을 확인해주세요.`;
+            } else if (errorMsg.includes('password authentication failed')) {
+                errorMsg = `인증 실패: 사용자명 또는 비밀번호가 올바르지 않습니다.`;
+            }
+            
             console.error(`[DatabaseConnector] Query execution failed for ${connDto.type}:`, errorMsg);
-            throw new Error(`Query execution failed: ${errorMsg}`);
+            throw new Error(errorMsg);
         }
     }
 
