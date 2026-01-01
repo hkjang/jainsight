@@ -24,6 +24,12 @@ interface Group {
     memberCount?: number;
 }
 
+interface Toast {
+    id: string;
+    message: string;
+    type: 'success' | 'error' | 'info';
+}
+
 const dbIcons: Record<string, { icon: string; color: string }> = {
     postgresql: { icon: '🐘', color: '#336791' },
     postgres: { icon: '🐘', color: '#336791' },
@@ -39,6 +45,7 @@ const dbIcons: Record<string, { icon: string; color: string }> = {
 type SortField = 'name' | 'type' | 'visibility' | 'createdAt';
 type SortOrder = 'asc' | 'desc';
 type VisibilityFilter = 'all' | 'private' | 'group' | 'public';
+type ViewMode = 'table' | 'card';
 
 export default function ConnectionsSharingPage() {
     const [connections, setConnections] = useState<Connection[]>([]);
@@ -64,8 +71,17 @@ export default function ConnectionsSharingPage() {
     // 탭
     const [activeTab, setActiveTab] = useState<'overview' | 'groups' | 'matrix'>('overview');
     
+    // 새로운 기능
+    const [viewMode, setViewMode] = useState<ViewMode>('table');
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+    const [toasts, setToasts] = useState<Toast[]>([]);
+    const [connectionHealth, setConnectionHealth] = useState<Record<string, 'online' | 'offline' | 'checking'>>({});
+    
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
+    const searchInputRef = useRef<HTMLInputElement>(null);
 
     const fetchData = useCallback(async () => {
         const token = localStorage.getItem('token');
@@ -163,6 +179,18 @@ export default function ConnectionsSharingPage() {
         return result;
     }, [connections, searchQuery, typeFilter, visibilityFilter, sortField, sortOrder]);
 
+    // 페이지네이션
+    const totalPages = Math.ceil(filteredConnections.length / itemsPerPage);
+    const paginatedConnections = useMemo(() => {
+        const start = (currentPage - 1) * itemsPerPage;
+        return filteredConnections.slice(start, start + itemsPerPage);
+    }, [filteredConnections, currentPage, itemsPerPage]);
+    
+    // 페이지 변경 시 선택 초기화
+    useEffect(() => {
+        setSelectedIds(new Set());
+    }, [currentPage]);
+
     const stats = useMemo(() => {
         const privateConns = connections.filter(c => c.visibility === 'private' || !c.visibility);
         const groupConns = connections.filter(c => c.visibility === 'group');
@@ -199,6 +227,88 @@ export default function ConnectionsSharingPage() {
             console.error('Failed to copy:', err);
         }
     };
+    
+    // 토스트 알림
+    const showToast = useCallback((message: string, type: Toast['type'] = 'info') => {
+        const id = Date.now().toString();
+        setToasts(prev => [...prev, { id, message, type }]);
+        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+    }, []);
+    
+    // 벌크 선택
+    const toggleSelect = (id: string) => {
+        setSelectedIds(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(id)) newSet.delete(id);
+            else newSet.add(id);
+            return newSet;
+        });
+    };
+    
+    const selectAll = () => {
+        if (selectedIds.size === paginatedConnections.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(paginatedConnections.map(c => c.id)));
+        }
+    };
+    
+    // 연결 상태 확인
+    const checkConnectionHealth = async (connId: string) => {
+        setConnectionHealth(prev => ({ ...prev, [connId]: 'checking' }));
+        const token = localStorage.getItem('token');
+        try {
+            const res = await fetch(`/api/connections/${connId}/test`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            setConnectionHealth(prev => ({ ...prev, [connId]: res.ok ? 'online' : 'offline' }));
+            showToast(res.ok ? '연결 성공!' : '연결 실패', res.ok ? 'success' : 'error');
+        } catch {
+            setConnectionHealth(prev => ({ ...prev, [connId]: 'offline' }));
+            showToast('연결 테스트 실패', 'error');
+        }
+    };
+    
+    // 키보드 단축키
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+            
+            switch (e.key.toLowerCase()) {
+                case 'r':
+                    e.preventDefault();
+                    fetchData();
+                    showToast('새로고침 완료', 'success');
+                    break;
+                case 'e':
+                    e.preventDefault();
+                    exportToCSV();
+                    showToast('CSV 내보내기 완료', 'success');
+                    break;
+                case '/':
+                    e.preventDefault();
+                    searchInputRef.current?.focus();
+                    break;
+                case '1':
+                    setActiveTab('overview');
+                    break;
+                case '2':
+                    setActiveTab('groups');
+                    break;
+                case '3':
+                    setActiveTab('matrix');
+                    break;
+                case 'escape':
+                    setSelectedIds(new Set());
+                    setSearchQuery('');
+                    break;
+            }
+        };
+        
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [fetchData, showToast]);
     
     const exportToCSV = () => {
         const headers = ['이름', '타입', '호스트', '데이터베이스', '가시성', '공유 그룹'];
@@ -258,13 +368,41 @@ export default function ConnectionsSharingPage() {
                 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
                 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
                 @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+                @keyframes slideInRight { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
+                @keyframes slideOut { from { opacity: 1; } to { opacity: 0; transform: translateX(100%); } }
                 .card-hover { transition: all 0.2s ease; }
                 .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3); }
                 .btn-hover { transition: all 0.15s ease; }
                 .btn-hover:hover { filter: brightness(1.1); transform: scale(1.02); }
                 .stat-card { animation: fadeIn 0.3s ease forwards; }
                 .connection-row { animation: slideIn 0.3s ease forwards; }
+                .tab-btn { transition: all 0.2s ease; border: none; cursor: pointer; }
+                .tab-btn:hover { background: rgba(99, 102, 241, 0.15); }
+                .tab-btn.active { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; }
+                .toast { animation: slideInRight 0.3s ease; }
+                .checkbox { appearance: none; width: 18px; height: 18px; border: 2px solid #4b5563; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
+                .checkbox:checked { background: #6366f1; border-color: #6366f1; }
+                .checkbox:checked::after { content: '✓'; color: white; display: flex; align-items: center; justify-content: center; font-size: 12px; }
             `}</style>
+            
+            {/* 토스트 알림 */}
+            <div style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {toasts.map(toast => (
+                    <div key={toast.id} className="toast" style={{
+                        padding: '12px 20px', borderRadius: '8px',
+                        background: toast.type === 'success' ? 'rgba(16, 185, 129, 0.95)' : 
+                                   toast.type === 'error' ? 'rgba(239, 68, 68, 0.95)' : 'rgba(99, 102, 241, 0.95)',
+                        color: 'white', fontSize: '13px', fontWeight: 500,
+                        boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)',
+                        display: 'flex', alignItems: 'center', gap: '8px'
+                    }}>
+                        {toast.type === 'success' && '✓'}
+                        {toast.type === 'error' && '✕'}
+                        {toast.type === 'info' && 'ℹ'}
+                        {toast.message}
+                    </div>
+                ))}
+            </div>
             
             <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
                 {/* Header */}
@@ -433,6 +571,84 @@ export default function ConnectionsSharingPage() {
                         </div>
                     </div>
                 )}
+                
+                {/* 탭 네비게이션 */}
+                <div style={{
+                    marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    background: 'rgba(30, 27, 75, 0.5)', borderRadius: '12px', padding: '6px',
+                    border: '1px solid rgba(99, 102, 241, 0.2)'
+                }}>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                        {[
+                            { id: 'overview' as const, label: '📋 개요', shortcut: '1' },
+                            { id: 'groups' as const, label: '🏢 그룹별', shortcut: '2' },
+                            { id: 'matrix' as const, label: '🔐 매트릭스', shortcut: '3' },
+                        ].map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`tab-btn ${activeTab === tab.id ? 'active' : ''}`}
+                                style={{
+                                    padding: '10px 20px', borderRadius: '8px',
+                                    background: activeTab === tab.id ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
+                                    color: activeTab === tab.id ? '#a5b4fc' : '#94a3b8',
+                                    fontSize: '13px', fontWeight: 500,
+                                    display: 'flex', alignItems: 'center', gap: '8px'
+                                }}
+                            >
+                                {tab.label}
+                                <kbd style={{
+                                    padding: '2px 5px', borderRadius: '3px', fontSize: '9px',
+                                    background: 'rgba(100, 116, 139, 0.2)', color: '#64748b'
+                                }}>{tab.shortcut}</kbd>
+                            </button>
+                        ))}
+                    </div>
+                    
+                    {/* 뷰 모드 토글 & 선택 정보 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {selectedIds.size > 0 && (
+                            <div style={{
+                                padding: '6px 12px', borderRadius: '6px',
+                                background: 'rgba(99, 102, 241, 0.2)', color: '#a5b4fc',
+                                fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px'
+                            }}>
+                                <span>{selectedIds.size}개 선택됨</span>
+                                <button
+                                    onClick={() => setSelectedIds(new Set())}
+                                    style={{
+                                        background: 'none', border: 'none', color: '#64748b',
+                                        cursor: 'pointer', fontSize: '12px', padding: '0 4px'
+                                    }}
+                                >✕</button>
+                            </div>
+                        )}
+                        
+                        <div style={{
+                            display: 'flex', borderRadius: '6px', overflow: 'hidden',
+                            border: '1px solid rgba(100, 116, 139, 0.3)'
+                        }}>
+                            <button
+                                onClick={() => setViewMode('table')}
+                                style={{
+                                    padding: '8px 12px', border: 'none', cursor: 'pointer',
+                                    background: viewMode === 'table' ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
+                                    color: viewMode === 'table' ? '#a5b4fc' : '#64748b',
+                                    fontSize: '14px'
+                                }}
+                            >☰</button>
+                            <button
+                                onClick={() => setViewMode('card')}
+                                style={{
+                                    padding: '8px 12px', border: 'none', cursor: 'pointer',
+                                    background: viewMode === 'card' ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
+                                    color: viewMode === 'card' ? '#a5b4fc' : '#64748b',
+                                    fontSize: '14px'
+                                }}
+                            >⊞</button>
+                        </div>
+                    </div>
+                </div>
                 
                 {/* 검색 및 필터 */}
                 <div style={{
