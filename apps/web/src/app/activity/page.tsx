@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { darkTheme, darkStyles, AnimatedCard, SearchInput, Pagination, TabGroup } from '../../components/admin/AdminUtils';
+import useAuth from '../../hooks/useAuth';
 
 const API_URL = '/api';
 
@@ -38,6 +39,7 @@ const actionLabels: Record<string, { label: string; icon: string; color: string 
 };
 
 export default function ActivityPage() {
+    const { user, token, loading: authLoading, isAuthenticated } = useAuth();
     const [activities, setActivities] = useState<Activity[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -46,9 +48,8 @@ export default function ActivityPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const itemsPerPage = 20;
 
-    const userId = 'current-user';
-
     const fetchActivities = useCallback(async () => {
+        if (!user?.id || !token) return;
         setLoading(true);
         try {
             const params = new URLSearchParams({
@@ -57,33 +58,26 @@ export default function ActivityPage() {
             });
             if (actionFilter !== 'all') params.append('action', actionFilter);
 
-            const response = await fetch(`${API_URL}/users/${userId}/activity?${params}`);
+            const response = await fetch(`${API_URL}/users/${user.id}/activity?${params}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (response.ok) {
                 const data = await response.json();
                 setActivities(data.activities || []);
                 setTotal(data.total || 0);
-            } else {
-                // Mock data
-                const mockActivities: Activity[] = [
-                    { id: '1', userId, action: 'login', ipAddress: '192.168.1.1', success: true, createdAt: new Date().toISOString() },
-                    { id: '2', userId, action: 'query_execute', resourceType: 'query', resourceId: 'q1', details: { queryName: 'Sales Report' }, success: true, durationMs: 234, createdAt: new Date(Date.now() - 3600000).toISOString() },
-                    { id: '3', userId, action: 'report_view', resourceType: 'report', resourceId: 'r1', details: { reportName: 'Monthly Summary' }, success: true, createdAt: new Date(Date.now() - 7200000).toISOString() },
-                    { id: '4', userId, action: 'settings_update', details: { changed: ['theme'] }, success: true, createdAt: new Date(Date.now() - 86400000).toISOString() },
-                    { id: '5', userId, action: 'query_execute', resourceType: 'query', resourceId: 'q2', details: { queryName: 'User Analytics' }, success: false, errorMessage: 'Timeout', createdAt: new Date(Date.now() - 172800000).toISOString() },
-                ];
-                setActivities(mockActivities);
-                setTotal(mockActivities.length);
             }
         } catch (error) {
             console.error('Failed to fetch activities:', error);
         } finally {
             setLoading(false);
         }
-    }, [userId, currentPage, actionFilter]);
+    }, [user, token, currentPage, actionFilter]);
 
     useEffect(() => {
-        fetchActivities();
-    }, [fetchActivities]);
+        if (!authLoading && isAuthenticated) {
+            fetchActivities();
+        }
+    }, [fetchActivities, authLoading, isAuthenticated]);
 
     const formatDate = (dateStr: string) => {
         const date = new Date(dateStr);
@@ -106,7 +100,7 @@ export default function ActivityPage() {
 
     const totalPages = Math.ceil(total / itemsPerPage);
 
-    if (loading && activities.length === 0) {
+    if (authLoading || (loading && activities.length === 0)) {
         return (
             <div style={{ ...darkStyles.container, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
                 <div style={{ textAlign: 'center', color: darkTheme.textSecondary }}>

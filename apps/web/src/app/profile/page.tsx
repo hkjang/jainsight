@@ -287,23 +287,12 @@ export default function ProfilePage() {
                     </a>
                 </AnimatedCard>
                 <AnimatedCard delay={0.7}>
-                    <a href="/notifications" style={{ display: 'block', padding: '20px', textDecoration: 'none' }}>
+                    <a href="/activity" style={{ display: 'block', padding: '20px', textDecoration: 'none' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <span style={{ fontSize: '24px' }}>🔔</span>
+                            <span style={{ fontSize: '24px' }}>📋</span>
                             <div>
-                                <div style={{ fontWeight: '500', color: darkTheme.textPrimary }}>알림</div>
-                                <div style={{ fontSize: '13px', color: darkTheme.textMuted }}>시스템 알림</div>
-                            </div>
-                        </div>
-                    </a>
-                </AnimatedCard>
-                <AnimatedCard delay={0.8}>
-                    <a href="/favorites" style={{ display: 'block', padding: '20px', textDecoration: 'none' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <span style={{ fontSize: '24px' }}>⭐</span>
-                            <div>
-                                <div style={{ fontWeight: '500', color: darkTheme.textPrimary }}>즐겨찾기</div>
-                                <div style={{ fontSize: '13px', color: darkTheme.textMuted }}>북마크 관리</div>
+                                <div style={{ fontWeight: '500', color: darkTheme.textPrimary }}>활동</div>
+                                <div style={{ fontSize: '13px', color: darkTheme.textMuted }}>최근 활동 내역</div>
                             </div>
                         </div>
                     </a>

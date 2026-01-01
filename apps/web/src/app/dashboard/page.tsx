@@ -27,9 +27,7 @@ const quickActions = [
     { label: '새 쿼리', icon: '➕', href: '/editor', color: '#3B82F6' },
     { label: '연결 관리', icon: '🔌', href: '/connections', color: '#10B981' },
     { label: '리포트', icon: '📊', href: '/admin/reports', color: '#8B5CF6' },
-    { label: '설정', icon: '⚙️', href: '/settings', color: '#F59E0B' },
-    { label: '즐겨찾기', icon: '⭐', href: '/favorites', color: '#EC4899' },
-    { label: '알림', icon: '🔔', href: '/notifications', color: '#06B6D4' }
+    { label: '스키마', icon: '🗂️', href: '/schemas', color: '#F59E0B' },
 ];
 
 export default function DashboardPage() {
@@ -130,25 +128,16 @@ export default function DashboardPage() {
                 </AnimatedCard>
             )}
 
-            {/* Header with Notification Badge */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-                <div>
-                    <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: darkTheme.textPrimary }}>👋 안녕하세요, {data?.profile.name}님!</h1>
-                    <p style={{ color: darkTheme.textSecondary, marginTop: '4px' }}>오늘도 좋은 하루 되세요</p>
-                </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                    <a href="/notifications" style={{ position: 'relative', padding: '10px', background: darkTheme.bgSecondary, borderRadius: '10px', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span style={{ fontSize: '20px' }}>🔔</span>
-                        {notifications && notifications.unreadCount > 0 && (
-                            <span style={{ position: 'absolute', top: '-4px', right: '-4px', width: '20px', height: '20px', background: darkTheme.accentRed, borderRadius: '50%', fontSize: '11px', fontWeight: 'bold', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                {notifications.unreadCount > 9 ? '9+' : notifications.unreadCount}
-                            </span>
-                        )}
-                    </a>
-                    <a href="/favorites" style={{ padding: '10px', background: darkTheme.bgSecondary, borderRadius: '10px', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span style={{ fontSize: '20px' }}>⭐</span>
-                    </a>
-                </div>
+            {/* Welcome Header */}
+            <div style={{ marginBottom: '32px' }}>
+                <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: darkTheme.textPrimary, marginBottom: '4px' }}>
+                    👋 안녕하세요, {data?.profile.name || user?.name}님!
+                </h1>
+                <p style={{ color: darkTheme.textSecondary, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>📅 {new Date().toLocaleDateString('ko-KR', { weekday: 'long', month: 'long', day: 'numeric' })}</span>
+                    <span style={{ color: darkTheme.textMuted }}>•</span>
+                    <span>오늘도 좋은 하루 되세요</span>
+                </p>
             </div>
 
             {/* Stats Cards */}
