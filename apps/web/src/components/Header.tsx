@@ -92,7 +92,8 @@ export function Header() {
         <header style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '10px 20px', background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(10px)',
-            borderBottom: '1px solid rgba(99, 102, 241, 0.1)', minHeight: '56px'
+            borderBottom: '1px solid rgba(99, 102, 241, 0.1)', minHeight: '56px',
+            position: 'relative', zIndex: 9999
         }}>
             {/* 왼쪽: 브레드크럼 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '180px' }}>

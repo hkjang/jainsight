@@ -1868,7 +1868,17 @@ export default function EditorPage() {
                 setSaveDescription('');
                 setIsPublic(false);
                 fetchSavedQueries(token);
-                showToast('쿼리가 저장되었습니다', 'success');
+                
+                // 저장한 이름으로 현재 탭 이름 업데이트
+                const updatedTabs = queryTabs.map(tab => 
+                    tab.id === activeTabId 
+                        ? { ...tab, name: saveName.trim(), unsaved: false } 
+                        : tab
+                );
+                setQueryTabs(updatedTabs);
+                localStorage.setItem('editorQueryTabs', JSON.stringify(updatedTabs));
+                
+                showToast(`쿼리가 "${saveName.trim()}"으로 저장되었습니다`, 'success');
             } else {
                 const errorData = await res.json().catch(() => ({}));
                 if (errorData.message?.includes('duplicate') || errorData.message?.includes('exists')) {
@@ -2275,7 +2285,7 @@ export default function EditorPage() {
         btnIcon: { padding: 6, backgroundColor: 'transparent', color: theme.textSecondary, border: 'none', borderRadius: 6, cursor: 'pointer' },
         input: { padding: '6px 10px', borderRadius: 6, border: `1px solid ${theme.border}`, backgroundColor: theme.bgInput, color: theme.text, fontSize: 13, outline: 'none' },
         select: { padding: '6px 10px', borderRadius: 6, border: `1px solid ${theme.border}`, backgroundColor: theme.bgInput, color: theme.text, fontSize: 13 },
-        modal: { position: 'fixed' as const, inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
+        modal: { position: 'fixed' as const, inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 },
         modalContent: { backgroundColor: theme.bgCard, borderRadius: 12, padding: 24, width: 440, maxWidth: '90vw', border: `1px solid ${theme.border}` },
         table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 },
         th: { padding: '10px 12px', textAlign: 'left' as const, backgroundColor: theme.bgHover, color: theme.textSecondary, fontWeight: 600, borderBottom: `1px solid ${theme.border}`, cursor: 'pointer', userSelect: 'none' as const },
@@ -2445,7 +2455,7 @@ export default function EditorPage() {
                                     <div style={{ 
                                         position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 320, 
                                         backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, 
-                                        borderRadius: 8, boxShadow: '0 12px 40px rgba(0,0,0,0.4)', zIndex: 100, 
+                                        borderRadius: 8, boxShadow: '0 12px 40px rgba(0,0,0,0.4)', zIndex: 200, 
                                         maxHeight: 400, display: 'flex', flexDirection: 'column'
                                     }}>
                                         {/* Search Input */}
@@ -3374,7 +3384,6 @@ export default function EditorPage() {
                                     height: '100%',
                                     padding: 32
                                 }}>
-                                    <div style={{ fontSize: 64, marginBottom: 16 }}>📊</div>
                                     <div style={{ 
                                         fontSize: 18, 
                                         fontWeight: 600, 
@@ -4701,7 +4710,7 @@ export default function EditorPage() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: 8,
-                    zIndex: 1000,
+                    zIndex: 10001,
                     animation: 'slideIn 0.3s ease'
                 }}>
                     <span>{toast.type === 'success' ? '✓' : toast.type === 'error' ? '✕' : 'ℹ'}</span>
