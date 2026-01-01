@@ -25,8 +25,8 @@ const actionLabels: Record<string, { label: string; icon: string }> = {
 
 const quickActions = [
     { label: '새 쿼리', icon: '➕', href: '/editor', color: '#3B82F6' },
+    { label: '저장된 쿼리', icon: '📊', href: '/saved-queries', color: '#6366F1' },
     { label: '연결 관리', icon: '🔌', href: '/connections', color: '#10B981' },
-    { label: '리포트', icon: '📊', href: '/admin/reports', color: '#8B5CF6' },
     { label: '스키마', icon: '🗂️', href: '/schemas', color: '#F59E0B' },
 ];
 
@@ -328,12 +328,39 @@ export default function DashboardPage() {
                                     <a href="/favorites" style={{ fontSize: '12px', color: darkTheme.accentBlue, textDecoration: 'none' }}>더보기</a>
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                    {favorites.slice(0, 3).map((fav) => (
-                                        <div key={fav.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', background: darkTheme.bgSecondary, borderRadius: '8px' }}>
-                                            <span style={{ fontSize: '16px' }}>{fav.icon || (fav.itemType === 'query' ? '📊' : '📈')}</span>
-                                            <span style={{ fontSize: '13px', color: darkTheme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fav.name || fav.itemId}</span>
-                                        </div>
-                                    ))}
+                                    {favorites.slice(0, 3).map((fav) => {
+                                        const typeConfig: Record<string, { icon: string; color: string; href: string }> = {
+                                            query: { icon: '📊', color: '#3B82F6', href: `/editor?id=${fav.itemId}` },
+                                            connection: { icon: '🔌', color: '#10B981', href: `/connections` },
+                                            report: { icon: '📈', color: '#8B5CF6', href: `/admin/reports` },
+                                            dashboard: { icon: '📋', color: '#F59E0B', href: `/dashboard` },
+                                        };
+                                        const config = typeConfig[fav.itemType] || { icon: '⭐', color: '#6366f1', href: '#' };
+                                        return (
+                                            <a 
+                                                key={fav.id} 
+                                                href={config.href}
+                                                style={{ 
+                                                    display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', 
+                                                    background: darkTheme.bgSecondary, borderRadius: '8px', textDecoration: 'none',
+                                                    transition: 'all 0.2s', border: '1px solid transparent'
+                                                }}
+                                                onMouseEnter={(e) => { e.currentTarget.style.background = darkTheme.bgCardHover; e.currentTarget.style.borderColor = `${config.color}40`; }}
+                                                onMouseLeave={(e) => { e.currentTarget.style.background = darkTheme.bgSecondary; e.currentTarget.style.borderColor = 'transparent'; }}
+                                            >
+                                                <span style={{ fontSize: '18px' }}>{fav.icon || config.icon}</span>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontSize: '13px', color: darkTheme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {fav.name || fav.itemId}
+                                                    </div>
+                                                    <div style={{ fontSize: '11px', color: darkTheme.textMuted }}>
+                                                        {fav.itemType === 'query' ? '쿼리' : fav.itemType === 'connection' ? '연결' : fav.itemType === 'report' ? '리포트' : '대시보드'}
+                                                    </div>
+                                                </div>
+                                                <span style={{ fontSize: '14px', color: darkTheme.textMuted }}>→</span>
+                                            </a>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </AnimatedCard>

@@ -17,9 +17,10 @@ const defaultCommands: CommandItem[] = [
     // 네비게이션
     { id: 'dashboard', label: '대시보드로 이동', icon: '🏠', href: '/dashboard', category: '네비게이션', shortcut: 'G D' },
     { id: 'editor', label: '새 쿼리 작성', icon: '➕', href: '/editor', category: '네비게이션', shortcut: 'G E' },
+    { id: 'saved-queries', label: '저장된 쿼리', icon: '📊', href: '/saved-queries', category: '네비게이션', shortcut: 'G Q' },
     { id: 'connections', label: '연결 관리', icon: '🔌', href: '/connections', category: '네비게이션', shortcut: 'G C' },
     { id: 'schemas', label: '스키마 탐색', icon: '🗂️', href: '/schemas', category: '네비게이션' },
-    { id: 'reports', label: '리포트', icon: '📊', href: '/admin/reports', category: '네비게이션' },
+    { id: 'reports', label: '리포트', icon: '📈', href: '/admin/reports', category: '네비게이션' },
     
     // 사용자
     { id: 'profile', label: '내 프로필', icon: '👤', href: '/profile', category: '사용자', shortcut: 'G P' },

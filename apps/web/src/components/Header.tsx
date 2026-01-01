@@ -17,6 +17,7 @@ const pathLabels: Record<string, { label: string; icon: string }> = {
     '/notifications': { label: '알림', icon: '🔔' },
     '/favorites': { label: '즐겨찾기', icon: '⭐' },
     '/editor': { label: 'SQL 에디터', icon: '📝' },
+    '/saved-queries': { label: '저장된 쿼리', icon: '📊' },
     '/connections': { label: '연결', icon: '🔌' },
     '/schemas': { label: '스키마', icon: '🗂️' },
     '/audit': { label: '감사 로그', icon: '📜' },

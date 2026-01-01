@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { darkTheme, darkStyles, AnimatedCard, TabGroup } from '../../components/admin/AdminUtils';
 import useAuth from '../../hooks/useAuth';
+import { FavoriteIcon } from '../../components/FavoriteButton';
 
 const API_URL = '/api';
 
@@ -225,6 +226,12 @@ export default function SearchPage() {
                                             </div>
                                             <div style={{ flex: 1, minWidth: 0 }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                                    <FavoriteIcon 
+                                                        itemType={result.type === 'user' ? 'dashboard' : result.type} 
+                                                        itemId={result.id} 
+                                                        name={result.title} 
+                                                        size={16} 
+                                                    />
                                                     <span style={{ fontWeight: '600', color: darkTheme.textPrimary }}>{result.title}</span>
                                                     <span style={{
                                                         padding: '2px 8px', background: `${info.color}20`, borderRadius: '4px',
