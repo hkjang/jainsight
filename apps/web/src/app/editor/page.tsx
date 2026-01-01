@@ -2561,8 +2561,29 @@ export default function EditorPage() {
                                         ▶▶ All
                                     </button>
                                 )}
-                                <button data-execute-btn onClick={handleExecute} disabled={!selectedConnection} style={{ ...styles.btn, ...styles.btnPrimary, opacity: !selectedConnection ? 0.5 : 1 }}>
-                                    ▶ Execute
+                                <button 
+                                    data-execute-btn 
+                                    onClick={handleExecute} 
+                                    disabled={!selectedConnection} 
+                                    style={{ 
+                                        ...styles.btn, 
+                                        ...styles.btnPrimary, 
+                                        opacity: !selectedConnection ? 0.5 : 1,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 6,
+                                        paddingRight: 8
+                                    }}
+                                    title="Execute query (F5 or Ctrl+Enter)"
+                                >
+                                    <span>▶ Execute</span>
+                                    <kbd style={{ 
+                                        fontSize: 9, 
+                                        padding: '2px 4px', 
+                                        backgroundColor: 'rgba(255,255,255,0.2)', 
+                                        borderRadius: 3,
+                                        fontWeight: 400
+                                    }}>F5</kbd>
                                 </button>
                             </>
                         )}
@@ -2849,9 +2870,34 @@ export default function EditorPage() {
                                 {executionTime !== null && <span style={{ fontSize: 12, color: theme.textMuted, padding: '2px 8px', backgroundColor: theme.bgHover, borderRadius: 4 }}>⏱ {formatDuration(executionTime)}</span>}
                                 {results && <span style={{ fontSize: 12, color: theme.textMuted }}>{resultsFilter ? `${filteredRows.length} / ` : ''}{results.rowCount} rows</span>}
                                 {selectedRows.size > 0 && (
-                                    <span style={{ fontSize: 12, color: theme.primary, padding: '2px 8px', backgroundColor: `${theme.primary}20`, borderRadius: 4 }}>
-                                        ✓ {selectedRows.size} selected
-                                    </span>
+                                    <div style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: 8, 
+                                        fontSize: 12, 
+                                        color: theme.primary, 
+                                        padding: '4px 10px', 
+                                        backgroundColor: `${theme.primary}15`, 
+                                        borderRadius: 6,
+                                        border: `1px solid ${theme.primary}30`
+                                    }}>
+                                        <span>✓ {selectedRows.size}개 선택</span>
+                                        {(() => {
+                                            // 선택된 행들의 숫자 합계 계산
+                                            const selectedData = Array.from(selectedRows).map(i => filteredRows[i]).filter(Boolean);
+                                            const numericFields = results?.fields?.filter((f: string) => 
+                                                selectedData.some(r => typeof r[f] === 'number')
+                                            ) || [];
+                                            if (numericFields.length > 0) {
+                                                const sums = numericFields.slice(0, 2).map((field: string) => {
+                                                    const sum = selectedData.reduce((acc, r) => acc + (typeof r[field] === 'number' ? r[field] : 0), 0);
+                                                    return `${field}: ${sum.toLocaleString()}`;
+                                                });
+                                                return <span style={{ color: theme.textSecondary, fontSize: 11 }}>| Σ {sums.join(', ')}</span>;
+                                            }
+                                            return null;
+                                        })()}
+                                    </div>
                                 )}
                                 {/* View Mode Switcher */}
                                 {results?.rows?.length > 0 && (
@@ -2887,6 +2933,39 @@ export default function EditorPage() {
                                     >
                                         📌
                                     </button>
+                                )}
+                                {/* Quick Stats */}
+                                {results?.rows?.length > 0 && (
+                                    <div style={{ position: 'relative' }}>
+                                        <button 
+                                            onClick={() => {
+                                                // 숫자 컬럼 통계 계산
+                                                const numericFields = results.fields?.filter((f: string) => 
+                                                    results.rows.some((r: any) => typeof r[f] === 'number')
+                                                ) || [];
+                                                
+                                                if (numericFields.length === 0) {
+                                                    showToast('숫자 컬럼이 없습니다', 'info');
+                                                    return;
+                                                }
+                                                
+                                                const stats = numericFields.map((field: string) => {
+                                                    const values = results.rows
+                                                        .map((r: any) => r[field])
+                                                        .filter((v: any) => typeof v === 'number');
+                                                    const sum = values.reduce((a: number, b: number) => a + b, 0);
+                                                    const avg = sum / values.length;
+                                                    const min = Math.min(...values);
+                                                    const max = Math.max(...values);
+                                                    return `${field}: Σ${sum.toLocaleString()} μ${avg.toFixed(1)} ⬇${min.toLocaleString()} ⬆${max.toLocaleString()}`;
+                                                });
+                                                
+                                                showToast(stats.join('\n'), 'info');
+                                            }}
+                                            style={{ ...styles.btnIcon, padding: '4px 8px', fontSize: 11 }}
+                                            title="Quick Statistics (Σ Sum, μ Average, Min, Max)"
+                                        >📊 Stats</button>
+                                    </div>
                                 )}
                                 {/* Column Selector */}
                                 {results?.fields?.length > 0 && (
@@ -3284,10 +3363,19 @@ export default function EditorPage() {
                                                 <tr 
                                                     key={ri} 
                                                     style={{ 
-                                                        backgroundColor: isSelected ? `${theme.primary}15` : ri % 2 === 0 ? 'transparent' : theme.bgHover, 
-                                                        cursor: 'pointer' 
+                                                        backgroundColor: isSelected ? `${theme.primary}20` : ri % 2 === 0 ? 'transparent' : theme.bgHover, 
+                                                        cursor: 'pointer',
+                                                        transition: 'background-color 0.15s',
+                                                        borderLeft: isSelected ? `3px solid ${theme.primary}` : '3px solid transparent'
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        if (!isSelected) e.currentTarget.style.backgroundColor = `${theme.primary}08`;
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        if (!isSelected) e.currentTarget.style.backgroundColor = ri % 2 === 0 ? 'transparent' : theme.bgHover;
                                                     }}
                                                     onDoubleClick={() => { setSelectedRow(row); setShowRowDetails(true); }}
+                                                    title="더블클릭하여 상세보기"
                                                 >
                                                     <td style={{ ...styles.td, textAlign: 'center' }}>
                                                         <input 
@@ -3303,26 +3391,54 @@ export default function EditorPage() {
                                                         />
                                                     </td>
                                                     <td style={{ ...styles.td, color: theme.textMuted }}>{globalIndex + 1}</td>
-                                                    {results.fields?.filter((f: string) => !hiddenColumns.has(f)).map((field: string, fi: number) => (
-                                                        <td 
-                                                            key={fi} 
-                                                            style={{ ...styles.td, cursor: 'pointer', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                                            onClick={() => handleCopyCell(row[field])}
-                                                            title={row[field] === null ? 'NULL' : `${String(row[field]).substring(0, 100)}${String(row[field]).length > 100 ? '...' : ''}\n\nClick to copy`}
-                                                        >
-                                                            {row[field] === null ? (
-                                                                <span style={{ color: theme.textMuted, fontStyle: 'italic', fontSize: 11 }}>NULL</span>
-                                                            ) : typeof row[field] === 'boolean' ? (
-                                                                <span style={{ color: row[field] ? theme.success : theme.error }}>{row[field] ? '✓ true' : '✗ false'}</span>
-                                                            ) : typeof row[field] === 'number' ? (
-                                                                <span style={{ fontFamily: 'monospace', color: theme.accent }}>{row[field].toLocaleString()}</span>
-                                                            ) : String(row[field]).length > 50 ? (
-                                                                <span>{String(row[field]).substring(0, 50)}...</span>
-                                                            ) : (
-                                                                String(row[field])
-                                                            )}
-                                                        </td>
-                                                    ))}
+                                                    {results.fields?.filter((f: string) => !hiddenColumns.has(f)).map((field: string, fi: number) => {
+                                                        const cellValue = row[field];
+                                                        const isLongText = typeof cellValue === 'string' && cellValue.length > 50;
+                                                        const isDate = typeof cellValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(cellValue);
+                                                        
+                                                        const formatValue = () => {
+                                                            if (cellValue === null) {
+                                                                return <span style={{ color: theme.textMuted, fontStyle: 'italic', fontSize: 11, backgroundColor: `${theme.warning}10`, padding: '1px 4px', borderRadius: 2 }}>NULL</span>;
+                                                            }
+                                                            if (typeof cellValue === 'boolean') {
+                                                                return <span style={{ color: cellValue ? theme.success : theme.error }}>{cellValue ? '✓ true' : '✗ false'}</span>;
+                                                            }
+                                                            if (typeof cellValue === 'number') {
+                                                                return <span style={{ fontFamily: 'monospace', color: theme.accent }}>{cellValue.toLocaleString()}</span>;
+                                                            }
+                                                            if (isDate) {
+                                                                try {
+                                                                    const date = new Date(cellValue);
+                                                                    return <span style={{ color: theme.textSecondary }}>{date.toLocaleDateString('ko-KR')} {date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>;
+                                                                } catch { return String(cellValue); }
+                                                            }
+                                                            if (isLongText) {
+                                                                return <span>{String(cellValue).substring(0, 50)}... <span style={{ fontSize: 10, color: theme.primary }}>🔍</span></span>;
+                                                            }
+                                                            return String(cellValue);
+                                                        };
+                                                        
+                                                        return (
+                                                            <td 
+                                                                key={fi} 
+                                                                style={{ 
+                                                                    ...styles.td, 
+                                                                    cursor: 'pointer', 
+                                                                    maxWidth: 300, 
+                                                                    overflow: 'hidden', 
+                                                                    textOverflow: 'ellipsis', 
+                                                                    whiteSpace: 'nowrap',
+                                                                    transition: 'background-color 0.1s'
+                                                                }}
+                                                                onClick={() => handleCopyCell(cellValue)}
+                                                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = `${theme.primary}10`}
+                                                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                                                title={cellValue === null ? 'NULL (클릭하여 복사)' : `${String(cellValue).substring(0, 200)}${String(cellValue).length > 200 ? '...' : ''}\n\n클릭하여 복사`}
+                                                            >
+                                                                {formatValue()}
+                                                            </td>
+                                                        );
+                                                    })}
                                                 </tr>
                                             );
                                         })}
