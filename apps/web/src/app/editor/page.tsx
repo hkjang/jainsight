@@ -1078,6 +1078,151 @@ export default function EditorPage() {
         }
     }, [autoRefresh, autoRefreshInterval, selectedConnection]);
     
+    // Re-register SQL completion provider when schemaData changes
+    useEffect(() => {
+        if (!monacoRef.current || schemaData.tables.length === 0) return;
+        
+        const monaco = monacoRef.current;
+        
+        // Dispose previous provider
+        if (completionProviderRef.current) {
+            completionProviderRef.current.dispose();
+        }
+        
+        // Register updated SQL completion provider with new schemaData
+        completionProviderRef.current = monaco.languages.registerCompletionItemProvider('sql', {
+            triggerCharacters: [' ', '.', '(', ','],
+            provideCompletionItems: (model: any, position: any) => {
+                const word = model.getWordUntilPosition(position);
+                const range = {
+                    startLineNumber: position.lineNumber,
+                    endLineNumber: position.lineNumber,
+                    startColumn: word.startColumn,
+                    endColumn: word.endColumn
+                };
+                
+                const textBeforeCursor = model.getValueInRange({
+                    startLineNumber: 1,
+                    startColumn: 1,
+                    endLineNumber: position.lineNumber,
+                    endColumn: position.column
+                });
+                
+                const lineContent = model.getLineContent(position.lineNumber);
+                const textBeforeOnLine = lineContent.substring(0, position.column - 1);
+                
+                const suggestions: any[] = [];
+                
+                // SQL Keywords
+                const sqlKeywords = [
+                    'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN',
+                    'ON', 'AND', 'OR', 'ORDER BY', 'GROUP BY', 'HAVING', 'LIMIT', 'OFFSET',
+                    'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'AS', 'DISTINCT',
+                    'COUNT', 'SUM', 'AVG', 'MAX', 'MIN', 'COALESCE', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+                    'ASC', 'DESC', 'NULLS FIRST', 'NULLS LAST', 'LIKE', 'IN', 'BETWEEN', 'IS NULL', 'IS NOT NULL'
+                ];
+                
+                // Check for table.column pattern (after a dot)
+                const dotMatch = textBeforeOnLine.match(/(\w+)\.\s*$/);
+                if (dotMatch) {
+                    const tableName = dotMatch[1].toLowerCase();
+                    const tableColumns = schemaData.columns[tableName];
+                    if (tableColumns && Array.isArray(tableColumns)) {
+                        tableColumns.forEach((col: any) => {
+                            const colName = typeof col === 'string' ? col : col.name;
+                            const colType = typeof col === 'object' ? col.type : '';
+                            suggestions.push({
+                                label: colName,
+                                kind: monaco.languages.CompletionItemKind.Field,
+                                insertText: colName,
+                                detail: colType ? `Column (${colType})` : 'Column',
+                                range
+                            });
+                        });
+                        return { suggestions };
+                    }
+                }
+                
+                // Check context for table suggestions (after FROM, JOIN, INTO, UPDATE)
+                const tableContext = /\b(FROM|JOIN|INTO|UPDATE)\s+\w*$/i.test(textBeforeCursor);
+                
+                // Check context for column suggestions (after SELECT, WHERE, SET, ORDER BY, GROUP BY)
+                const columnContext = /\b(SELECT|WHERE|SET|ORDER\s+BY|GROUP\s+BY|AND|OR|ON|HAVING)\s+\w*$/i.test(textBeforeCursor) ||
+                                      /,\s*\w*$/i.test(textBeforeOnLine);
+                
+                // Suggest tables when in table context
+                if (tableContext && schemaData.tables?.length > 0) {
+                    schemaData.tables.forEach(table => {
+                        suggestions.push({
+                            label: table,
+                            kind: monaco.languages.CompletionItemKind.Class,
+                            insertText: table,
+                            detail: 'Table',
+                            range,
+                            sortText: '0' + table
+                        });
+                    });
+                }
+                
+                // Suggest columns when in column context
+                if (columnContext) {
+                    schemaData.tables?.forEach(table => {
+                        const cols = schemaData.columns[table];
+                        if (cols && Array.isArray(cols)) {
+                            cols.forEach((col: any) => {
+                                const colName = typeof col === 'string' ? col : col.name;
+                                suggestions.push({
+                                    label: `${table}.${colName}`,
+                                    kind: monaco.languages.CompletionItemKind.Field,
+                                    insertText: `${table}.${colName}`,
+                                    detail: 'Column',
+                                    range,
+                                    sortText: '1' + table + colName
+                                });
+                            });
+                        }
+                    });
+                }
+                
+                // Always add SQL keywords and tables
+                sqlKeywords.forEach(kw => {
+                    suggestions.push({
+                        label: kw,
+                        kind: monaco.languages.CompletionItemKind.Keyword,
+                        insertText: kw,
+                        detail: 'SQL Keyword',
+                        range,
+                        sortText: '2' + kw
+                    });
+                });
+                
+                // Add tables if not already in table context
+                if (!tableContext) {
+                    schemaData.tables?.forEach(table => {
+                        suggestions.push({
+                            label: table,
+                            kind: monaco.languages.CompletionItemKind.Class,
+                            insertText: table,
+                            detail: 'Table',
+                            range,
+                            sortText: '3' + table
+                        });
+                    });
+                }
+                
+                return { suggestions };
+            }
+        });
+        
+        console.log('[Autocomplete] Registered provider with', schemaData.tables.length, 'tables');
+        
+        return () => {
+            if (completionProviderRef.current) {
+                completionProviderRef.current.dispose();
+            }
+        };
+    }, [schemaData]);
+    
     // Show column stats popup
     const handleShowColumnStats = (field: string, event: React.MouseEvent) => {
         event.stopPropagation();
