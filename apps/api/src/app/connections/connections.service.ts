@@ -1,8 +1,8 @@
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Connection } from './entities/connection.entity';
+import { Repository, In, Brackets } from 'typeorm';
+import { Connection, ConnectionVisibility } from './entities/connection.entity';
 import { CreateConnectionDto } from './dto/create-connection.dto';
 import { UpdateConnectionDto } from './dto/update-connection.dto';
 import { DatabaseConnectorService } from '../database-connector/database-connector.service';
@@ -43,47 +43,116 @@ export class ConnectionsService {
         }
     }
 
+    /* Check if user can access this connection */
+    private canAccess(connection: Connection, userId: string, isAdmin: boolean = false): boolean {
+        if (isAdmin) return true;
+        if (connection.visibility === ConnectionVisibility.PUBLIC) return true;
+        if (connection.createdBy === userId) return true;
+        if (connection.visibility === ConnectionVisibility.TEAM && 
+            connection.sharedWith?.includes(userId)) return true;
+        return false;
+    }
+
     /* Exposed for internal services (Query/Schema) to get decrypted password */
-    async getConnectionWithPassword(id: string): Promise<Connection | null> {
+    async getConnectionWithPassword(id: string, userId?: string): Promise<Connection | null> {
         const connection = await this.connectionsRepository.findOneBy({ id });
-        if (connection && connection.password) {
+        if (!connection) return null;
+        
+        // If userId provided, check access (internal calls may not have userId)
+        if (userId && !this.canAccess(connection, userId)) {
+            throw new ForbiddenException('Access denied to this connection');
+        }
+        
+        if (connection.password) {
             connection.password = this.decrypt(connection.password);
         }
         return connection;
     }
 
-    async create(createConnectionDto: CreateConnectionDto) {
-        const connection = this.connectionsRepository.create(createConnectionDto);
+    async create(createConnectionDto: CreateConnectionDto, userId: string) {
+        const visibility = (createConnectionDto.visibility as ConnectionVisibility) || ConnectionVisibility.PRIVATE;
+        const connection = this.connectionsRepository.create({
+            ...createConnectionDto,
+            createdBy: userId,
+            visibility,
+            sharedWith: createConnectionDto.sharedWith || [],
+        });
         if (connection.password) {
             connection.password = this.encrypt(connection.password);
         }
         return this.connectionsRepository.save(connection);
     }
 
-    async findAll() {
-        const connections = await this.connectionsRepository.find();
+    async findAll(userId: string, isAdmin: boolean = false) {
+        let connections: Connection[];
+        
+        if (isAdmin) {
+            // Admin sees all
+            connections = await this.connectionsRepository.find();
+        } else {
+            // Regular user: public + own + shared with them
+            connections = await this.connectionsRepository
+                .createQueryBuilder('conn')
+                .where(new Brackets(qb => {
+                    qb.where('conn.visibility = :public', { public: ConnectionVisibility.PUBLIC })
+                      .orWhere('conn.createdBy = :userId', { userId })
+                      .orWhere('conn.sharedWith LIKE :userIdPattern', { userIdPattern: `%${userId}%` });
+                }))
+                .getMany();
+        }
+        
         return connections.map(conn => ({
             ...conn,
-            password: '*****' // Mask password
+            password: '*****', // Mask password
+            isOwner: conn.createdBy === userId,
         }));
     }
 
-    async findOne(id: string) {
+    async findOne(id: string, userId: string, isAdmin: boolean = false) {
         const connection = await this.connectionsRepository.findOneBy({ id });
-        if (connection) {
-            connection.password = '*****'; // Mask password
+        if (!connection) {
+            throw new NotFoundException('Connection not found');
         }
-        return connection;
+        if (!this.canAccess(connection, userId, isAdmin)) {
+            throw new ForbiddenException('Access denied to this connection');
+        }
+        return {
+            ...connection,
+            password: '*****',
+            isOwner: connection.createdBy === userId,
+        };
     }
 
-    async update(id: string, updateConnectionDto: UpdateConnectionDto) {
+    async update(id: string, updateConnectionDto: UpdateConnectionDto, userId: string, isAdmin: boolean = false) {
+        const connection = await this.connectionsRepository.findOneBy({ id });
+        if (!connection) {
+            throw new NotFoundException('Connection not found');
+        }
+        // Only owner or admin can update
+        if (connection.createdBy !== userId && !isAdmin) {
+            throw new ForbiddenException('Only the owner can update this connection');
+        }
         if (updateConnectionDto.password) {
             updateConnectionDto.password = this.encrypt(updateConnectionDto.password);
         }
-        return this.connectionsRepository.update(id, updateConnectionDto);
+        // Build update object with proper types - exclude visibility, then add it back with proper type
+        const { visibility, ...rest } = updateConnectionDto;
+        const updateData: Partial<Connection> = rest;
+        if (visibility) {
+            updateData.visibility = visibility as ConnectionVisibility;
+        }
+        return this.connectionsRepository.update(id, updateData);
     }
 
-    remove(id: string) {
+    async remove(id: string, userId: string, isAdmin: boolean = false) {
+        const connection = await this.connectionsRepository.findOneBy({ id });
+        if (!connection) {
+            throw new NotFoundException('Connection not found');
+        }
+        // Only owner or admin can delete
+        if (connection.createdBy !== userId && !isAdmin) {
+            throw new ForbiddenException('Only the owner can delete this connection');
+        }
         return this.connectionsRepository.delete(id);
     }
 
@@ -93,8 +162,8 @@ export class ConnectionsService {
         return this.databaseConnectorService.testConnection(connectionDto);
     }
 
-    async testConnectionById(id: string): Promise<{ success: boolean; message: string }> {
-        const connection = await this.getConnectionWithPassword(id);
+    async testConnectionById(id: string, userId: string): Promise<{ success: boolean; message: string }> {
+        const connection = await this.getConnectionWithPassword(id, userId);
         if (!connection) {
             return { success: false, message: 'Connection not found' };
         }
@@ -112,4 +181,19 @@ export class ConnectionsService {
         
         return this.databaseConnectorService.testConnection(connectionDto);
     }
+
+    async shareConnection(id: string, userIds: string[], userId: string): Promise<void> {
+        const connection = await this.connectionsRepository.findOneBy({ id });
+        if (!connection) {
+            throw new NotFoundException('Connection not found');
+        }
+        if (connection.createdBy !== userId) {
+            throw new ForbiddenException('Only the owner can share this connection');
+        }
+        await this.connectionsRepository.update(id, { 
+            visibility: ConnectionVisibility.TEAM, 
+            sharedWith: userIds 
+        });
+    }
 }
+

@@ -14,6 +14,9 @@ interface Connection {
     database: string;
     createdAt: string;
     lastUsedAt?: string;
+    visibility?: 'private' | 'team' | 'public';
+    createdBy?: string;
+    isOwner?: boolean;
 }
 
 interface ConnectionStatus {

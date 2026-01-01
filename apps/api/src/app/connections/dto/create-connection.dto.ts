@@ -1,5 +1,5 @@
 
-import { IsNotEmpty, IsNumber, IsOptional, IsString, IsIn } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsOptional, IsString, IsIn, IsArray } from 'class-validator';
 
 export class CreateConnectionDto {
     @IsNotEmpty()
@@ -8,7 +8,7 @@ export class CreateConnectionDto {
 
     @IsNotEmpty()
     @IsString()
-    @IsIn(['mysql', 'mariadb', 'postgres', 'mssql', 'oracle', 'sqlite'])
+    @IsIn(['mysql', 'mariadb', 'postgres', 'postgresql', 'mssql', 'oracle', 'sqlite'])
     type: string;
 
     @IsNotEmpty()
@@ -30,4 +30,13 @@ export class CreateConnectionDto {
     @IsOptional()
     @IsString()
     database?: string;
+
+    @IsOptional()
+    @IsIn(['private', 'team', 'public'])
+    visibility?: 'private' | 'team' | 'public';
+
+    @IsOptional()
+    @IsArray()
+    sharedWith?: string[];
 }
+
