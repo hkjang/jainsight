@@ -809,6 +809,41 @@ export default function ConnectionsPage() {
                                     >
                                         📋
                                     </button>
+                                    {/* Quick Visibility Toggle */}
+                                    {conn.isOwner && (
+                                        <div style={{ position: 'relative' }}>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const newVis = conn.visibility === 'private' ? 'public' : conn.visibility === 'public' ? 'group' : 'private';
+                                                    // Quick toggle
+                                                    const token = localStorage.getItem('token');
+                                                    fetch(`/api/connections/${conn.id}`, {
+                                                        method: 'PATCH',
+                                                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                                        body: JSON.stringify({ visibility: newVis, sharedWithGroups: [] })
+                                                    }).then(() => fetchConnections());
+                                                }}
+                                                title={`현재: ${conn.visibility === 'private' ? '비공개' : conn.visibility === 'group' ? '그룹' : '공개'} (클릭하여 변경)`}
+                                                style={{
+                                                    padding: '8px 12px',
+                                                    background: conn.visibility === 'private' ? 'rgba(99, 102, 241, 0.15)' : 
+                                                        conn.visibility === 'group' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                                                    border: conn.visibility === 'private' ? '1px solid rgba(99, 102, 241, 0.3)' :
+                                                        conn.visibility === 'group' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(245, 158, 11, 0.3)',
+                                                    borderRadius: '8px',
+                                                    color: conn.visibility === 'private' ? '#a5b4fc' :
+                                                        conn.visibility === 'group' ? '#34d399' : '#fbbf24',
+                                                    cursor: 'pointer',
+                                                    fontSize: '13px',
+                                                    fontWeight: 500,
+                                                    transition: 'all 0.2s',
+                                                }}
+                                            >
+                                                {conn.visibility === 'private' ? '🔒' : conn.visibility === 'group' ? '👥' : '🌐'}
+                                            </button>
+                                        </div>
+                                    )}
                                     <button
                                         onClick={() => handleEdit(conn)}
                                         title="수정"

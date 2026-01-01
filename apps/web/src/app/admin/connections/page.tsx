@@ -182,6 +182,73 @@ export default function ConnectionsSharingPage() {
                     </div>
                 </div>
 
+                {/* Groups by Connections */}
+                <div style={{ marginTop: '20px', background: 'rgba(30, 27, 75, 0.5)', borderRadius: '16px', border: '1px solid rgba(139, 92, 246, 0.2)', padding: '20px' }}>
+                    <h3 style={{ color: '#a78bfa', fontSize: '16px', fontWeight: 600, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        🏢 그룹별 연결 현황
+                    </h3>
+                    {groups.length === 0 ? (
+                        <p style={{ color: '#64748b', fontSize: '13px' }}>등록된 그룹이 없습니다</p>
+                    ) : (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+                            {groups.map(group => {
+                                const groupConnections = connections.filter(c => 
+                                    c.visibility === 'group' && c.sharedWithGroups?.includes(group.id)
+                                );
+                                const publicConnections = connections.filter(c => c.visibility === 'public');
+                                const totalAccessible = groupConnections.length + publicConnections.length;
+                                
+                                return (
+                                    <div key={group.id} style={{
+                                        padding: '16px', borderRadius: '10px',
+                                        background: 'rgba(139, 92, 246, 0.08)',
+                                        border: '1px solid rgba(139, 92, 246, 0.15)',
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <span style={{ fontSize: '16px' }}>
+                                                    {group.type === 'organization' ? '🏢' : group.type === 'project' ? '📁' : '📋'}
+                                                </span>
+                                                <span style={{ fontWeight: 600, color: '#e2e8f0', fontSize: '14px' }}>{group.name}</span>
+                                            </div>
+                                            <span style={{
+                                                padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
+                                                background: totalAccessible > 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(100, 116, 139, 0.2)',
+                                                color: totalAccessible > 0 ? '#34d399' : '#94a3b8',
+                                            }}>
+                                                {totalAccessible}개 접근 가능
+                                            </span>
+                                        </div>
+                                        {groupConnections.length > 0 && (
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                {groupConnections.slice(0, 3).map(conn => (
+                                                    <span key={conn.id} style={{
+                                                        padding: '3px 8px', borderRadius: '4px', fontSize: '10px',
+                                                        background: 'rgba(99, 102, 241, 0.2)', color: '#a5b4fc',
+                                                        display: 'flex', alignItems: 'center', gap: '4px',
+                                                    }}>
+                                                        {dbIcons[conn.type.toLowerCase()]?.icon || '🗄️'} {conn.name}
+                                                    </span>
+                                                ))}
+                                                {groupConnections.length > 3 && (
+                                                    <span style={{ padding: '3px 8px', fontSize: '10px', color: '#64748b' }}>
+                                                        +{groupConnections.length - 3} 더
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+                                        {groupConnections.length === 0 && (
+                                            <span style={{ fontSize: '11px', color: '#64748b' }}>
+                                                전용 연결 없음 (공개 연결만 접근 가능)
+                                            </span>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+
                 {/* Quick Actions */}
                 <div style={{ marginTop: '28px', padding: '20px', background: 'rgba(99, 102, 241, 0.08)', borderRadius: '12px', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>

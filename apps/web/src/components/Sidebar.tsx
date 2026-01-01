@@ -40,6 +40,7 @@ const menuGroups: MenuGroup[] = [
         items: [
             { name: '사용자 관리', path: '/admin/users', icon: '👥', adminOnly: true },
             { name: '그룹 관리', path: '/admin/groups', icon: '🏢', adminOnly: true },
+            { name: '연결 공유', path: '/admin/connections', icon: '🔌', adminOnly: true },
             { name: 'RBAC 관리', path: '/admin/rbac', icon: '🔐', adminOnly: true },
             { name: '쿼리 정책', path: '/admin/queries', icon: '📋', adminOnly: true },
             { name: 'API 키', path: '/admin/api-keys', icon: '🔑', adminOnly: true },
