@@ -79,9 +79,16 @@ export default function ConnectionsSharingPage() {
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [connectionHealth, setConnectionHealth] = useState<Record<string, 'online' | 'offline' | 'checking'>>({});
     
+    // 추가 기능
+    const [groupFilter, setGroupFilter] = useState<string>('all');
+    const [showBulkMenu, setShowBulkMenu] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [deletingIds, setDeletingIds] = useState<string[]>([]);
+    
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
+    const bulkMenuRef = useRef<HTMLDivElement>(null);
 
     const fetchData = useCallback(async () => {
         const token = localStorage.getItem('token');
@@ -156,6 +163,13 @@ export default function ConnectionsSharingPage() {
             });
         }
         
+        // 그룹 필터
+        if (groupFilter !== 'all') {
+            result = result.filter(c => 
+                c.visibility === 'group' && c.sharedWithGroups?.includes(groupFilter)
+            );
+        }
+        
         // 정렬
         result.sort((a, b) => {
             let comparison = 0;
@@ -177,7 +191,7 @@ export default function ConnectionsSharingPage() {
         });
         
         return result;
-    }, [connections, searchQuery, typeFilter, visibilityFilter, sortField, sortOrder]);
+    }, [connections, searchQuery, typeFilter, visibilityFilter, groupFilter, sortField, sortOrder]);
 
     // 페이지네이션
     const totalPages = Math.ceil(filteredConnections.length / itemsPerPage);
@@ -270,10 +284,81 @@ export default function ConnectionsSharingPage() {
         }
     };
     
+    // 일괄 상태 확인
+    const checkBulkHealth = async () => {
+        if (selectedIds.size === 0) {
+            showToast('선택된 연결이 없습니다', 'error');
+            return;
+        }
+        showToast(`${selectedIds.size}개 연결 상태 확인 중...`, 'info');
+        for (const id of selectedIds) {
+            await checkConnectionHealth(id);
+        }
+        showToast('상태 확인 완료', 'success');
+        setShowBulkMenu(false);
+    };
+    
+    // 삭제 모달 열기
+    const openDeleteModal = () => {
+        if (selectedIds.size === 0) {
+            showToast('삭제할 연결을 선택하세요', 'error');
+            return;
+        }
+        setDeletingIds(Array.from(selectedIds));
+        setShowDeleteModal(true);
+        setShowBulkMenu(false);
+    };
+    
+    // 일괄 삭제
+    const handleBulkDelete = async () => {
+        const token = localStorage.getItem('token');
+        let successCount = 0;
+        for (const id of deletingIds) {
+            try {
+                const res = await fetch(`/api/connections/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) successCount++;
+            } catch {}
+        }
+        showToast(`${successCount}개 연결 삭제 완료`, 'success');
+        setShowDeleteModal(false);
+        setSelectedIds(new Set());
+        setDeletingIds([]);
+        fetchData();
+    };
+    
+    // 연결 문자열 복사
+    const copyConnectionString = (conn: Connection) => {
+        const connStr = `${conn.host}/${conn.database}`;
+        navigator.clipboard.writeText(connStr);
+        showToast('연결 문자열 복사 완료', 'success');
+    };
+    
+    // 선택 정보 JSON 복사
+    const copySelectedAsJson = () => {
+        if (selectedIds.size === 0) {
+            showToast('선택된 연결이 없습니다', 'error');
+            return;
+        }
+        const selected = connections.filter(c => selectedIds.has(c.id));
+        navigator.clipboard.writeText(JSON.stringify(selected, null, 2));
+        showToast('JSON 복사 완료', 'success');
+        setShowBulkMenu(false);
+    };
+    
     // 키보드 단축키
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+            
+            // Ctrl+A: 전체 선택
+            if (e.ctrlKey && e.key.toLowerCase() === 'a') {
+                e.preventDefault();
+                selectAll();
+                return;
+            }
             
             switch (e.key.toLowerCase()) {
                 case 'r':
@@ -302,13 +387,32 @@ export default function ConnectionsSharingPage() {
                 case 'escape':
                     setSelectedIds(new Set());
                     setSearchQuery('');
+                    setShowBulkMenu(false);
+                    setShowDeleteModal(false);
+                    break;
+                case 'delete':
+                    if (selectedIds.size > 0) {
+                        e.preventDefault();
+                        openDeleteModal();
+                    }
+                    break;
+                case 'h':
+                    if (selectedIds.size > 0) {
+                        e.preventDefault();
+                        checkBulkHealth();
+                    }
+                    break;
+                case 'v':
+                    e.preventDefault();
+                    setViewMode(prev => prev === 'table' ? 'card' : 'table');
+                    showToast(`${viewMode === 'table' ? '카드' : '테이블'} 뷰로 전환`, 'info');
                     break;
             }
         };
         
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [fetchData, showToast]);
+    }, [fetchData, showToast, selectedIds, viewMode]);
     
     const exportToCSV = () => {
         const headers = ['이름', '타입', '호스트', '데이터베이스', '가시성', '공유 그룹'];
@@ -608,19 +712,85 @@ export default function ConnectionsSharingPage() {
                     {/* 뷰 모드 토글 & 선택 정보 */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         {selectedIds.size > 0 && (
-                            <div style={{
-                                padding: '6px 12px', borderRadius: '6px',
-                                background: 'rgba(99, 102, 241, 0.2)', color: '#a5b4fc',
-                                fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px'
-                            }}>
-                                <span>{selectedIds.size}개 선택됨</span>
-                                <button
-                                    onClick={() => setSelectedIds(new Set())}
-                                    style={{
-                                        background: 'none', border: 'none', color: '#64748b',
-                                        cursor: 'pointer', fontSize: '12px', padding: '0 4px'
-                                    }}
-                                >✕</button>
+                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div style={{
+                                    padding: '6px 12px', borderRadius: '6px',
+                                    background: 'rgba(99, 102, 241, 0.2)', color: '#a5b4fc',
+                                    fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px'
+                                }}>
+                                    <span>{selectedIds.size}개 선택됨</span>
+                                    <button
+                                        onClick={() => setSelectedIds(new Set())}
+                                        style={{
+                                            background: 'none', border: 'none', color: '#64748b',
+                                            cursor: 'pointer', fontSize: '12px', padding: '0 4px'
+                                        }}
+                                    >✕</button>
+                                </div>
+                                
+                                {/* 벨크 액션 메뉴 */}
+                                <div ref={bulkMenuRef} style={{ position: 'relative' }}>
+                                    <button
+                                        onClick={() => setShowBulkMenu(!showBulkMenu)}
+                                        className="btn-hover"
+                                        style={{
+                                            padding: '6px 12px', borderRadius: '6px', border: 'none',
+                                            background: 'linear-gradient(90deg, #6366f1, #8b5cf6)',
+                                            color: 'white', cursor: 'pointer', fontSize: '12px',
+                                            display: 'flex', alignItems: 'center', gap: '6px'
+                                        }}
+                                    >
+                                        ⚡ 벨크 액션 ▼
+                                    </button>
+                                    
+                                    {showBulkMenu && (
+                                        <div style={{
+                                            position: 'absolute', top: '100%', right: 0, marginTop: '4px',
+                                            background: 'rgba(30, 27, 75, 0.98)', borderRadius: '8px',
+                                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                                            boxShadow: '0 8px 25px rgba(0, 0, 0, 0.4)',
+                                            minWidth: '180px', zIndex: 100, overflow: 'hidden'
+                                        }}>
+                                            <button
+                                                onClick={checkBulkHealth}
+                                                style={{
+                                                    width: '100%', padding: '10px 14px', border: 'none',
+                                                    background: 'transparent', color: '#34d399', cursor: 'pointer',
+                                                    fontSize: '12px', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px'
+                                                }}
+                                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(16, 185, 129, 0.15)'}
+                                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                            >
+                                                💚 상태 확인 (H)
+                                            </button>
+                                            <button
+                                                onClick={copySelectedAsJson}
+                                                style={{
+                                                    width: '100%', padding: '10px 14px', border: 'none',
+                                                    background: 'transparent', color: '#a5b4fc', cursor: 'pointer',
+                                                    fontSize: '12px', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px'
+                                                }}
+                                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.15)'}
+                                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                            >
+                                                📋 JSON 복사
+                                            </button>
+                                            <div style={{ height: '1px', background: 'rgba(100, 116, 139, 0.2)', margin: '4px 0' }} />
+                                            <button
+                                                onClick={openDeleteModal}
+                                                style={{
+                                                    width: '100%', padding: '10px 14px', border: 'none',
+                                                    background: 'transparent', color: '#ef4444', cursor: 'pointer',
+                                                    fontSize: '12px', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px'
+                                                }}
+                                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)'}
+                                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                            >
+                                                🗑️ 선택 삭제 (Del)
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )}
                         
@@ -660,10 +830,11 @@ export default function ConnectionsSharingPage() {
                     <div style={{ position: 'relative', flex: '1 1 250px' }}>
                         <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }}>🔍</span>
                         <input
+                            ref={searchInputRef}
                             type="text"
-                            placeholder="이름, 호스트, 데이터베이스 검색..."
+                            placeholder="이름, 호스트, 데이터베이스 검색... (/ 단축키)"
                             value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                             style={{
                                 width: '100%', padding: '10px 12px 10px 38px', borderRadius: '8px',
                                 background: 'rgba(15, 10, 31, 0.5)', border: '1px solid rgba(100, 116, 139, 0.3)',
@@ -713,6 +884,24 @@ export default function ConnectionsSharingPage() {
                         <option value="public">🌐 전체 공개</option>
                     </select>
                     
+                    {/* 그룹 필터 */}
+                    {groups.length > 0 && (
+                        <select
+                            value={groupFilter}
+                            onChange={(e) => { setGroupFilter(e.target.value); setCurrentPage(1); }}
+                            style={{
+                                padding: '10px 14px', borderRadius: '8px',
+                                background: 'rgba(15, 10, 31, 0.5)', border: '1px solid rgba(100, 116, 139, 0.3)',
+                                color: '#e2e8f0', fontSize: '13px', cursor: 'pointer', outline: 'none'
+                            }}
+                        >
+                            <option value="all">모든 그룹</option>
+                            {groups.map(g => (
+                                <option key={g.id} value={g.id}>🏢 {g.name}</option>
+                            ))}
+                        </select>
+                    )}
+                    
                     {/* 정렬 */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <select
@@ -741,9 +930,25 @@ export default function ConnectionsSharingPage() {
                         </button>
                     </div>
                     
+                    {/* 페이지당 항목 수 */}
+                    <select
+                        value={itemsPerPage}
+                        onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                        style={{
+                            padding: '10px 14px', borderRadius: '8px',
+                            background: 'rgba(15, 10, 31, 0.5)', border: '1px solid rgba(100, 116, 139, 0.3)',
+                            color: '#e2e8f0', fontSize: '13px', cursor: 'pointer', outline: 'none'
+                        }}
+                    >
+                        <option value={10}>10개씩</option>
+                        <option value={20}>20개씩</option>
+                        <option value={50}>50개씩</option>
+                        <option value={100}>100개씩</option>
+                    </select>
+                    
                     {/* 결과 카운트 */}
                     <span style={{ fontSize: '12px', color: '#64748b', marginLeft: 'auto' }}>
-                        {filteredConnections.length}개 결과
+                        {filteredConnections.length}개 중 {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, filteredConnections.length)}
                     </span>
                 </div>
                 
@@ -776,31 +981,157 @@ export default function ConnectionsSharingPage() {
                                             : '등록된 연결이 없습니다'}
                                     </p>
                                 </div>
+                            ) : viewMode === 'card' ? (
+                                /* 카드 뷰 */
+                                <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
+                                    {paginatedConnections.map((conn, idx) => (
+                                        <div 
+                                            key={conn.id}
+                                            className="card-hover connection-row"
+                                            style={{
+                                                padding: '16px', borderRadius: '12px',
+                                                background: selectedIds.has(conn.id) ? 'rgba(99, 102, 241, 0.15)' : 'rgba(15, 10, 31, 0.5)',
+                                                border: `1px solid ${selectedIds.has(conn.id) ? 'rgba(99, 102, 241, 0.4)' : 'rgba(100, 116, 139, 0.2)'}`,
+                                                animationDelay: `${idx * 0.05}s`,
+                                                cursor: 'pointer'
+                                            }}
+                                            onClick={() => toggleSelect(conn.id)}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                    <div style={{
+                                                        width: '44px', height: '44px', borderRadius: '10px',
+                                                        background: `${dbIcons[conn.type.toLowerCase()]?.color || '#6366f1'}20`,
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        fontSize: '22px'
+                                                    }}>
+                                                        {dbIcons[conn.type.toLowerCase()]?.icon || '🗄️'}
+                                                    </div>
+                                                    <div>
+                                                        <div style={{ fontWeight: 600, color: '#e2e8f0', fontSize: '14px' }}>{conn.name}</div>
+                                                        <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'capitalize' }}>{conn.type}</div>
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    {getVisibilityBadge(conn.visibility)}
+                                                    <input
+                                                        type="checkbox"
+                                                        className="checkbox"
+                                                        checked={selectedIds.has(conn.id)}
+                                                        onChange={(e) => { e.stopPropagation(); toggleSelect(conn.id); }}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    />
+                                                </div>
+                                            </div>
+                                            
+                                            <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.2)' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                                    <span style={{ fontSize: '11px', color: '#64748b' }}>💻</span>
+                                                    <span style={{ fontSize: '12px', color: '#94a3b8', fontFamily: 'monospace' }}>{conn.host}</span>
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <span style={{ fontSize: '11px', color: '#64748b' }}>📂</span>
+                                                    <span style={{ fontSize: '12px', color: '#94a3b8', fontFamily: 'monospace' }}>{conn.database}</span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); checkConnectionHealth(conn.id); }}
+                                                    style={{
+                                                        padding: '6px 12px', borderRadius: '6px', fontSize: '11px',
+                                                        border: 'none', cursor: 'pointer',
+                                                        background: connectionHealth[conn.id] === 'online' ? 'rgba(16, 185, 129, 0.2)' :
+                                                                   connectionHealth[conn.id] === 'offline' ? 'rgba(239, 68, 68, 0.2)' :
+                                                                   'rgba(100, 116, 139, 0.2)',
+                                                        color: connectionHealth[conn.id] === 'online' ? '#34d399' :
+                                                               connectionHealth[conn.id] === 'offline' ? '#f87171' : '#94a3b8'
+                                                    }}
+                                                >
+                                                    {connectionHealth[conn.id] === 'online' && '● 연결됨'}
+                                                    {connectionHealth[conn.id] === 'offline' && '● 오프라인'}
+                                                    {connectionHealth[conn.id] === 'checking' && '⟳ 확인중...'}
+                                                    {!connectionHealth[conn.id] && '◎ 테스트'}
+                                                </button>
+                                                
+                                                <div style={{ display: 'flex', gap: '6px' }}>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); copyConnectionString(conn); }}
+                                                        className="btn-hover"
+                                                        style={{
+                                                            padding: '6px 10px', borderRadius: '6px', fontSize: '11px',
+                                                            background: 'rgba(16, 185, 129, 0.15)', color: '#34d399',
+                                                            border: 'none', cursor: 'pointer'
+                                                        }}
+                                                    >📎</button>
+                                                    <Link
+                                                        href={`/connections/${conn.id}`}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="btn-hover"
+                                                        style={{
+                                                            padding: '6px 10px', borderRadius: '6px', fontSize: '11px',
+                                                            background: 'rgba(99, 102, 241, 0.15)', color: '#a5b4fc',
+                                                            textDecoration: 'none'
+                                                        }}
+                                                    >👁️</Link>
+                                                    <Link
+                                                        href={`/connections/${conn.id}/edit`}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="btn-hover"
+                                                        style={{
+                                                            padding: '6px 10px', borderRadius: '6px', fontSize: '11px',
+                                                            background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24',
+                                                            textDecoration: 'none'
+                                                        }}
+                                                    >✏️</Link>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             ) : (
                                 <div style={{ overflowX: 'auto' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                         <thead>
                                             <tr style={{ background: 'rgba(99, 102, 241, 0.08)' }}>
+                                                <th style={{ padding: '12px 16px', textAlign: 'center', width: '50px' }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        className="checkbox"
+                                                        checked={selectedIds.size === paginatedConnections.length && paginatedConnections.length > 0}
+                                                        onChange={selectAll}
+                                                    />
+                                                </th>
                                                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>연결 정보</th>
                                                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>호스트 / 데이터베이스</th>
+                                                <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>상태</th>
                                                 <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>가시성</th>
                                                 <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>공유 그룹</th>
                                                 <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '11px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>작업</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {filteredConnections.map((conn, idx) => (
+                                            {paginatedConnections.map((conn, idx) => (
                                                 <tr 
                                                     key={conn.id} 
                                                     className="connection-row"
                                                     style={{ 
                                                         borderBottom: '1px solid rgba(100, 116, 139, 0.1)',
                                                         animationDelay: `${idx * 0.03}s`,
-                                                        transition: 'background 0.15s'
+                                                        transition: 'background 0.15s',
+                                                        background: selectedIds.has(conn.id) ? 'rgba(99, 102, 241, 0.1)' : 'transparent'
                                                     }}
-                                                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.05)'}
-                                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                                    onMouseEnter={(e) => { if (!selectedIds.has(conn.id)) e.currentTarget.style.background = 'rgba(99, 102, 241, 0.05)'; }}
+                                                    onMouseLeave={(e) => { if (!selectedIds.has(conn.id)) e.currentTarget.style.background = 'transparent'; }}
                                                 >
+                                                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            className="checkbox"
+                                                            checked={selectedIds.has(conn.id)}
+                                                            onChange={() => toggleSelect(conn.id)}
+                                                        />
+                                                    </td>
                                                     <td style={{ padding: '14px 16px' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                                             <div style={{
@@ -850,6 +1181,31 @@ export default function ConnectionsSharingPage() {
                                                                 </button>
                                                             </div>
                                                         </div>
+                                                    </td>
+                                                    {/* 상태 열 */}
+                                                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                                                        <button
+                                                            onClick={() => checkConnectionHealth(conn.id)}
+                                                            disabled={connectionHealth[conn.id] === 'checking'}
+                                                            style={{
+                                                                padding: '6px 10px', borderRadius: '6px', fontSize: '11px',
+                                                                border: 'none', cursor: 'pointer',
+                                                                background: connectionHealth[conn.id] === 'online' ? 'rgba(16, 185, 129, 0.2)' :
+                                                                           connectionHealth[conn.id] === 'offline' ? 'rgba(239, 68, 68, 0.2)' :
+                                                                           connectionHealth[conn.id] === 'checking' ? 'rgba(245, 158, 11, 0.2)' :
+                                                                           'rgba(100, 116, 139, 0.2)',
+                                                                color: connectionHealth[conn.id] === 'online' ? '#34d399' :
+                                                                       connectionHealth[conn.id] === 'offline' ? '#f87171' :
+                                                                       connectionHealth[conn.id] === 'checking' ? '#fbbf24' : '#94a3b8',
+                                                                display: 'flex', alignItems: 'center', gap: '4px',
+                                                                transition: 'all 0.2s'
+                                                            }}
+                                                        >
+                                                            {connectionHealth[conn.id] === 'online' && '● 연결됨'}
+                                                            {connectionHealth[conn.id] === 'offline' && '● 오프라인'}
+                                                            {connectionHealth[conn.id] === 'checking' && '⟳ 확인중...'}
+                                                            {!connectionHealth[conn.id] && '◎ 테스트'}
+                                                        </button>
                                                     </td>
                                                     <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                                                         {getVisibilityBadge(conn.visibility)}
@@ -908,6 +1264,84 @@ export default function ConnectionsSharingPage() {
                                 </div>
                             )}
                         </div>
+                        
+                        {/* 페이지네이션 */}
+                        {totalPages > 1 && (
+                            <div style={{
+                                marginBottom: '20px', padding: '12px 20px', borderRadius: '12px',
+                                background: 'rgba(30, 27, 75, 0.5)', border: '1px solid rgba(99, 102, 241, 0.2)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                            }}>
+                                <button
+                                    onClick={() => setCurrentPage(1)}
+                                    disabled={currentPage === 1}
+                                    style={{
+                                        padding: '8px 12px', borderRadius: '6px', border: 'none', cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                        background: 'rgba(100, 116, 139, 0.2)', color: currentPage === 1 ? '#475569' : '#94a3b8',
+                                        fontSize: '12px'
+                                    }}
+                                >«</button>
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                    style={{
+                                        padding: '8px 12px', borderRadius: '6px', border: 'none', cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                        background: 'rgba(100, 116, 139, 0.2)', color: currentPage === 1 ? '#475569' : '#94a3b8',
+                                        fontSize: '12px'
+                                    }}
+                                >‹ 이전</button>
+                                
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                        let pageNum: number;
+                                        if (totalPages <= 5) {
+                                            pageNum = i + 1;
+                                        } else if (currentPage <= 3) {
+                                            pageNum = i + 1;
+                                        } else if (currentPage >= totalPages - 2) {
+                                            pageNum = totalPages - 4 + i;
+                                        } else {
+                                            pageNum = currentPage - 2 + i;
+                                        }
+                                        return (
+                                            <button
+                                                key={pageNum}
+                                                onClick={() => setCurrentPage(pageNum)}
+                                                style={{
+                                                    padding: '8px 14px', borderRadius: '6px', border: 'none', cursor: 'pointer',
+                                                    background: currentPage === pageNum ? 'rgba(99, 102, 241, 0.3)' : 'rgba(100, 116, 139, 0.1)',
+                                                    color: currentPage === pageNum ? '#a5b4fc' : '#94a3b8',
+                                                    fontSize: '12px', fontWeight: currentPage === pageNum ? 600 : 400
+                                                }}
+                                            >{pageNum}</button>
+                                        );
+                                    })}
+                                </div>
+                                
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage === totalPages}
+                                    style={{
+                                        padding: '8px 12px', borderRadius: '6px', border: 'none', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                                        background: 'rgba(100, 116, 139, 0.2)', color: currentPage === totalPages ? '#475569' : '#94a3b8',
+                                        fontSize: '12px'
+                                    }}
+                                >다음 ›</button>
+                                <button
+                                    onClick={() => setCurrentPage(totalPages)}
+                                    disabled={currentPage === totalPages}
+                                    style={{
+                                        padding: '8px 12px', borderRadius: '6px', border: 'none', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                                        background: 'rgba(100, 116, 139, 0.2)', color: currentPage === totalPages ? '#475569' : '#94a3b8',
+                                        fontSize: '12px'
+                                    }}
+                                >»</button>
+                                
+                                <span style={{ fontSize: '12px', color: '#64748b', marginLeft: '12px' }}>
+                                    {currentPage} / {totalPages} 페이지
+                                </span>
+                            </div>
+                        )}
                         
                         {/* 가시성별 요약 */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
@@ -1274,16 +1708,20 @@ export default function ConnectionsSharingPage() {
                     </div>
                 </div>
                 
-                {/* 키보드 단축키 안내 */}
                 <div style={{ 
                     marginTop: '16px', padding: '12px 16px', borderRadius: '8px',
                     background: 'rgba(30, 27, 75, 0.3)', border: '1px solid rgba(100, 116, 139, 0.1)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '24px'
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', flexWrap: 'wrap'
                 }}>
                     {[
                         { key: 'R', action: '새로고침' },
                         { key: 'E', action: 'CSV 내보내기' },
                         { key: '/', action: '검색' },
+                        { key: 'V', action: '뷰 전환' },
+                        { key: 'H', action: '상태 확인' },
+                        { key: 'Del', action: '선택 삭제' },
+                        { key: 'Ctrl+A', action: '전체 선택' },
+                        { key: 'Esc', action: '초기화' },
                     ].map(shortcut => (
                         <div key={shortcut.key} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <kbd style={{
@@ -1298,6 +1736,81 @@ export default function ConnectionsSharingPage() {
                     ))}
                 </div>
             </div>
+            
+            {/* 삭제 확인 모달 */}
+            {showDeleteModal && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.7)', zIndex: 2000,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    animation: 'fadeIn 0.2s ease'
+                }}>
+                    <div style={{
+                        background: 'rgba(30, 27, 75, 0.98)', borderRadius: '16px',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        padding: '24px', maxWidth: '480px', width: '90%',
+                        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                            <span style={{ fontSize: '28px' }}>⚠️</span>
+                            <h3 style={{ color: '#ef4444', fontSize: '18px', fontWeight: 600, margin: 0 }}>
+                                연결 삭제 확인
+                            </h3>
+                        </div>
+                        
+                        <div style={{
+                            padding: '12px', borderRadius: '8px',
+                            background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)',
+                            marginBottom: '16px'
+                        }}>
+                            <p style={{ color: '#fca5a5', fontSize: '13px', margin: 0 }}>
+                                이 작업은 되돌릴 수 없습니다. 선택한 {deletingIds.length}개의 연결이 영구적으로 삭제됩니다.
+                            </p>
+                        </div>
+                        
+                        <div style={{
+                            maxHeight: '200px', overflowY: 'auto', marginBottom: '20px',
+                            padding: '8px', borderRadius: '8px', background: 'rgba(15, 10, 31, 0.5)'
+                        }}>
+                            {connections.filter(c => deletingIds.includes(c.id)).map(conn => (
+                                <div key={conn.id} style={{
+                                    padding: '8px 12px', borderRadius: '6px',
+                                    background: 'rgba(100, 116, 139, 0.1)', marginBottom: '6px',
+                                    display: 'flex', alignItems: 'center', gap: '8px'
+                                }}>
+                                    <span>{dbIcons[conn.type.toLowerCase()]?.icon || '🗄️'}</span>
+                                    <span style={{ color: '#e2e8f0', fontSize: '13px' }}>{conn.name}</span>
+                                    <span style={{ color: '#64748b', fontSize: '11px' }}>({conn.host})</span>
+                                </div>
+                            ))}
+                        </div>
+                        
+                        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                            <button
+                                onClick={() => { setShowDeleteModal(false); setDeletingIds([]); }}
+                                style={{
+                                    padding: '10px 20px', borderRadius: '8px', border: 'none',
+                                    background: 'rgba(100, 116, 139, 0.2)', color: '#94a3b8',
+                                    cursor: 'pointer', fontSize: '13px', fontWeight: 500
+                                }}
+                            >
+                                취소 (Esc)
+                            </button>
+                            <button
+                                onClick={handleBulkDelete}
+                                style={{
+                                    padding: '10px 20px', borderRadius: '8px', border: 'none',
+                                    background: 'linear-gradient(90deg, #dc2626, #ef4444)', color: 'white',
+                                    cursor: 'pointer', fontSize: '13px', fontWeight: 500,
+                                    boxShadow: '0 4px 15px rgba(239, 68, 68, 0.3)'
+                                }}
+                            >
+                                🗑️ {deletingIds.length}개 삭제
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
