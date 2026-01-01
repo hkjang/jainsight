@@ -9,6 +9,9 @@ export class ApiKey {
     @Column()
     userId: string;
 
+    @Column({ default: 'user' })
+    type: 'admin' | 'user'; // 'admin' = system-wide, 'user' = personal
+
     @Column()
     name: string;
 

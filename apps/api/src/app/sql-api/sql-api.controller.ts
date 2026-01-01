@@ -1,5 +1,5 @@
 
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, NotFoundException, Req } from '@nestjs/common';
 import { SqlApiService } from './sql-api.service';
 import { SqlApiDocService } from './sql-api-doc.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -113,6 +113,26 @@ export class SqlApiController {
     @Roles('admin')
     async seed() {
         return this.sqlApiService.seed();
+    }
+
+    // === RBAC Sharing Endpoints ===
+
+    @Post(':id/share')
+    async updateSharing(
+        @Param('id') id: string,
+        @Body() body: { visibility: 'private' | 'group' | 'public'; sharedWithGroups?: string[] },
+        @Req() req: any
+    ) {
+        const userId = req.user?.userId || req.user?.sub || req.user?.id;
+        return this.sqlApiService.updateSharing(id, body, userId);
+    }
+
+    // Get APIs for current user (RBAC filtered)
+    @Get('my/list')
+    async getMyApis(@Req() req: any) {
+        const userId = req.user?.userId || req.user?.sub || req.user?.id;
+        const userGroups = req.user?.groups || [];
+        return this.sqlApiService.findAllForUser(userId, userGroups);
     }
 }
 

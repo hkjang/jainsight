@@ -70,6 +70,16 @@ export class SqlTemplate {
     @Column({ nullable: true })
     method: string; // GET, POST, etc.
 
+    // RBAC Sharing Fields
+    @Column({ default: 'private' })
+    visibility: 'private' | 'group' | 'public'; // private = owner only, group = shared with specific groups, public = all users
+
+    @Column('simple-json', { nullable: true })
+    sharedWithGroups: string[]; // Array of group IDs
+
+    @Column({ nullable: true })
+    ownerId: string; // User ID who created/owns this API
+
     @CreateDateColumn()
     createdAt: Date;
 

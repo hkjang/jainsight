@@ -116,6 +116,49 @@ export class SqlApiService implements OnModuleInit {
         return this.templateRepository.find();
     }
 
+    // RBAC-aware findAll - returns APIs user can access
+    async findAllForUser(userId: string, userGroups: string[] = []) {
+        const allTemplates = await this.templateRepository.find();
+        
+        return allTemplates.filter(template => {
+            // Owner can always see their own APIs
+            if (template.ownerId === userId) return true;
+            if (template.createdBy === userId) return true;
+            
+            // Public APIs are visible to all
+            if (template.visibility === 'public') return true;
+            
+            // Group-shared APIs: check if user is in any of the shared groups
+            if (template.visibility === 'group' && template.sharedWithGroups) {
+                return template.sharedWithGroups.some(groupId => userGroups.includes(groupId));
+            }
+            
+            // Private APIs: only owner can see
+            return false;
+        });
+    }
+
+    // Update API sharing settings
+    async updateSharing(id: string, data: { 
+        visibility: 'private' | 'group' | 'public';
+        sharedWithGroups?: string[];
+    }, userId: string) {
+        const template = await this.findOne(id);
+        if (!template) throw new Error('Template not found');
+        
+        // Only owner can update sharing
+        if (template.ownerId !== userId && template.createdBy !== userId) {
+            throw new Error('Only the owner can update sharing settings');
+        }
+        
+        await this.templateRepository.update(id, {
+            visibility: data.visibility,
+            sharedWithGroups: data.sharedWithGroups || [],
+        });
+        
+        return this.findOne(id);
+    }
+
     async findOne(id: string) {
         return this.templateRepository.findOne({ where: { id } });
     }

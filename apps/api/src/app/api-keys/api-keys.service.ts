@@ -20,6 +20,7 @@ export class ApiKeysService {
     async createApiKey(data: {
         userId: string;
         name: string;
+        type?: 'admin' | 'user';
         scopes?: string[];
         allowedIps?: string[];
         rateLimit?: number;
@@ -33,9 +34,10 @@ export class ApiKeysService {
         const apiKey = this.apiKeysRepository.create({
             userId: data.userId,
             name: data.name,
+            type: data.type || 'user',
             keyHash,
             keyPrefix,
-            scopes: data.scopes || ['query:*'],
+            scopes: data.scopes || ['sql-api:*'],
             allowedIps: data.allowedIps,
             rateLimit: data.rateLimit || 60,
             expiresAt: data.expiresAt
@@ -117,6 +119,14 @@ export class ApiKeysService {
     async getApiKeys(userId: string): Promise<ApiKey[]> {
         return this.apiKeysRepository.find({ 
             where: { userId },
+            order: { createdAt: 'DESC' }
+        });
+    }
+
+    // Get user's personal API keys (type = 'user')
+    async getUserApiKeys(userId: string, type: 'admin' | 'user' = 'user'): Promise<ApiKey[]> {
+        return this.apiKeysRepository.find({ 
+            where: { userId, type },
             order: { createdAt: 'DESC' }
         });
     }

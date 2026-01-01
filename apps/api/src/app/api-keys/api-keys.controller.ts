@@ -1,12 +1,54 @@
 
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpCode, HttpStatus, UseGuards, Req } from '@nestjs/common';
 import { ApiKeysService } from './api-keys.service';
 import { ApiKey } from './entities/api-key.entity';
 import { ApiKeyUsage } from './entities/api-key-usage.entity';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('api-keys')
 export class ApiKeysController {
     constructor(private readonly apiKeysService: ApiKeysService) { }
+
+    // ======== Personal API Key Endpoints (for logged-in users) ========
+
+    @Get('my')
+    @UseGuards(JwtAuthGuard)
+    async getMyApiKeys(@Req() req: any): Promise<ApiKey[]> {
+        const userId = req.user?.userId || req.user?.sub || req.user?.id;
+        return this.apiKeysService.getUserApiKeys(userId, 'user');
+    }
+
+    @Post('my')
+    @UseGuards(JwtAuthGuard)
+    async createMyApiKey(
+        @Req() req: any,
+        @Body() data: { name: string; scopes?: string[]; rateLimit?: number; expiresAt?: Date }
+    ): Promise<{ apiKey: ApiKey; rawKey: string }> {
+        const userId = req.user?.userId || req.user?.sub || req.user?.id;
+        return this.apiKeysService.createApiKey({
+            userId,
+            name: data.name,
+            type: 'user',
+            scopes: data.scopes || ['sql-api:*'],
+            rateLimit: data.rateLimit || 60,
+            expiresAt: data.expiresAt,
+        });
+    }
+
+    @Delete('my/:id')
+    @UseGuards(JwtAuthGuard)
+    @HttpCode(HttpStatus.NO_CONTENT)
+    async deleteMyApiKey(@Req() req: any, @Param('id') id: string): Promise<void> {
+        const userId = req.user?.userId || req.user?.sub || req.user?.id;
+        // Verify ownership before deleting
+        const key = await this.apiKeysService.getApiKeyById(id);
+        if (key && key.userId === userId && key.type === 'user') {
+            return this.apiKeysService.deleteApiKey(id);
+        }
+        throw new Error('API key not found or not owned by user');
+    }
+
+    // ======== Admin/General Endpoints ========
 
     @Get()
     async getAllApiKeys(): Promise<ApiKey[]> {
@@ -39,6 +81,7 @@ export class ApiKeysController {
         @Body() data: {
             userId: string;
             name: string;
+            type?: 'admin' | 'user';
             scopes?: string[];
             allowedIps?: string[];
             rateLimit?: number;

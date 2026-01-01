@@ -30,6 +30,75 @@ export default function ProfilePage() {
     const [editJobTitle, setEditJobTitle] = useState('');
     const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
+    // API Keys State
+    const [apiKeys, setApiKeys] = useState<any[]>([]);
+    const [loadingKeys, setLoadingKeys] = useState(false);
+    const [newKeyName, setNewKeyName] = useState('');
+    const [creatingKey, setCreatingKey] = useState(false);
+    const [newKeySecret, setNewKeySecret] = useState<string | null>(null);
+
+    // Fetch API Keys
+    const fetchApiKeys = useCallback(async () => {
+        if (!token) return;
+        setLoadingKeys(true);
+        try {
+            const res = await fetch(`${API_URL}/api-keys/my`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setApiKeys(data);
+            }
+        } catch (e) {
+            console.error('Failed to fetch API keys:', e);
+        } finally {
+            setLoadingKeys(false);
+        }
+    }, [token]);
+
+    // Create API Key
+    const createApiKey = async () => {
+        if (!token || !newKeyName.trim()) return;
+        setCreatingKey(true);
+        try {
+            const res = await fetch(`${API_URL}/api-keys/my`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newKeyName.trim() })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setNewKeySecret(data.rawKey);
+                setNewKeyName('');
+                fetchApiKeys();
+                showNotification('API 키가 생성되었습니다', 'success');
+            } else {
+                showNotification('키 생성 실패', 'error');
+            }
+        } catch (e) {
+            showNotification('키 생성 실패', 'error');
+        } finally {
+            setCreatingKey(false);
+        }
+    };
+
+    // Delete API Key
+    const deleteApiKey = async (id: string) => {
+        if (!token || !confirm('이 API 키를 삭제하시겠습니까?')) return;
+        try {
+            const res = await fetch(`${API_URL}/api-keys/my/${id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+                fetchApiKeys();
+                showNotification('API 키가 삭제되었습니다', 'success');
+            }
+        } catch (e) {
+            showNotification('삭제 실패', 'error');
+        }
+    };
+
     const fetchProfile = useCallback(async () => {
         if (!user?.id || !token) return;
         
@@ -66,8 +135,9 @@ export default function ProfilePage() {
     useEffect(() => {
         if (!authLoading && isAuthenticated) {
             fetchProfile();
+            fetchApiKeys();
         }
-    }, [fetchProfile, authLoading, isAuthenticated]);
+    }, [fetchProfile, fetchApiKeys, authLoading, isAuthenticated]);
 
     const handleSave = async () => {
         if (!user?.id || !token) return;
@@ -236,6 +306,143 @@ export default function ProfilePage() {
                                 />
                             </div>
                         </div>
+                    </div>
+                </AnimatedCard>
+            </div>
+
+            {/* API Keys Section */}
+            <div style={{ marginTop: '24px' }}>
+                <AnimatedCard delay={0.25}>
+                    <div style={{ padding: '24px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                            <h3 style={{ fontSize: '18px', fontWeight: '600', color: darkTheme.textPrimary, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                🔑 API 키 관리
+                            </h3>
+                            <span style={{ fontSize: '13px', color: darkTheme.textMuted }}>
+                                SQL API 호출에 사용하는 개인 키
+                            </span>
+                        </div>
+
+                        {/* New Key Input */}
+                        <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+                            <input
+                                type="text"
+                                placeholder="새 API 키 이름 (예: 개발용)"
+                                value={newKeyName}
+                                onChange={(e) => setNewKeyName(e.target.value)}
+                                style={{ ...darkStyles.input, flex: 1 }}
+                            />
+                            <button
+                                onClick={createApiKey}
+                                disabled={creatingKey || !newKeyName.trim()}
+                                style={{
+                                    ...darkStyles.button,
+                                    opacity: (!newKeyName.trim() || creatingKey) ? 0.5 : 1,
+                                    cursor: (!newKeyName.trim() || creatingKey) ? 'not-allowed' : 'pointer',
+                                }}
+                            >
+                                {creatingKey ? '생성 중...' : '+ 새 키 생성'}
+                            </button>
+                        </div>
+
+                        {/* New Key Secret Display */}
+                        {newKeySecret && (
+                            <div style={{
+                                padding: '16px',
+                                background: `${darkTheme.accentGreen}15`,
+                                border: `1px solid ${darkTheme.accentGreen}`,
+                                borderRadius: '8px',
+                                marginBottom: '20px',
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                    <span style={{ color: darkTheme.accentGreen, fontWeight: '600' }}>✅ 새 API 키가 생성되었습니다!</span>
+                                </div>
+                                <p style={{ fontSize: '12px', color: darkTheme.textMuted, marginBottom: '8px' }}>
+                                    이 키는 다시 표시되지 않습니다. 안전한 곳에 복사해 두세요.
+                                </p>
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    padding: '10px',
+                                    background: darkTheme.bgCard,
+                                    borderRadius: '6px',
+                                    fontFamily: 'monospace',
+                                    fontSize: '13px',
+                                    color: darkTheme.accentYellow,
+                                }}>
+                                    <code style={{ flex: 1, wordBreak: 'break-all' }}>{newKeySecret}</code>
+                                    <button
+                                        onClick={() => { navigator.clipboard.writeText(newKeySecret); showNotification('복사됨!', 'success'); }}
+                                        style={{ ...darkStyles.buttonSecondary, padding: '6px 12px', fontSize: '12px' }}
+                                    >
+                                        📋 복사
+                                    </button>
+                                </div>
+                                <button
+                                    onClick={() => setNewKeySecret(null)}
+                                    style={{ marginTop: '12px', background: 'none', border: 'none', color: darkTheme.textMuted, cursor: 'pointer', fontSize: '12px' }}
+                                >
+                                    닫기
+                                </button>
+                            </div>
+                        )}
+
+                        {/* API Keys List */}
+                        {loadingKeys ? (
+                            <div style={{ textAlign: 'center', padding: '20px', color: darkTheme.textMuted }}>
+                                로딩 중...
+                            </div>
+                        ) : apiKeys.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '30px', color: darkTheme.textMuted }}>
+                                <div style={{ fontSize: '32px', marginBottom: '8px' }}>🔐</div>
+                                생성된 API 키가 없습니다
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {apiKeys.map((key) => (
+                                    <div key={key.id} style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        padding: '12px 16px',
+                                        background: darkTheme.bgCard,
+                                        borderRadius: '8px',
+                                        border: `1px solid ${darkTheme.border}`,
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                            <span style={{ fontSize: '18px' }}>🔑</span>
+                                            <div>
+                                                <div style={{ fontWeight: '500', color: darkTheme.textPrimary }}>{key.name}</div>
+                                                <div style={{ fontSize: '12px', color: darkTheme.textMuted, fontFamily: 'monospace' }}>
+                                                    {key.keyPrefix}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                            <div style={{ fontSize: '12px', color: darkTheme.textMuted, textAlign: 'right' }}>
+                                                <div>사용: {(key.usageCount || 0).toLocaleString()}회</div>
+                                                <div>생성: {formatDate(key.createdAt)}</div>
+                                            </div>
+                                            <button
+                                                onClick={() => deleteApiKey(key.id)}
+                                                style={{
+                                                    padding: '6px 12px',
+                                                    background: `${darkTheme.accentRed}20`,
+                                                    border: `1px solid ${darkTheme.accentRed}40`,
+                                                    borderRadius: '6px',
+                                                    color: darkTheme.accentRed,
+                                                    cursor: 'pointer',
+                                                    fontSize: '12px',
+                                                }}
+                                            >
+                                                🗑️ 삭제
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </AnimatedCard>
             </div>
