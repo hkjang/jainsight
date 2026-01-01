@@ -3248,14 +3248,32 @@ export default function EditorPage() {
                                                 />
                                             </th>
                                             <th style={{ ...styles.th, width: 40 }}>#</th>
-                                            {results.fields?.filter((f: string) => !hiddenColumns.has(f)).map((field: string, i: number) => (
-                                                <th key={i} style={styles.th} onClick={() => handleSort(field)} title={`Click to sort by ${field}`}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                        <span>{field}</span>
-                                                        {sortField === field && <span style={{ color: theme.primary }}>{sortDirection === 'asc' ? '↑' : '↓'}</span>}
-                                                    </div>
-                                                </th>
-                                            ))}
+                                            {results.fields?.filter((f: string) => !hiddenColumns.has(f)).map((field: string, i: number) => {
+                                                // 첫 번째 행 데이터로 타입 추론
+                                                const sampleValue = results.rows?.[0]?.[field];
+                                                const getTypeIcon = (val: any) => {
+                                                    if (val === null) return '∅';
+                                                    if (typeof val === 'number') return '#';
+                                                    if (typeof val === 'boolean') return '◐';
+                                                    if (val instanceof Date || (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val))) return '📅';
+                                                    if (typeof val === 'object') return '{}';
+                                                    return 'Aa';
+                                                };
+                                                return (
+                                                    <th key={i} style={styles.th} onClick={() => handleSort(field)} title={`${field}\n클릭하여 정렬`}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                            <span style={{ 
+                                                                fontSize: 9, 
+                                                                color: theme.textMuted, 
+                                                                opacity: 0.7,
+                                                                fontWeight: 400
+                                                            }}>{getTypeIcon(sampleValue)}</span>
+                                                            <span>{field}</span>
+                                                            {sortField === field && <span style={{ color: theme.primary }}>{sortDirection === 'asc' ? '↑' : '↓'}</span>}
+                                                        </div>
+                                                    </th>
+                                                );
+                                            })}
                                         </tr>
                                     </thead>
                                     <tbody>
