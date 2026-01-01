@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -14,6 +14,13 @@ interface DBTypeInfo {
     description: string;
 }
 
+interface Group {
+    id: string;
+    name: string;
+    description?: string;
+    type: string;
+}
+
 const DB_TYPES: DBTypeInfo[] = [
     { id: 'postgres', name: 'PostgreSQL', icon: '🐘', color: '#336791', gradient: 'linear-gradient(135deg, #336791, #4A90A4)', defaultPort: 5432, description: '고급 오픈소스 관계형 DB' },
     { id: 'mysql', name: 'MySQL', icon: '🐬', color: '#00758f', gradient: 'linear-gradient(135deg, #00758f, #f29111)', defaultPort: 3306, description: '가장 널리 사용되는 오픈소스 DB' },
@@ -23,10 +30,17 @@ const DB_TYPES: DBTypeInfo[] = [
     { id: 'sqlite', name: 'SQLite', icon: '📁', color: '#003B57', gradient: 'linear-gradient(135deg, #003B57, #0F5298)', defaultPort: 0, description: '경량 파일 기반 DB' },
 ];
 
+const VISIBILITY_OPTIONS = [
+    { id: 'private', label: '비공개', icon: '🔒', description: '나만 접근 가능', color: '#6366f1' },
+    { id: 'group', label: '그룹 공유', icon: '👥', description: '선택한 그룹 멤버만', color: '#10b981' },
+    { id: 'public', label: '전체 공개', icon: '🌐', description: '모든 사용자 접근', color: '#f59e0b' },
+];
+
 export default function CreateConnectionPage() {
     const router = useRouter();
     const [step, setStep] = useState(1);
     const [selectedType, setSelectedType] = useState<DBTypeInfo | null>(null);
+    const [groups, setGroups] = useState<Group[]>([]);
     const [formData, setFormData] = useState({
         name: '',
         type: '',
@@ -35,11 +49,31 @@ export default function CreateConnectionPage() {
         username: '',
         password: '',
         database: '',
+        visibility: 'private' as 'private' | 'team' | 'group' | 'public',
+        sharedWithGroups: [] as string[],
     });
     const [loading, setLoading] = useState(false);
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [showPassword, setShowPassword] = useState(false);
+
+    // Fetch groups for sharing
+    const fetchGroups = useCallback(async () => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        try {
+            const res = await fetch('/api/groups', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                setGroups(await res.json());
+            }
+        } catch { /* ignore */ }
+    }, []);
+
+    useEffect(() => {
+        fetchGroups();
+    }, [fetchGroups]);
 
     // Update port when DB type changes
     useEffect(() => {
@@ -498,6 +532,72 @@ export default function CreateConnectionPage() {
                                 </div>
                             </div>
                         )}
+
+                        {/* Access Control */}
+                        <div style={{ marginBottom: '24px', paddingTop: '16px', borderTop: '1px solid rgba(99, 102, 241, 0.15)' }}>
+                            <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '12px', fontWeight: 500 }}>
+                                🔐 접근 권한
+                            </label>
+                            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                                {VISIBILITY_OPTIONS.map((opt) => (
+                                    <div
+                                        key={opt.id}
+                                        onClick={() => setFormData(prev => ({ ...prev, visibility: opt.id as 'private' | 'group' | 'public', sharedWithGroups: opt.id !== 'group' ? [] : prev.sharedWithGroups }))}
+                                        style={{
+                                            flex: 1, padding: '14px', borderRadius: '10px', cursor: 'pointer', textAlign: 'center',
+                                            background: formData.visibility === opt.id ? `${opt.color}20` : 'rgba(15, 23, 42, 0.6)',
+                                            border: formData.visibility === opt.id ? `2px solid ${opt.color}` : '1px solid rgba(99, 102, 241, 0.2)',
+                                            transition: 'all 0.2s',
+                                        }}
+                                    >
+                                        <div style={{ fontSize: '22px', marginBottom: '6px' }}>{opt.icon}</div>
+                                        <div style={{ fontSize: '13px', fontWeight: 600, color: formData.visibility === opt.id ? opt.color : '#e2e8f0' }}>{opt.label}</div>
+                                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>{opt.description}</div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Group Selection */}
+                            {formData.visibility === 'group' && (
+                                <div style={{ background: 'rgba(16, 185, 129, 0.1)', borderRadius: '10px', padding: '16px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                                    <label style={{ display: 'block', fontSize: '13px', color: '#10b981', marginBottom: '10px', fontWeight: 500 }}>
+                                        👥 공유할 그룹 선택
+                                    </label>
+                                    {groups.length === 0 ? (
+                                        <div style={{ color: '#64748b', fontSize: '13px' }}>등록된 그룹이 없습니다. <a href="/admin/groups" style={{ color: '#10b981' }}>그룹 관리</a>에서 추가하세요.</div>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                            {groups.map((group) => (
+                                                <button
+                                                    key={group.id}
+                                                    type="button"
+                                                    onClick={() => setFormData(prev => ({
+                                                        ...prev,
+                                                        sharedWithGroups: prev.sharedWithGroups.includes(group.id)
+                                                            ? prev.sharedWithGroups.filter(id => id !== group.id)
+                                                            : [...prev.sharedWithGroups, group.id]
+                                                    }))}
+                                                    style={{
+                                                        padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer',
+                                                        background: formData.sharedWithGroups.includes(group.id) ? '#10b981' : 'rgba(15, 23, 42, 0.6)',
+                                                        color: formData.sharedWithGroups.includes(group.id) ? 'white' : '#e2e8f0',
+                                                        border: formData.sharedWithGroups.includes(group.id) ? '2px solid #10b981' : '1px solid rgba(99, 102, 241, 0.2)',
+                                                        transition: 'all 0.2s',
+                                                    }}
+                                                >
+                                                    {formData.sharedWithGroups.includes(group.id) ? '✓ ' : ''}{group.name}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {formData.sharedWithGroups.length > 0 && (
+                                        <div style={{ marginTop: '10px', fontSize: '12px', color: '#10b981' }}>
+                                            ✅ {formData.sharedWithGroups.length}개 그룹 선택됨
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
 
                         {/* Test Result */}
                         {testResult && (

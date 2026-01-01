@@ -14,9 +14,10 @@ interface Connection {
     database: string;
     createdAt: string;
     lastUsedAt?: string;
-    visibility?: 'private' | 'team' | 'public';
+    visibility?: 'private' | 'team' | 'group' | 'public';
     createdBy?: string;
     isOwner?: boolean;
+    sharedWithGroups?: string[];
 }
 
 interface ConnectionStatus {
@@ -621,6 +622,35 @@ export default function ConnectionsPage() {
                                         }}>
                                             {conn.type}
                                         </span>
+                                        {/* Visibility Badge */}
+                                        {conn.visibility && (
+                                            <span style={{
+                                                padding: '3px 8px',
+                                                borderRadius: '6px',
+                                                fontSize: '10px',
+                                                fontWeight: 500,
+                                                background: conn.visibility === 'private' ? 'rgba(99, 102, 241, 0.15)' :
+                                                    conn.visibility === 'group' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                                                color: conn.visibility === 'private' ? '#a5b4fc' :
+                                                    conn.visibility === 'group' ? '#34d399' : '#fbbf24',
+                                            }}>
+                                                {conn.visibility === 'private' ? '🔒 비공개' :
+                                                    conn.visibility === 'group' ? '👥 그룹' : '🌐 공개'}
+                                            </span>
+                                        )}
+                                        {/* Owner Badge */}
+                                        {conn.isOwner && (
+                                            <span style={{
+                                                padding: '3px 8px',
+                                                borderRadius: '6px',
+                                                fontSize: '10px',
+                                                fontWeight: 500,
+                                                background: 'rgba(139, 92, 246, 0.15)',
+                                                color: '#c4b5fd',
+                                            }}>
+                                                👤 내 연결
+                                            </span>
+                                        )}
                                     </div>
                                     <div style={{ fontSize: '13px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
