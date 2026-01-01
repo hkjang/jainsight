@@ -85,6 +85,12 @@ export default function ConnectionsSharingPage() {
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [deletingIds, setDeletingIds] = useState<string[]>([]);
     
+    // 새로운 기능 상태
+    const [showShortcutsPanel, setShowShortcutsPanel] = useState(false);
+    const [pageJumpValue, setPageJumpValue] = useState('');
+    const [showPageJump, setShowPageJump] = useState(false);
+    const [showQuickStats, setShowQuickStats] = useState(true);
+    
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
@@ -220,6 +226,14 @@ export default function ConnectionsSharingPage() {
             typeDistribution[type] = (typeDistribution[type] || 0) + 1;
         });
         
+        // 온라인 연결 수
+        const onlineCount = Object.values(connectionHealth).filter(s => s === 'online').length;
+        const offlineCount = Object.values(connectionHealth).filter(s => s === 'offline').length;
+        
+        // 최근 24시간 내 생성된 연결 (신규)
+        const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const newConnections = connections.filter(c => c.createdAt && new Date(c.createdAt) > dayAgo).length;
+        
         return { 
             total: connections.length, 
             private: privateConns.length, 
@@ -227,8 +241,11 @@ export default function ConnectionsSharingPage() {
             public: publicConns.length,
             groupsWithConnections: groupsWithConnections.size,
             typeDistribution,
+            onlineCount,
+            offlineCount,
+            newConnections,
         };
-    }, [connections]);
+    }, [connections, connectionHealth]);
 
     const getGroupName = (groupId: string) => groups.find(g => g.id === groupId)?.name || groupId.slice(0, 8);
     
@@ -407,12 +424,25 @@ export default function ConnectionsSharingPage() {
                     setViewMode(prev => prev === 'table' ? 'card' : 'table');
                     showToast(`${viewMode === 'table' ? '카드' : '테이블'} 뷰로 전환`, 'info');
                     break;
+                case '?':
+                    e.preventDefault();
+                    setShowShortcutsPanel(prev => !prev);
+                    break;
+                case 'g':
+                    e.preventDefault();
+                    setShowPageJump(true);
+                    break;
+                case 'q':
+                    e.preventDefault();
+                    setShowQuickStats(prev => !prev);
+                    showToast(`퀵 통계 ${showQuickStats ? '숨김' : '표시'}`, 'info');
+                    break;
             }
         };
         
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [fetchData, showToast, selectedIds, viewMode]);
+    }, [fetchData, showToast, selectedIds, viewMode, showQuickStats]);
     
     const exportToCSV = () => {
         const headers = ['이름', '타입', '호스트', '데이터베이스', '가시성', '공유 그룹'];
@@ -646,33 +676,121 @@ export default function ConnectionsSharingPage() {
                     ))}
                 </div>
                 
-                {/* DB 타입 분포 */}
+                {/* DB 타입 분포 - SVG 도넛 차트 */}
                 {Object.keys(stats.typeDistribution).length > 0 && (
                     <div style={{
-                        marginBottom: '24px', padding: '16px 20px', borderRadius: '12px',
-                        background: 'rgba(30, 27, 75, 0.5)', border: '1px solid rgba(99, 102, 241, 0.2)'
+                        marginBottom: '24px', padding: '20px', borderRadius: '12px',
+                        background: 'rgba(30, 27, 75, 0.5)', border: '1px solid rgba(99, 102, 241, 0.2)',
+                        display: 'flex', gap: '32px', alignItems: 'center', flexWrap: 'wrap'
                     }}>
-                        <div style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '12px' }}>📊 데이터베이스 타입 분포</div>
-                        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
-                            {Object.entries(stats.typeDistribution).map(([type, count]) => (
-                                <div key={type} style={{
-                                    display: 'flex', alignItems: 'center', gap: '8px',
-                                    padding: '6px 12px', borderRadius: '8px',
-                                    background: `${dbIcons[type]?.color || '#6366f1'}20`,
-                                    border: `1px solid ${dbIcons[type]?.color || '#6366f1'}30`
-                                }}>
-                                    <span>{dbIcons[type]?.icon || '🗄️'}</span>
-                                    <span style={{ fontSize: '12px', color: '#e2e8f0', textTransform: 'capitalize' }}>{type}</span>
-                                    <span style={{
-                                        padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 600,
-                                        background: `${dbIcons[type]?.color || '#6366f1'}40`,
-                                        color: dbIcons[type]?.color || '#a5b4fc'
-                                    }}>
-                                        {count}
-                                    </span>
-                                </div>
-                            ))}
+                        {/* SVG 도넛 차트 */}
+                        <div style={{ position: 'relative', width: '120px', height: '120px', flexShrink: 0 }}>
+                            <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                                {(() => {
+                                    const total = stats.total;
+                                    const entries = Object.entries(stats.typeDistribution);
+                                    let offset = 0;
+                                    const defaultColors = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4'];
+                                    return entries.map(([type, count], idx) => {
+                                        const percentage = (count / total) * 100;
+                                        const dashArray = `${percentage} ${100 - percentage}`;
+                                        const color = dbIcons[type]?.color || defaultColors[idx % defaultColors.length];
+                                        const el = (
+                                            <circle
+                                                key={type}
+                                                cx="18" cy="18" r="15.915"
+                                                fill="transparent"
+                                                stroke={color}
+                                                strokeWidth="3"
+                                                strokeDasharray={dashArray}
+                                                strokeDashoffset={-offset}
+                                                style={{ transition: 'stroke-dasharray 0.5s ease' }}
+                                            />
+                                        );
+                                        offset += percentage;
+                                        return el;
+                                    });
+                                })()}
+                            </svg>
+                            <div style={{
+                                position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{ fontSize: '20px', fontWeight: 700, color: '#e2e8f0' }}>{stats.total}</div>
+                                <div style={{ fontSize: '10px', color: '#64748b' }}>연결</div>
+                            </div>
                         </div>
+                        
+                        {/* 타입 목록 */}
+                        <div style={{ flex: 1, minWidth: '200px' }}>
+                            <div style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                📊 데이터베이스 타입 분포
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                {Object.entries(stats.typeDistribution).map(([type, count]) => (
+                                    <div key={type} 
+                                        className="btn-hover"
+                                        onClick={() => setTypeFilter(typeFilter === type ? 'all' : type)}
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: '8px',
+                                            padding: '8px 14px', borderRadius: '8px',
+                                            background: typeFilter === type ? `${dbIcons[type]?.color || '#6366f1'}40` : `${dbIcons[type]?.color || '#6366f1'}20`,
+                                            border: `1px solid ${dbIcons[type]?.color || '#6366f1'}${typeFilter === type ? '60' : '30'}`,
+                                            cursor: 'pointer'
+                                        }}>
+                                        <span style={{ fontSize: '16px' }}>{dbIcons[type]?.icon || '🗄️'}</span>
+                                        <span style={{ fontSize: '12px', color: '#e2e8f0', textTransform: 'capitalize' }}>{type}</span>
+                                        <span style={{
+                                            padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 600,
+                                            background: `${dbIcons[type]?.color || '#6366f1'}40`,
+                                            color: dbIcons[type]?.color || '#a5b4fc'
+                                        }}>
+                                            {count} ({Math.round((count / stats.total) * 100)}%)
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        
+                        {/* 퀵 상태 패널 */}
+                        {showQuickStats && (
+                            <div style={{
+                                display: 'flex', gap: '12px', padding: '12px', borderRadius: '10px',
+                                background: 'rgba(15, 10, 31, 0.5)', border: '1px solid rgba(100, 116, 139, 0.2)'
+                            }}>
+                                <div style={{ textAlign: 'center', padding: '0 12px' }}>
+                                    <div style={{ 
+                                        fontSize: '20px', fontWeight: 700, color: '#34d399',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+                                    }}>
+                                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#34d399', animation: 'pulse 2s infinite' }} />
+                                        {stats.onlineCount}
+                                    </div>
+                                    <div style={{ fontSize: '10px', color: '#64748b' }}>온라인</div>
+                                </div>
+                                <div style={{ width: '1px', background: 'rgba(100, 116, 139, 0.3)' }} />
+                                <div style={{ textAlign: 'center', padding: '0 12px' }}>
+                                    <div style={{ 
+                                        fontSize: '20px', fontWeight: 700, color: '#f87171',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+                                    }}>
+                                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f87171' }} />
+                                        {stats.offlineCount}
+                                    </div>
+                                    <div style={{ fontSize: '10px', color: '#64748b' }}>오프라인</div>
+                                </div>
+                                <div style={{ width: '1px', background: 'rgba(100, 116, 139, 0.3)' }} />
+                                <div style={{ textAlign: 'center', padding: '0 12px' }}>
+                                    <div style={{ 
+                                        fontSize: '20px', fontWeight: 700, color: '#a5b4fc',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+                                    }}>
+                                        ✨ {stats.newConnections}
+                                    </div>
+                                    <div style={{ fontSize: '10px', color: '#64748b' }}>신규 (24h)</div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
                 
@@ -1811,6 +1929,194 @@ export default function ConnectionsSharingPage() {
                     </div>
                 </div>
             )}
+            
+            {/* 페이지 점프 모달 */}
+            {showPageJump && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.7)', zIndex: 2000,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    animation: 'fadeIn 0.2s ease'
+                }} onClick={() => setShowPageJump(false)}>
+                    <div style={{
+                        background: 'rgba(30, 27, 75, 0.98)', borderRadius: '16px',
+                        border: '1px solid rgba(99, 102, 241, 0.3)',
+                        padding: '24px', width: '320px',
+                        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)'
+                    }} onClick={e => e.stopPropagation()}>
+                        <h3 style={{ color: '#e2e8f0', fontSize: '16px', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            📖 페이지 이동
+                        </h3>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <input
+                                type="number"
+                                min={1}
+                                max={totalPages}
+                                value={pageJumpValue}
+                                onChange={e => setPageJumpValue(e.target.value)}
+                                placeholder={`1 - ${totalPages}`}
+                                autoFocus
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter') {
+                                        const page = parseInt(pageJumpValue);
+                                        if (page >= 1 && page <= totalPages) {
+                                            setCurrentPage(page);
+                                            setShowPageJump(false);
+                                            setPageJumpValue('');
+                                            showToast(`${page}페이지로 이동`, 'success');
+                                        }
+                                    } else if (e.key === 'Escape') {
+                                        setShowPageJump(false);
+                                    }
+                                }}
+                                style={{
+                                    flex: 1, padding: '12px 14px', borderRadius: '8px',
+                                    background: 'rgba(15, 10, 31, 0.7)', border: '1px solid rgba(99, 102, 241, 0.3)',
+                                    color: '#e2e8f0', fontSize: '14px', outline: 'none'
+                                }}
+                            />
+                            <button
+                                onClick={() => {
+                                    const page = parseInt(pageJumpValue);
+                                    if (page >= 1 && page <= totalPages) {
+                                        setCurrentPage(page);
+                                        setShowPageJump(false);
+                                        setPageJumpValue('');
+                                        showToast(`${page}페이지로 이동`, 'success');
+                                    }
+                                }}
+                                style={{
+                                    padding: '12px 20px', borderRadius: '8px', border: 'none',
+                                    background: 'linear-gradient(90deg, #6366f1, #8b5cf6)', color: 'white',
+                                    cursor: 'pointer', fontSize: '13px', fontWeight: 500
+                                }}
+                            >
+                                이동
+                            </button>
+                        </div>
+                        <div style={{ marginTop: '12px', fontSize: '11px', color: '#64748b', textAlign: 'center' }}>
+                            현재: {currentPage} / {totalPages} 페이지
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* 키보드 단축키 패널 */}
+            {showShortcutsPanel && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.7)', zIndex: 2000,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    animation: 'fadeIn 0.2s ease'
+                }} onClick={() => setShowShortcutsPanel(false)}>
+                    <div style={{
+                        background: 'rgba(30, 27, 75, 0.98)', borderRadius: '16px',
+                        border: '1px solid rgba(99, 102, 241, 0.3)',
+                        padding: '24px', maxWidth: '500px', width: '90%',
+                        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)'
+                    }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+                            <h3 style={{ color: '#e2e8f0', fontSize: '18px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                ⌨️ 키보드 단축키
+                            </h3>
+                            <button
+                                onClick={() => setShowShortcutsPanel(false)}
+                                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '18px' }}
+                            >✕</button>
+                        </div>
+                        
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                            {[
+                                { key: 'R', action: '새로고침', icon: '🔄' },
+                                { key: 'E', action: 'CSV 내보내기', icon: '📥' },
+                                { key: '/', action: '검색 포커스', icon: '🔍' },
+                                { key: 'V', action: '뷰 전환', icon: '👁️' },
+                                { key: 'G', action: '페이지 이동', icon: '📖' },
+                                { key: 'Q', action: '퀵 통계 토글', icon: '📊' },
+                                { key: '?', action: '단축키 도움말', icon: '⌨️' },
+                                { key: '1/2/3', action: '탭 전환', icon: '📋' },
+                                { key: 'Ctrl+A', action: '전체 선택', icon: '☑️' },
+                                { key: 'H', action: '상태 확인', icon: '💚' },
+                                { key: 'Del', action: '선택 삭제', icon: '🗑️' },
+                                { key: 'Esc', action: '초기화/닫기', icon: '❌' },
+                            ].map(shortcut => (
+                                <div key={shortcut.key} style={{
+                                    display: 'flex', alignItems: 'center', gap: '10px',
+                                    padding: '10px 12px', borderRadius: '8px',
+                                    background: 'rgba(99, 102, 241, 0.08)'
+                                }}>
+                                    <span style={{ fontSize: '14px' }}>{shortcut.icon}</span>
+                                    <kbd style={{
+                                        padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600,
+                                        background: 'rgba(100, 116, 139, 0.3)', color: '#e2e8f0',
+                                        border: '1px solid rgba(100, 116, 139, 0.4)'
+                                    }}>{shortcut.key}</kbd>
+                                    <span style={{ fontSize: '12px', color: '#94a3b8' }}>{shortcut.action}</span>
+                                </div>
+                            ))}
+                        </div>
+                        
+                        <div style={{ marginTop: '16px', padding: '10px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                            <div style={{ fontSize: '11px', color: '#34d399' }}>
+                                💡 팁: 입력 필드가 포커스되지 않은 상태에서 단축키를 사용하세요.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* 플로팅 액션 버튼 */}
+            <div style={{
+                position: 'fixed', bottom: '24px', right: '24px',
+                display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-end',
+                zIndex: 500
+            }}>
+                {/* 빠른 작업 버튼들 */}
+                <Link href="/connections/create" className="btn-hover" style={{
+                    width: '48px', height: '48px', borderRadius: '50%',
+                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 4px 20px rgba(99, 102, 241, 0.4)',
+                    textDecoration: 'none', fontSize: '20px'
+                }} title="새 연결 추가">
+                    ➕
+                </Link>
+                
+                <button
+                    onClick={() => {
+                        const checkIds = paginatedConnections.map(c => c.id);
+                        checkIds.forEach(id => checkConnectionHealth(id));
+                        showToast('모든 연결 상태 확인 시작', 'info');
+                    }}
+                    className="btn-hover"
+                    style={{
+                        width: '40px', height: '40px', borderRadius: '50%',
+                        background: 'rgba(16, 185, 129, 0.9)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        border: 'none', cursor: 'pointer',
+                        boxShadow: '0 4px 15px rgba(16, 185, 129, 0.3)',
+                        fontSize: '16px'
+                    }}
+                    title="전체 상태 확인"
+                >
+                    💚
+                </button>
+                
+                <button
+                    onClick={() => setShowShortcutsPanel(true)}
+                    className="btn-hover"
+                    style={{
+                        width: '40px', height: '40px', borderRadius: '50%',
+                        background: 'rgba(99, 102, 241, 0.2)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        border: '1px solid rgba(99, 102, 241, 0.3)', cursor: 'pointer',
+                        fontSize: '16px', color: '#a5b4fc'
+                    }}
+                    title="키보드 단축키 (?)"
+                >
+                    ⌨️
+                </button>
+            </div>
         </div>
     );
 }
