@@ -8,7 +8,7 @@ const API_URL = '/api';
 
 interface Favorite {
     id: string;
-    itemType: 'query' | 'report' | 'connection' | 'dashboard';
+    itemType: 'query' | 'report' | 'connection' | 'dashboard' | 'api';
     itemId: string;
     name?: string;
     description?: string;
@@ -20,7 +20,8 @@ const typeInfo: Record<string, { label: string; icon: string; href: (id: string)
     query: { label: '쿼리', icon: '📊', href: (id) => `/editor?id=${id}` },
     report: { label: '리포트', icon: '📈', href: (id) => `/admin/reports/${id}` },
     connection: { label: '연결', icon: '🔌', href: (id) => `/connections/${id}` },
-    dashboard: { label: '대시보드', icon: '📋', href: (id) => `/dashboard?id=${id}` }
+    dashboard: { label: '대시보드', icon: '📋', href: (id) => `/dashboard?id=${id}` },
+    api: { label: 'API Gateway', icon: '🌐', href: (id) => `/api-builder?id=${id}` }
 };
 
 export default function FavoritesPage() {
@@ -101,7 +102,8 @@ export default function FavoritesPage() {
                         { id: 'all', label: '전체' },
                         { id: 'query', label: '쿼리', icon: '📊' },
                         { id: 'report', label: '리포트', icon: '📈' },
-                        { id: 'connection', label: '연결', icon: '🔌' }
+                        { id: 'connection', label: '연결', icon: '🔌' },
+                        { id: 'api', label: 'API Gateway', icon: '🌐' }
                     ]}
                     activeTab={filter}
                     onChange={setFilter}

@@ -22,6 +22,7 @@ const pathLabels: Record<string, { label: string; icon: string }> = {
     '/schemas': { label: '스키마', icon: '🗂️' },
     '/audit': { label: '감사 로그', icon: '📜' },
     '/admin': { label: '관리자', icon: '👑' },
+    '/api-builder': { label: 'API Gateway', icon: '🌐' },
 };
 
 export function Header() {

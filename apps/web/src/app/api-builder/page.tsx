@@ -82,9 +82,13 @@ export default function ApiBuilderPage() {
     const [snippetApi, setSnippetApi] = useState<ApiTemplate | null>(null);
     const [snippetType, setSnippetType] = useState<'curl' | 'javascript' | 'python'>('curl');
 
+    // Favorites State
+    const [favoriteApis, setFavoriteApis] = useState<Set<string>>(new Set());
+
     useEffect(() => {
         fetchTemplates();
         fetchConnections();
+        fetchFavorites();
     }, []);
 
     // Auto-detect params from SQL
@@ -139,6 +143,82 @@ export default function ApiBuilderPage() {
             }
         } catch (e) {
             console.error('Failed to fetch connections', e);
+        }
+    };
+
+    const fetchFavorites = async () => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            const userId = payload.userId || payload.sub || payload.id;
+            if (!userId) return;
+
+            const res = await fetch(`/api/users/${userId}/favorites?type=api`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                const favIds = new Set<string>(data.map((f: any) => f.itemId));
+                setFavoriteApis(favIds);
+            }
+        } catch (e) {
+            console.error('Failed to fetch favorites', e);
+        }
+    };
+
+    const toggleFavoriteApi = async (apiId: string, apiName: string) => {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            showToast('로그인이 필요합니다', 'error');
+            return;
+        }
+
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            const userId = payload.userId || payload.sub || payload.id;
+            if (!userId) {
+                showToast('사용자 정보를 찾을 수 없습니다', 'error');
+                return;
+            }
+
+            const isFavorite = favoriteApis.has(apiId);
+            
+            if (isFavorite) {
+                // Remove from favorites
+                await fetch(`/api/users/${userId}/favorites/api/${apiId}`, {
+                    method: 'DELETE',
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setFavoriteApis(prev => {
+                    const next = new Set(prev);
+                    next.delete(apiId);
+                    return next;
+                });
+                showToast('즐겨찾기에서 제거되었습니다', 'success');
+            } else {
+                // Add to favorites
+                await fetch(`/api/users/${userId}/favorites`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}` 
+                    },
+                    body: JSON.stringify({
+                        itemType: 'api',
+                        itemId: apiId,
+                        name: apiName,
+                        description: 'API Gateway',
+                        icon: '🌐'
+                    })
+                });
+                setFavoriteApis(prev => new Set([...prev, apiId]));
+                showToast('즐겨찾기에 추가되었습니다', 'success');
+            }
+        } catch (e) {
+            console.error('Failed to toggle favorite', e);
+            showToast('즐겨찾기 변경에 실패했습니다', 'error');
         }
     };
 
@@ -212,7 +292,7 @@ export default function ApiBuilderPage() {
     }, []);
 
     const handleCopyEndpoint = useCallback((id: string) => {
-        const endpoint = `${window.location.origin}/api/sql-api/${id}/execute`;
+        const endpoint = `${window.location.origin}/api/sql-api/execute/${id}`;
         navigator.clipboard.writeText(endpoint);
         setCopiedKey(`endpoint-${id}`);
         setTimeout(() => setCopiedKey(null), 2000);
@@ -1091,6 +1171,22 @@ print(data)`;
                                             title="API 문서"
                                         >
                                             📖
+                                        </button>
+                                        <button
+                                            onClick={() => toggleFavoriteApi(t.id, t.name)}
+                                            style={{
+                                                padding: '6px 10px',
+                                                background: favoriteApis.has(t.id) ? 'rgba(251, 191, 36, 0.2)' : 'rgba(251, 191, 36, 0.1)',
+                                                border: `1px solid ${favoriteApis.has(t.id) ? 'rgba(251, 191, 36, 0.4)' : 'rgba(251, 191, 36, 0.2)'}`,
+                                                borderRadius: '6px',
+                                                color: '#fbbf24',
+                                                cursor: 'pointer',
+                                                fontSize: '11px',
+                                                transition: 'all 0.2s',
+                                            }}
+                                            title={favoriteApis.has(t.id) ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+                                        >
+                                            {favoriteApis.has(t.id) ? '⭐' : '☆'}
                                         </button>
                                         <div style={{ flex: 1 }} />
                                         <button

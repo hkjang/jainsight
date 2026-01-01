@@ -5,6 +5,7 @@ import { SqlApiDocService } from './sql-api-doc.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { Public } from '../auth/public.decorator';
 import { Throttle } from '@nestjs/throttler';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -62,10 +63,20 @@ export class SqlApiController {
         return this.sqlApiService.execute(body.templateId, body.params);
     }
 
+    // Public API execution - uses API key authentication instead of JWT
     @Post('execute/:templateId')
+    @Public()
     @Throttle({ default: { limit: 10, ttl: 60000 } })
     async executePublic(@Param('templateId') templateId: string, @Body() body: { apiKey: string; params: any }) {
         return this.sqlApiService.execute(templateId, body.params, body.apiKey);
+    }
+
+    // Alternative execute endpoint pattern (supports /:id/execute URL) - also public
+    @Post(':id/execute')
+    @Public()
+    @Throttle({ default: { limit: 10, ttl: 60000 } })
+    async executeAlternative(@Param('id') id: string, @Body() body: { apiKey: string; params: any }) {
+        return this.sqlApiService.execute(id, body.params, body.apiKey);
     }
 
     // === New Enhanced Endpoints ===
