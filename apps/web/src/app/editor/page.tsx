@@ -2970,11 +2970,82 @@ export default function EditorPage() {
                         <div style={{ flex: 1, overflow: 'auto', padding: loading || error || !results ? 16 : 0, minHeight: 0 }}>
                             {loading && (
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                                    <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: 48, marginBottom: 12, animation: 'spin 1s linear infinite' }}>⚙️</div>
-                                        <div style={{ color: theme.textMuted, marginBottom: 8 }}>Executing query...</div>
-                                        <div style={{ fontSize: 24, fontWeight: 600, fontFamily: 'monospace', color: theme.primary }}>
+                                    <div style={{ textAlign: 'center', maxWidth: 400 }}>
+                                        <div style={{ 
+                                            width: 80, 
+                                            height: 80, 
+                                            margin: '0 auto 16px',
+                                            borderRadius: '50%',
+                                            border: `3px solid ${theme.border}`,
+                                            borderTopColor: theme.primary,
+                                            animation: 'spin 1s linear infinite'
+                                        }} />
+                                        <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: theme.text }}>
+                                            쿼리 실행 중...
+                                        </div>
+                                        <div style={{ 
+                                            fontSize: 32, 
+                                            fontWeight: 700, 
+                                            fontFamily: 'monospace', 
+                                            color: theme.primary,
+                                            marginBottom: 16
+                                        }}>
                                             {formatDuration(liveTimer)}
+                                        </div>
+                                        <div style={{ 
+                                            display: 'flex', 
+                                            justifyContent: 'center', 
+                                            gap: 12,
+                                            marginBottom: 16 
+                                        }}>
+                                            <span style={{ 
+                                                padding: '4px 12px', 
+                                                backgroundColor: 
+                                                    queryComplexity === 'high' ? `${theme.error}20` :
+                                                    queryComplexity === 'medium' ? `${theme.warning}20` :
+                                                    `${theme.success}20`,
+                                                color: 
+                                                    queryComplexity === 'high' ? theme.error :
+                                                    queryComplexity === 'medium' ? theme.warning :
+                                                    theme.success,
+                                                borderRadius: 12,
+                                                fontSize: 11,
+                                                fontWeight: 500
+                                            }}>
+                                                {queryComplexity === 'high' ? '⚡ 복잡 쿼리' :
+                                                 queryComplexity === 'medium' ? '📊 보통 쿼리' :
+                                                 '✨ 단순 쿼리'}
+                                            </span>
+                                            {getAverageExecutionTime() > 0 && (
+                                                <span style={{ 
+                                                    padding: '4px 12px', 
+                                                    backgroundColor: theme.bgHover,
+                                                    color: theme.textMuted,
+                                                    borderRadius: 12,
+                                                    fontSize: 11
+                                                }}>
+                                                    평균: {formatDuration(getAverageExecutionTime())}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <button 
+                                            onClick={handleCancelQuery}
+                                            style={{ 
+                                                ...styles.btn, 
+                                                backgroundColor: theme.error, 
+                                                color: '#fff',
+                                                padding: '10px 24px',
+                                                fontSize: 14
+                                            }}
+                                        >
+                                            ⏹ 실행 취소
+                                        </button>
+                                        <div style={{ 
+                                            marginTop: 12, 
+                                            fontSize: 11, 
+                                            color: theme.textMuted 
+                                        }}>
+                                            Ctrl+. 또는 Esc로 취소
                                         </div>
                                     </div>
                                 </div>
@@ -3002,6 +3073,123 @@ export default function EditorPage() {
                                             )}
                                         </div>
                                     )}
+                                </div>
+                            )}
+                            {!loading && !error && !results && (
+                                <div style={{ 
+                                    display: 'flex', 
+                                    flexDirection: 'column', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center', 
+                                    height: '100%',
+                                    padding: 32
+                                }}>
+                                    <div style={{ fontSize: 64, marginBottom: 16 }}>📊</div>
+                                    <div style={{ 
+                                        fontSize: 18, 
+                                        fontWeight: 600, 
+                                        color: theme.text,
+                                        marginBottom: 8
+                                    }}>
+                                        쿼리를 실행하세요
+                                    </div>
+                                    <div style={{ 
+                                        fontSize: 14, 
+                                        color: theme.textMuted,
+                                        marginBottom: 24,
+                                        textAlign: 'center'
+                                    }}>
+                                        SQL 쿼리를 작성하고 실행 버튼을 누르거나 F5 / Ctrl+Enter 키를 누르세요
+                                    </div>
+                                    
+                                    <div style={{ 
+                                        display: 'grid', 
+                                        gridTemplateColumns: 'repeat(3, 1fr)', 
+                                        gap: 12,
+                                        maxWidth: 600,
+                                        marginBottom: 24
+                                    }}>
+                                        <div 
+                                            onClick={() => setQuery("SELECT * FROM information_schema.tables WHERE table_schema = 'public' LIMIT 10;")}
+                                            style={{ 
+                                                padding: 16, 
+                                                backgroundColor: theme.bgHover, 
+                                                borderRadius: 8, 
+                                                cursor: 'pointer',
+                                                textAlign: 'center',
+                                                border: `1px solid ${theme.border}`,
+                                                transition: 'border-color 0.2s'
+                                            }}
+                                        >
+                                            <div style={{ fontSize: 24, marginBottom: 8 }}>📋</div>
+                                            <div style={{ fontSize: 12, fontWeight: 500, color: theme.text }}>테이블 목록</div>
+                                            <div style={{ fontSize: 10, color: theme.textMuted }}>클릭하여 로드</div>
+                                        </div>
+                                        <div 
+                                            onClick={() => setShowAiModal(true)}
+                                            style={{ 
+                                                padding: 16, 
+                                                backgroundColor: theme.bgHover, 
+                                                borderRadius: 8, 
+                                                cursor: 'pointer',
+                                                textAlign: 'center',
+                                                border: `1px solid ${theme.border}`,
+                                                transition: 'border-color 0.2s'
+                                            }}
+                                        >
+                                            <div style={{ fontSize: 24, marginBottom: 8 }}>✨</div>
+                                            <div style={{ fontSize: 12, fontWeight: 500, color: theme.text }}>AI 어시스트</div>
+                                            <div style={{ fontSize: 10, color: theme.textMuted }}>자연어로 쿼리 생성</div>
+                                        </div>
+                                        <div 
+                                            onClick={() => setShowSchemaBrowser(true)}
+                                            style={{ 
+                                                padding: 16, 
+                                                backgroundColor: theme.bgHover, 
+                                                borderRadius: 8, 
+                                                cursor: 'pointer',
+                                                textAlign: 'center',
+                                                border: `1px solid ${theme.border}`,
+                                                transition: 'border-color 0.2s'
+                                            }}
+                                        >
+                                            <div style={{ fontSize: 24, marginBottom: 8 }}>🗂️</div>
+                                            <div style={{ fontSize: 12, fontWeight: 500, color: theme.text }}>스키마 탐색</div>
+                                            <div style={{ fontSize: 10, color: theme.textMuted }}>테이블 구조 확인</div>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ 
+                                        padding: 16, 
+                                        backgroundColor: theme.bgHover, 
+                                        borderRadius: 8,
+                                        maxWidth: 500,
+                                        width: '100%'
+                                    }}>
+                                        <div style={{ 
+                                            fontSize: 12, 
+                                            fontWeight: 600, 
+                                            color: theme.textSecondary, 
+                                            marginBottom: 8,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 6
+                                        }}>
+                                            ⌨️ 단축키
+                                        </div>
+                                        <div style={{ 
+                                            display: 'grid', 
+                                            gridTemplateColumns: '1fr 1fr', 
+                                            gap: '6px 16px',
+                                            fontSize: 11,
+                                            color: theme.textMuted
+                                        }}>
+                                            <span><kbd style={{ padding: '2px 6px', backgroundColor: theme.bgCard, borderRadius: 4, fontSize: 10 }}>F5</kbd> / <kbd style={{ padding: '2px 6px', backgroundColor: theme.bgCard, borderRadius: 4, fontSize: 10 }}>Ctrl+Enter</kbd> 실행</span>
+                                            <span><kbd style={{ padding: '2px 6px', backgroundColor: theme.bgCard, borderRadius: 4, fontSize: 10 }}>Ctrl+S</kbd> 저장</span>
+                                            <span><kbd style={{ padding: '2px 6px', backgroundColor: theme.bgCard, borderRadius: 4, fontSize: 10 }}>Ctrl+/</kbd> 주석 토글</span>
+                                            <span><kbd style={{ padding: '2px 6px', backgroundColor: theme.bgCard, borderRadius: 4, fontSize: 10 }}>F1</kbd> 단축키 목록</span>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                             {results && viewMode === 'table' && (
