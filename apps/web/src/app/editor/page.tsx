@@ -2936,9 +2936,46 @@ export default function EditorPage() {
                             </div>
                             {results?.rows?.length > 0 && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <input type="text" placeholder="🔍 Filter..." value={resultsFilter} onChange={(e) => { setResultsFilter(e.target.value); setCurrentPage(1); }} style={{ ...styles.input, width: 140 }} />
+                                    <div style={{ position: 'relative' }}>
+                                        <input 
+                                            type="text" 
+                                            placeholder="🔍 Filter results..." 
+                                            value={resultsFilter} 
+                                            onChange={(e) => { setResultsFilter(e.target.value); setCurrentPage(1); }} 
+                                            style={{ ...styles.input, width: 160, paddingRight: resultsFilter ? 28 : 12 }} 
+                                        />
+                                        {resultsFilter && (
+                                            <button 
+                                                onClick={() => { setResultsFilter(''); setCurrentPage(1); }}
+                                                style={{ 
+                                                    position: 'absolute', 
+                                                    right: 6, 
+                                                    top: '50%', 
+                                                    transform: 'translateY(-50%)', 
+                                                    background: 'none', 
+                                                    border: 'none', 
+                                                    cursor: 'pointer', 
+                                                    fontSize: 12,
+                                                    color: theme.textMuted,
+                                                    padding: 2
+                                                }}
+                                                title="Clear filter"
+                                            >✕</button>
+                                        )}
+                                    </div>
+                                    {resultsFilter && (
+                                        <span style={{ 
+                                            fontSize: 11, 
+                                            color: filteredRows.length > 0 ? theme.success : theme.warning,
+                                            padding: '2px 6px',
+                                            backgroundColor: filteredRows.length > 0 ? `${theme.success}20` : `${theme.warning}20`,
+                                            borderRadius: 4
+                                        }}>
+                                            {filteredRows.length}건 일치
+                                        </span>
+                                    )}
                                     <select value={itemsPerPage} onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }} style={styles.select}>
-                                        <option value={10}>10</option><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option>
+                                        <option value={10}>10</option><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option><option value={500}>500</option>
                                     </select>
                                     <div style={{ height: 16, width: 1, backgroundColor: theme.border }} />
                                     {selectedRows.size > 0 && (
@@ -3332,8 +3369,36 @@ export default function EditorPage() {
                                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                                             <span style={{ fontSize: 20 }}>❌</span>
                                             <div style={{ flex: 1 }}>
-                                                <div style={{ fontWeight: 600, color: '#ef4444', marginBottom: 6 }}>쿼리 실행 실패</div>
-                                                <div style={{ fontSize: 13, color: theme.textSecondary, fontFamily: 'monospace' }}>{error}</div>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                                    <span style={{ fontWeight: 600, color: '#ef4444' }}>쿼리 실행 실패</span>
+                                                    <button 
+                                                        onClick={() => { 
+                                                            navigator.clipboard.writeText(`Error: ${error}\n\nQuery:\n${query}`); 
+                                                            showToast('오류 정보가 복사되었습니다', 'success'); 
+                                                        }}
+                                                        style={{ 
+                                                            ...styles.btnIcon, 
+                                                            padding: '4px 8px', 
+                                                            fontSize: 11,
+                                                            backgroundColor: theme.bgHover,
+                                                            borderRadius: 4
+                                                        }}
+                                                        title="오류 및 쿼리 복사"
+                                                    >
+                                                        📋 복사
+                                                    </button>
+                                                </div>
+                                                <div style={{ 
+                                                    fontSize: 13, 
+                                                    color: theme.textSecondary, 
+                                                    fontFamily: 'monospace',
+                                                    backgroundColor: 'rgba(0,0,0,0.1)',
+                                                    padding: 8,
+                                                    borderRadius: 4,
+                                                    overflowX: 'auto',
+                                                    whiteSpace: 'pre-wrap',
+                                                    wordBreak: 'break-word'
+                                                }}>{error}</div>
                                             </div>
                                         </div>
                                     </div>
@@ -3426,26 +3491,74 @@ export default function EditorPage() {
 
                         {/* Pagination */}
                         {results && totalPages > 1 && (
-                            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: 12, borderTop: `1px solid ${theme.border}` }}>
-                                <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} style={{ ...styles.btn, ...styles.btnSecondary, opacity: currentPage === 1 ? 0.5 : 1 }}>««</button>
-                                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ ...styles.btn, ...styles.btnSecondary, opacity: currentPage === 1 ? 0.5 : 1 }}>‹</button>
-                                <span style={{ fontSize: 13, color: theme.textSecondary }}>Page {currentPage} of {totalPages}</span>
-                                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={{ ...styles.btn, ...styles.btnSecondary, opacity: currentPage === totalPages ? 0.5 : 1 }}>›</button>
-                                <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} style={{ ...styles.btn, ...styles.btnSecondary, opacity: currentPage === totalPages ? 0.5 : 1 }}>»»</button>
-                                {totalPages > 10 && (
-                                    <>
-                                        <div style={{ height: 16, width: 1, backgroundColor: theme.border, margin: '0 4px' }} />
+                            <div style={{ 
+                                display: 'flex', 
+                                justifyContent: 'space-between', 
+                                alignItems: 'center', 
+                                padding: '10px 16px', 
+                                borderTop: `1px solid ${theme.border}`,
+                                backgroundColor: theme.bgHover
+                            }}>
+                                <div style={{ fontSize: 12, color: theme.textMuted }}>
+                                    총 <strong style={{ color: theme.text }}>{filteredRows.length.toLocaleString()}</strong>개 중{' '}
+                                    <strong style={{ color: theme.primary }}>
+                                        {((currentPage - 1) * itemsPerPage + 1).toLocaleString()}-
+                                        {Math.min(currentPage * itemsPerPage, filteredRows.length).toLocaleString()}
+                                    </strong>번째 표시
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <button 
+                                        onClick={() => setCurrentPage(1)} 
+                                        disabled={currentPage === 1} 
+                                        style={{ ...styles.btn, ...styles.btnSecondary, padding: '6px 10px', opacity: currentPage === 1 ? 0.5 : 1 }}
+                                        title="첫 페이지"
+                                    >⏮</button>
+                                    <button 
+                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+                                        disabled={currentPage === 1} 
+                                        style={{ ...styles.btn, ...styles.btnSecondary, padding: '6px 10px', opacity: currentPage === 1 ? 0.5 : 1 }}
+                                        title="이전 페이지"
+                                    >◀</button>
+                                    
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                         <input 
-                                            type="text" 
-                                            placeholder="Go to..." 
-                                            value={pageJumpValue}
-                                            onChange={(e) => setPageJumpValue(e.target.value)}
-                                            onKeyDown={(e) => { if (e.key === 'Enter') handlePageJump(); }}
-                                            style={{ ...styles.input, width: 70, textAlign: 'center' }}
+                                            type="number" 
+                                            value={currentPage}
+                                            onChange={(e) => {
+                                                const val = parseInt(e.target.value);
+                                                if (val >= 1 && val <= totalPages) setCurrentPage(val);
+                                            }}
+                                            style={{ 
+                                                ...styles.input, 
+                                                width: 50, 
+                                                textAlign: 'center', 
+                                                padding: '4px 6px',
+                                                MozAppearance: 'textfield'
+                                            }}
+                                            min={1}
+                                            max={totalPages}
                                         />
-                                        <button onClick={handlePageJump} style={{ ...styles.btn, ...styles.btnSecondary }}>Go</button>
-                                    </>
-                                )}
+                                        <span style={{ color: theme.textMuted, fontSize: 12 }}>/ {totalPages}</span>
+                                    </div>
+                                    
+                                    <button 
+                                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
+                                        disabled={currentPage === totalPages} 
+                                        style={{ ...styles.btn, ...styles.btnSecondary, padding: '6px 10px', opacity: currentPage === totalPages ? 0.5 : 1 }}
+                                        title="다음 페이지"
+                                    >▶</button>
+                                    <button 
+                                        onClick={() => setCurrentPage(totalPages)} 
+                                        disabled={currentPage === totalPages} 
+                                        style={{ ...styles.btn, ...styles.btnSecondary, padding: '6px 10px', opacity: currentPage === totalPages ? 0.5 : 1 }}
+                                        title="마지막 페이지"
+                                    >⏭</button>
+                                </div>
+                                <div style={{ fontSize: 11, color: theme.textMuted }}>
+                                    <kbd style={{ padding: '2px 4px', backgroundColor: theme.bgCard, borderRadius: 3, fontSize: 10 }}>←</kbd>
+                                    <kbd style={{ padding: '2px 4px', backgroundColor: theme.bgCard, borderRadius: 3, fontSize: 10, marginLeft: 2 }}>→</kbd>
+                                    {' '}페이지 이동
+                                </div>
                             </div>
                         )}
                     </div>
