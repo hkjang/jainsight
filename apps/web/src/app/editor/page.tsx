@@ -738,11 +738,21 @@ export default function EditorPage() {
         monacoRef.current = monaco;
         
         // Register keyboard shortcuts in Monaco editor
-        // Ctrl+Enter or F5 to execute query
+        // Ctrl+Enter or F5 to execute query (full query or selected text)
         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-            const executeBtn = document.querySelector('[data-execute-btn]') as HTMLButtonElement;
-            if (executeBtn && !executeBtn.disabled) {
-                executeBtn.click();
+            const selection = editor.getSelection();
+            const selectedText = editor.getModel()?.getValueInRange(selection);
+            
+            if (selectedText && selectedText.trim().length > 0) {
+                // Execute selected text only
+                const event = new CustomEvent('executeSelectedQuery', { detail: selectedText.trim() });
+                window.dispatchEvent(event);
+            } else {
+                // Execute full query
+                const executeBtn = document.querySelector('[data-execute-btn]') as HTMLButtonElement;
+                if (executeBtn && !executeBtn.disabled) {
+                    executeBtn.click();
+                }
             }
         });
         
@@ -750,6 +760,16 @@ export default function EditorPage() {
             const executeBtn = document.querySelector('[data-execute-btn]') as HTMLButtonElement;
             if (executeBtn && !executeBtn.disabled) {
                 executeBtn.click();
+            }
+        });
+        
+        // Ctrl+Shift+Enter to execute selected text only
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter, () => {
+            const selection = editor.getSelection();
+            const selectedText = editor.getModel()?.getValueInRange(selection);
+            if (selectedText && selectedText.trim().length > 0) {
+                const event = new CustomEvent('executeSelectedQuery', { detail: selectedText.trim() });
+                window.dispatchEvent(event);
             }
         });
         
@@ -764,9 +784,84 @@ export default function EditorPage() {
             if (formatBtn) formatBtn.click();
         });
         
+        // Ctrl+/ to toggle comment
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Slash, () => {
+            const selection = editor.getSelection();
+            const startLine = selection.startLineNumber;
+            const endLine = selection.endLineNumber;
+            const model = editor.getModel();
+            
+            const edits: any[] = [];
+            for (let line = startLine; line <= endLine; line++) {
+                const lineContent = model.getLineContent(line);
+                const trimmed = lineContent.trimStart();
+                if (trimmed.startsWith('--')) {
+                    // Remove comment
+                    const commentIndex = lineContent.indexOf('--');
+                    edits.push({
+                        range: { startLineNumber: line, startColumn: commentIndex + 1, endLineNumber: line, endColumn: commentIndex + 3 },
+                        text: ''
+                    });
+                } else {
+                    // Add comment
+                    edits.push({
+                        range: { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 },
+                        text: '-- '
+                    });
+                }
+            }
+            editor.executeEdits('toggle-comment', edits);
+        });
+        
+        // Ctrl+T to add new tab
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyT, () => {
+            const addTabBtn = document.querySelector('[data-add-tab-btn]') as HTMLButtonElement;
+            if (addTabBtn) addTabBtn.click();
+        });
+        
+        // Ctrl+Shift+A for AI assist
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyA, () => {
+            setShowAiModal(true);
+        });
+        
+        // Ctrl+H for history
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyH, () => {
+            setShowHistory(prev => !prev);
+        });
+        
+        // Ctrl+E for explain plan
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyE, () => {
+            const explainBtn = document.querySelector('[data-explain-btn]') as HTMLButtonElement;
+            if (explainBtn && !explainBtn.disabled) explainBtn.click();
+        });
+        
+        // Ctrl+D to duplicate line
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyD, () => {
+            const selection = editor.getSelection();
+            const model = editor.getModel();
+            const lineNumber = selection.startLineNumber;
+            const lineContent = model.getLineContent(lineNumber);
+            editor.executeEdits('duplicate-line', [{
+                range: { startLineNumber: lineNumber, startColumn: 1, endLineNumber: lineNumber, endColumn: 1 },
+                text: lineContent + '\n'
+            }]);
+        });
+        
         // Track cursor position
         editor.onDidChangeCursorPosition((e: any) => {
             setCursorPosition({ line: e.position.lineNumber, column: e.position.column });
+        });
+        
+        // Track selection for status bar
+        editor.onDidChangeCursorSelection((e: any) => {
+            const selection = e.selection;
+            const model = editor.getModel();
+            if (model && !selection.isEmpty()) {
+                const selectedText = model.getValueInRange(selection);
+                const lines = selectedText.split('\n').length;
+                const chars = selectedText.length;
+                // Update selection info (could add state for this)
+            }
         });
         
         // Register SQL completion provider
@@ -1490,6 +1585,67 @@ export default function EditorPage() {
         }
     }, [selectedConnection, query, queryHistory, showToast]);
 
+    // Execute selected query (from Monaco editor selection)
+    const handleExecuteSelectedQuery = useCallback(async (selectedQuery: string) => {
+        if (!selectedConnection) {
+            showToast('Please select a connection first', 'error');
+            return;
+        }
+        if (!selectedQuery.trim()) return;
+        
+        setLoading(true);
+        setError('');
+        setResults(null);
+        setCurrentPage(1);
+        
+        const startTime = performance.now();
+        setQueryStartTime(startTime);
+        setLiveTimer(0);
+        timerRef.current = setInterval(() => {
+            setLiveTimer(performance.now() - startTime);
+        }, 100);
+
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        try {
+            const res = await fetch('/api/query/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ connectionId: selectedConnection, query: selectedQuery }),
+            });
+            const endTime = performance.now();
+            setExecutionTime(endTime - startTime);
+
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.message || 'Query execution failed');
+            }
+            const data = await res.json();
+            setResults(data);
+            showToast(`Selected query: ${data.rowCount} rows in ${formatDuration(endTime - startTime)}`, 'success');
+        } catch (e: any) {
+            setError(e.message);
+            showToast(`Query failed: ${e.message}`, 'error');
+        } finally {
+            setLoading(false);
+            setQueryStartTime(null);
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+        }
+    }, [selectedConnection, showToast]);
+
+    // Listen for executeSelectedQuery custom event
+    useEffect(() => {
+        const handleSelectedQueryEvent = (e: CustomEvent) => {
+            handleExecuteSelectedQuery(e.detail);
+        };
+        window.addEventListener('executeSelectedQuery', handleSelectedQueryEvent as EventListener);
+        return () => window.removeEventListener('executeSelectedQuery', handleSelectedQueryEvent as EventListener);
+    }, [handleExecuteSelectedQuery]);
+
     const handleSaveQuery = async () => {
         if (!saveName) return;
         const token = localStorage.getItem('token');
@@ -2188,7 +2344,7 @@ export default function EditorPage() {
                         </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <button onClick={handleExplainQuery} disabled={explainLoading || !selectedConnection || !query.trim()} style={{ ...styles.btn, ...styles.btnSecondary, opacity: explainLoading || !selectedConnection ? 0.5 : 1 }}>
+                        <button data-explain-btn onClick={handleExplainQuery} disabled={explainLoading || !selectedConnection || !query.trim()} style={{ ...styles.btn, ...styles.btnSecondary, opacity: explainLoading || !selectedConnection ? 0.5 : 1 }}>
                             {explainLoading ? '⏳' : '📊'} Explain
                         </button>
                         {/* Auto Refresh Toggle */}
@@ -3072,27 +3228,86 @@ export default function EditorPage() {
             {/* Shortcuts Modal */}
             {showShortcuts && (
                 <div style={styles.modal} onClick={() => setShowShortcuts(false)}>
-                    <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+                    <div style={{ ...styles.modalContent, maxWidth: 600 }} onClick={e => e.stopPropagation()}>
                         <h3 style={{ margin: '0 0 16px', fontSize: 18 }}>⌨️ Keyboard Shortcuts</h3>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                            {[
-                                ['Execute Query', 'F5 / Ctrl+Enter'],
-                                ['Save Query', 'Ctrl+S'],
-                                ['AI Assist', 'Ctrl+Shift+A'],
-                                ['Format SQL', 'Ctrl+Shift+F'],
-                                ['New Tab', 'Ctrl+T'],
-                                ['Show Shortcuts', 'F1'],
-                                ['Toggle Word Wrap', 'Alt+Z'],
-                                ['Close Modal', 'Esc'],
-                            ].map(([action, keys]) => (
-                                <div key={action} style={{ padding: 10, backgroundColor: theme.bgHover, borderRadius: 6 }}>
-                                    <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 2 }}>{action}</div>
-                                    <div style={{ fontWeight: 500, fontSize: 13 }}>{keys}</div>
-                                </div>
-                            ))}
+                        
+                        {/* Execution */}
+                        <div style={{ marginBottom: 16 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: theme.primary, marginBottom: 8, textTransform: 'uppercase' }}>실행</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                {[
+                                    ['쿼리 실행', 'F5 / Ctrl+Enter'],
+                                    ['선택 영역만 실행', 'Ctrl+Shift+Enter'],
+                                    ['실행 계획 (Explain)', 'Ctrl+E'],
+                                ].map(([action, keys]) => (
+                                    <div key={action} style={{ padding: 10, backgroundColor: theme.bgHover, borderRadius: 6 }}>
+                                        <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 2 }}>{action}</div>
+                                        <div style={{ fontWeight: 500, fontSize: 13 }}>{keys}</div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
+                        
+                        {/* Editing */}
+                        <div style={{ marginBottom: 16 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: theme.success, marginBottom: 8, textTransform: 'uppercase' }}>편집</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                {[
+                                    ['SQL 포맷팅', 'Ctrl+Shift+F'],
+                                    ['주석 토글', 'Ctrl+/'],
+                                    ['행 복제', 'Ctrl+D'],
+                                    ['줄바꿈 토글', 'Alt+Z'],
+                                ].map(([action, keys]) => (
+                                    <div key={action} style={{ padding: 10, backgroundColor: theme.bgHover, borderRadius: 6 }}>
+                                        <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 2 }}>{action}</div>
+                                        <div style={{ fontWeight: 500, fontSize: 13 }}>{keys}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        
+                        {/* Panels */}
+                        <div style={{ marginBottom: 16 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: theme.accent, marginBottom: 8, textTransform: 'uppercase' }}>패널</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                {[
+                                    ['쿼리 저장', 'Ctrl+S'],
+                                    ['AI 어시스트', 'Ctrl+Shift+A'],
+                                    ['히스토리 토글', 'Ctrl+H'],
+                                    ['단축키 도움말', 'F1'],
+                                ].map(([action, keys]) => (
+                                    <div key={action} style={{ padding: 10, backgroundColor: theme.bgHover, borderRadius: 6 }}>
+                                        <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 2 }}>{action}</div>
+                                        <div style={{ fontWeight: 500, fontSize: 13 }}>{keys}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        
+                        {/* Tabs */}
+                        <div style={{ marginBottom: 16 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: theme.warning, marginBottom: 8, textTransform: 'uppercase' }}>탭</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                {[
+                                    ['새 탭', 'Ctrl+T'],
+                                    ['탭 닫기', 'Ctrl+W'],
+                                    ['탭 전환', 'Ctrl+1~9'],
+                                    ['모달 닫기', 'Esc'],
+                                ].map(([action, keys]) => (
+                                    <div key={action} style={{ padding: 10, backgroundColor: theme.bgHover, borderRadius: 6 }}>
+                                        <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 2 }}>{action}</div>
+                                        <div style={{ fontWeight: 500, fontSize: 13 }}>{keys}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        
+                        <div style={{ fontSize: 11, color: theme.textMuted, textAlign: 'center', marginTop: 8 }}>
+                            💡 팁: 쿼리 일부를 선택 후 Ctrl+Enter로 선택한 부분만 실행할 수 있습니다
+                        </div>
+                        
                         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-                            <button onClick={() => setShowShortcuts(false)} style={{ ...styles.btn, ...styles.btnSecondary }}>Close</button>
+                            <button onClick={() => setShowShortcuts(false)} style={{ ...styles.btn, ...styles.btnSecondary }}>닫기</button>
                         </div>
                     </div>
                 </div>
