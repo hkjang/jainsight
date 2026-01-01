@@ -59,6 +59,20 @@ export default function GroupsAdminPage() {
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
     const [users, setUsers] = useState<User[]>([]);
     
+    // Connections state for group sharing
+    interface Connection {
+        id: string;
+        name: string;
+        type: string;
+        host: string;
+        database: string;
+        visibility?: string;
+        sharedWithGroups?: string[];
+    }
+    const [connections, setConnections] = useState<Connection[]>([]);
+    const [showConnectionsModal, setShowConnectionsModal] = useState(false);
+    const [connectionGroup, setConnectionGroup] = useState<Group | null>(null);
+    
     const [newGroupName, setNewGroupName] = useState('');
     const [newGroupType, setNewGroupType] = useState<'organization' | 'project' | 'task'>('project');
     const [newGroupDescription, setNewGroupDescription] = useState('');
@@ -75,6 +89,7 @@ export default function GroupsAdminPage() {
     const [editGroupParent, setEditGroupParent] = useState<string>('');
     const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
     const [selectedUserId, setSelectedUserId] = useState<string>('');
+
 
     const fetchGroups = useCallback(async () => {
         try {
@@ -122,7 +137,51 @@ export default function GroupsAdminPage() {
         } catch (error) { console.error('Failed to fetch users:', error); }
     }, []);
 
+    const fetchConnections = useCallback(async () => {
+        const token = localStorage.getItem('token');
+        try {
+            const response = await fetch(`${API_URL}/connections`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+                setConnections(await response.json());
+            }
+        } catch (error) { console.error('Failed to fetch connections:', error); }
+    }, []);
+
+    const openConnectionsModal = async (group: Group) => {
+        setConnectionGroup(group);
+        await fetchConnections();
+        setShowConnectionsModal(true);
+    };
+
+    const toggleConnectionSharing = async (connectionId: string, groupId: string, isShared: boolean) => {
+        const token = localStorage.getItem('token');
+        const conn = connections.find(c => c.id === connectionId);
+        if (!conn) return;
+
+        const newSharedGroups = isShared
+            ? (conn.sharedWithGroups || []).filter(g => g !== groupId)
+            : [...(conn.sharedWithGroups || []), groupId];
+
+        try {
+            const response = await fetch(`${API_URL}/connections/${connectionId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    visibility: newSharedGroups.length > 0 ? 'group' : 'private',
+                    sharedWithGroups: newSharedGroups
+                })
+            });
+            if (response.ok) {
+                await fetchConnections();
+                showNotification(`연결 ${isShared ? '공유 해제' : '공유 추가'} 완료`, 'success');
+            }
+        } catch (error) { console.error('Failed to update connection:', error); }
+    };
+
     useEffect(() => { fetchGroups(); fetchUsers(); }, [fetchGroups, fetchUsers]);
+
 
     const handleCreateGroup = async () => {
         if (!newGroupName) return;
@@ -282,6 +341,7 @@ export default function GroupsAdminPage() {
                     <div style={{ display: 'flex', gap: '8px' }} onClick={e => e.stopPropagation()}>
                         <button onClick={() => handleOpenEditModal(group)} style={{ padding: '4px 12px', background: `${darkTheme.accentBlue}20`, color: darkTheme.accentBlue, border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>✏️</button>
                         <button onClick={() => handleOpenMembers(group)} style={{ padding: '4px 12px', background: `${darkTheme.accentPurple}20`, color: darkTheme.accentPurple, border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>멤버</button>
+                        <button onClick={() => openConnectionsModal(group)} style={{ padding: '4px 12px', background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>🔌 연결</button>
                         <button onClick={() => handleDeleteGroup(group.id)} style={{ padding: '4px 12px', background: `${darkTheme.accentRed}20`, color: darkTheme.accentRed, border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>삭제</button>
                     </div>
                 </div>
@@ -503,6 +563,70 @@ export default function GroupsAdminPage() {
                         <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                             <button style={darkStyles.buttonSecondary} onClick={() => setShowEditModal(false)}>취소</button>
                             <button style={darkStyles.button} onClick={handleEditGroup}>💾 저장</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Connections Modal */}
+            {showConnectionsModal && connectionGroup && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+                    <div style={{ background: darkTheme.bgPrimary, border: `1px solid ${darkTheme.border}`, borderRadius: '16px', padding: '24px', width: '600px', maxWidth: '95vw', maxHeight: '80vh', overflow: 'auto' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                            <div>
+                                <h3 style={{ color: darkTheme.textPrimary, margin: 0, fontSize: '18px' }}>🔌 DB 연결 관리</h3>
+                                <p style={{ color: darkTheme.textSecondary, margin: '4px 0 0 0', fontSize: '13px' }}>
+                                    <span style={{ color: '#10b981', fontWeight: 600 }}>{connectionGroup.name}</span> 그룹에 공유할 연결 선택
+                                </p>
+                            </div>
+                            <button onClick={() => setShowConnectionsModal(false)} style={{ background: 'none', border: 'none', color: darkTheme.textSecondary, cursor: 'pointer', fontSize: '20px' }}>✕</button>
+                        </div>
+
+                        {connections.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '40px', color: darkTheme.textSecondary }}>
+                                <div style={{ fontSize: '40px', marginBottom: '12px' }}>🔌</div>
+                                <p>DB 연결이 없습니다.</p>
+                                <a href="/connections/create" style={{ color: '#10b981' }}>새 연결 추가 →</a>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {connections.map(conn => {
+                                    const isShared = conn.sharedWithGroups?.includes(connectionGroup.id) || false;
+                                    return (
+                                        <div key={conn.id} style={{
+                                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                            padding: '14px 16px', borderRadius: '10px',
+                                            background: isShared ? 'rgba(16, 185, 129, 0.1)' : darkTheme.bgCard,
+                                            border: isShared ? '2px solid #10b981' : `1px solid ${darkTheme.border}`,
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                <span style={{ fontSize: '20px' }}>
+                                                    {conn.type === 'postgresql' ? '🐘' : conn.type === 'mysql' ? '🐬' : conn.type === 'mssql' ? '🔷' : '🗄️'}
+                                                </span>
+                                                <div>
+                                                    <div style={{ fontWeight: 600, color: darkTheme.textPrimary, fontSize: '14px' }}>{conn.name}</div>
+                                                    <div style={{ fontSize: '12px', color: darkTheme.textSecondary }}>{conn.host} / {conn.database}</div>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => toggleConnectionSharing(conn.id, connectionGroup.id, isShared)}
+                                                style={{
+                                                    padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+                                                    background: isShared ? '#10b981' : 'rgba(99, 102, 241, 0.15)',
+                                                    color: isShared ? 'white' : '#a5b4fc',
+                                                    border: 'none',
+                                                }}
+                                            >
+                                                {isShared ? '✓ 공유 중' : '+ 공유'}
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: `1px solid ${darkTheme.border}`, display: 'flex', justifyContent: 'flex-end' }}>
+                            <button style={darkStyles.buttonSecondary} onClick={() => setShowConnectionsModal(false)}>닫기</button>
                         </div>
                     </div>
                 </div>
