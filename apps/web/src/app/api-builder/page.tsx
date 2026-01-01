@@ -158,6 +158,12 @@ export default function ApiBuilderPage() {
     const [cacheTtl, setCacheTtl] = useState(0);
     const [visibility, setVisibility] = useState<'private' | 'group' | 'public'>('private');
     const [isActive, setIsActive] = useState(true);
+    // === NEW: Additional Editor State ===
+    const [queryTimeout, setQueryTimeout] = useState(30000); // Default 30s
+    const [rateLimit, setRateLimit] = useState({ requests: 100, windowSeconds: 60 });
+    const [allowedOrigins, setAllowedOrigins] = useState<string[]>([]);
+    const [showAdvancedConfig, setShowAdvancedConfig] = useState(false);
+    const [showApiInfo, setShowApiInfo] = useState(false);
 
     // Test Modal State
     const [showTestModal, setShowTestModal] = useState(false);
@@ -572,13 +578,20 @@ export default function ApiBuilderPage() {
                     connectionId,
                     cacheTtl: cacheTtl || null,
                     isActive,
-                    visibility
+                    visibility,
+                    // New fields
+                    tags: editingTags.length > 0 ? editingTags : null,
+                    timeout: queryTimeout,
+                    rateLimit: rateLimit.requests > 0 ? rateLimit : null,
+                    webhookUrl: editingWebhookUrl || null,
+                    webhookEvents: editingWebhookEvents.length > 0 ? editingWebhookEvents : null,
                 })
             });
 
             if (res.ok) {
                 setView('list');
                 fetchTemplates();
+                fetchTags(); // Refresh tags
                 resetEditor();
                 showToast(editingApiId ? 'API 수정 완료' : 'API 생성 완료', 'success');
             } else {
@@ -635,6 +648,13 @@ export default function ApiBuilderPage() {
         setInlineTestParams({});
         setInlineTestResult(null);
         setShowInlineTestPanel(false);
+        // Reset new fields
+        setEditingTags([]);
+        setQueryTimeout(30000);
+        setRateLimit({ requests: 100, windowSeconds: 60 });
+        setEditingWebhookUrl('');
+        setEditingWebhookEvents([]);
+        setShowAdvancedConfig(false);
     };
 
     const handleEditApi = (api: ApiTemplate) => {
@@ -647,6 +667,13 @@ export default function ApiBuilderPage() {
         setCacheTtl(api.cacheTtl || 0);
         setIsActive(api.isActive !== false);
         setVisibility((api as any).visibility || 'private');
+        // Load new fields
+        setEditingTags(api.tags || []);
+        setQueryTimeout(api.timeout || 30000);
+        setRateLimit(api.rateLimit || { requests: 100, windowSeconds: 60 });
+        setEditingWebhookUrl(api.webhookUrl || '');
+        setEditingWebhookEvents(api.webhookEvents || []);
+        setShowAdvancedConfig(false);
         setView('editor');
     };
 
@@ -1362,7 +1389,7 @@ class Program
     }
 
     return (
-        <div style={{ padding: '32px', maxWidth: '1200px', margin: '0 auto' }}>
+        <div style={{ padding: '24px', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* Toast Notification */}
             {toast && (
                 <div style={{
@@ -2232,7 +2259,9 @@ class Program
                     animation: 'fadeSlideUp 0.4s ease-out',
                     display: 'flex',
                     flexDirection: 'column',
-                    height: 'calc(100vh - 120px)',
+                    flex: 1,
+                    minHeight: 0,
+                    overflow: 'hidden',
                 }}>
                     {/* Compact Header - SQL Editor Style */}
                     <div style={{ 
@@ -2374,414 +2403,505 @@ class Program
                         </button>
                     </div>
 
-                    {/* Split-Pane Layout */}
+                    {/* Description & Tags Row */}
                     <div style={{
                         display: 'flex',
+                        gap: '16px',
+                        padding: '12px 16px',
+                        background: 'rgba(30, 27, 75, 0.5)',
+                        borderBottom: '1px solid rgba(99, 102, 241, 0.15)',
+                    }}>
+                        {/* Description Input */}
+                        <div style={{ flex: 2 }}>
+                            <label style={{ 
+                                fontSize: '11px', 
+                                color: '#94a3b8', 
+                                marginBottom: '4px',
+                                display: 'block',
+                            }}>
+                                📝 설명
+                            </label>
+                            <input
+                                type="text"
+                                placeholder="API 설명을 입력하세요 (예: 사용자 정보 조회 API)"
+                                value={description}
+                                onChange={(e) => setDescription(e.target.value)}
+                                style={{
+                                    width: '100%',
+                                    padding: '8px 12px',
+                                    background: 'rgba(15, 23, 42, 0.6)',
+                                    border: '1px solid rgba(99, 102, 241, 0.2)',
+                                    borderRadius: '8px',
+                                    color: '#e2e8f0',
+                                    fontSize: '13px',
+                                    outline: 'none',
+                                }}
+                            />
+                        </div>
+
+                        {/* Tags Input */}
+                        <div style={{ flex: 1 }}>
+                            <label style={{ 
+                                fontSize: '11px', 
+                                color: '#94a3b8', 
+                                marginBottom: '4px',
+                                display: 'block',
+                            }}>
+                                🏷️ 태그
+                            </label>
+                            <div style={{
+                                display: 'flex',
+                                gap: '6px',
+                                flexWrap: 'wrap',
+                                alignItems: 'center',
+                                padding: '6px 10px',
+                                background: 'rgba(15, 23, 42, 0.6)',
+                                border: '1px solid rgba(99, 102, 241, 0.2)',
+                                borderRadius: '8px',
+                                minHeight: '36px',
+                            }}>
+                                {editingTags.map(tag => (
+                                    <span 
+                                        key={tag}
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            padding: '2px 8px',
+                                            background: 'rgba(99, 102, 241, 0.25)',
+                                            borderRadius: '12px',
+                                            fontSize: '11px',
+                                            color: '#a5b4fc',
+                                        }}
+                                    >
+                                        {tag}
+                                        <button
+                                            onClick={() => removeTag(tag)}
+                                            style={{
+                                                background: 'none',
+                                                border: 'none',
+                                                color: '#a5b4fc',
+                                                cursor: 'pointer',
+                                                padding: '0 2px',
+                                                fontSize: '12px',
+                                                lineHeight: 1,
+                                            }}
+                                        >
+                                            ×
+                                        </button>
+                                    </span>
+                                ))}
+                                <input
+                                    type="text"
+                                    placeholder="태그 추가..."
+                                    value={newTagInput}
+                                    onChange={(e) => setNewTagInput(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ',') {
+                                            e.preventDefault();
+                                            addTag();
+                                        }
+                                    }}
+                                    style={{
+                                        flex: 1,
+                                        minWidth: '80px',
+                                        background: 'transparent',
+                                        border: 'none',
+                                        color: '#e2e8f0',
+                                        fontSize: '12px',
+                                        outline: 'none',
+                                    }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Toggle Advanced Config */}
+                        <button
+                            onClick={() => setShowAdvancedConfig(!showAdvancedConfig)}
+                            style={{
+                                padding: '8px 12px',
+                                background: showAdvancedConfig ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.1)',
+                                border: `1px solid ${showAdvancedConfig ? 'rgba(99, 102, 241, 0.5)' : 'rgba(99, 102, 241, 0.2)'}`,
+                                borderRadius: '8px',
+                                color: '#a5b4fc',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                alignSelf: 'flex-end',
+                            }}
+                        >
+                            ⚙️ 고급 설정 {showAdvancedConfig ? '▲' : '▼'}
+                        </button>
+                    </div>
+
+                    {/* Advanced Configuration Panel */}
+                    {showAdvancedConfig && (
+                        <div style={{
+                            padding: '16px',
+                            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.05))',
+                            borderBottom: '1px solid rgba(99, 102, 241, 0.15)',
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                            gap: '16px',
+                        }}>
+                            {/* Active Status */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <label style={{ 
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    color: '#e2e8f0',
+                                    fontSize: '13px',
+                                    cursor: 'pointer',
+                                }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={isActive}
+                                        onChange={(e) => setIsActive(e.target.checked)}
+                                        style={{ accentColor: '#10b981' }}
+                                    />
+                                    🟢 활성화
+                                </label>
+                            </div>
+
+                            {/* Cache TTL */}
+                            <div>
+                                <label style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px', display: 'block' }}>
+                                    💾 캐시 TTL (초)
+                                </label>
+                                <input
+                                    type="number"
+                                    value={cacheTtl}
+                                    onChange={(e) => setCacheTtl(parseInt(e.target.value) || 0)}
+                                    min={0}
+                                    placeholder="0 = 캐시 없음"
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px 10px',
+                                        background: 'rgba(15, 23, 42, 0.6)',
+                                        border: '1px solid rgba(99, 102, 241, 0.2)',
+                                        borderRadius: '6px',
+                                        color: '#e2e8f0',
+                                        fontSize: '12px',
+                                        outline: 'none',
+                                    }}
+                                />
+                            </div>
+
+                            {/* Timeout */}
+                            <div>
+                                <label style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px', display: 'block' }}>
+                                    ⏱️ 타임아웃 (ms)
+                                </label>
+                                <input
+                                    type="number"
+                                    value={queryTimeout}
+                                    onChange={(e) => setQueryTimeout(parseInt(e.target.value) || 30000)}
+                                    min={1000}
+                                    step={1000}
+                                    placeholder="30000"
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px 10px',
+                                        background: 'rgba(15, 23, 42, 0.6)',
+                                        border: '1px solid rgba(99, 102, 241, 0.2)',
+                                        borderRadius: '6px',
+                                        color: '#e2e8f0',
+                                        fontSize: '12px',
+                                        outline: 'none',
+                                    }}
+                                />
+                            </div>
+
+                            {/* Rate Limit */}
+                            <div>
+                                <label style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px', display: 'block' }}>
+                                    🚦 Rate Limit
+                                </label>
+                                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                    <input
+                                        type="number"
+                                        value={rateLimit.requests}
+                                        onChange={(e) => setRateLimit(prev => ({ ...prev, requests: parseInt(e.target.value) || 100 }))}
+                                        min={1}
+                                        style={{
+                                            width: '70px',
+                                            padding: '8px 10px',
+                                            background: 'rgba(15, 23, 42, 0.6)',
+                                            border: '1px solid rgba(99, 102, 241, 0.2)',
+                                            borderRadius: '6px',
+                                            color: '#e2e8f0',
+                                            fontSize: '12px',
+                                            outline: 'none',
+                                        }}
+                                    />
+                                    <span style={{ color: '#64748b', fontSize: '11px' }}>요청 /</span>
+                                    <input
+                                        type="number"
+                                        value={rateLimit.windowSeconds}
+                                        onChange={(e) => setRateLimit(prev => ({ ...prev, windowSeconds: parseInt(e.target.value) || 60 }))}
+                                        min={1}
+                                        style={{
+                                            width: '60px',
+                                            padding: '8px 10px',
+                                            background: 'rgba(15, 23, 42, 0.6)',
+                                            border: '1px solid rgba(99, 102, 241, 0.2)',
+                                            borderRadius: '6px',
+                                            color: '#e2e8f0',
+                                            fontSize: '12px',
+                                            outline: 'none',
+                                        }}
+                                    />
+                                    <span style={{ color: '#64748b', fontSize: '11px' }}>초</span>
+                                </div>
+                            </div>
+
+                            {/* Webhook URL */}
+                            <div style={{ gridColumn: 'span 2' }}>
+                                <label style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px', display: 'block' }}>
+                                    🔔 Webhook URL (선택)
+                                </label>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <input
+                                        type="url"
+                                        value={editingWebhookUrl}
+                                        onChange={(e) => setEditingWebhookUrl(e.target.value)}
+                                        placeholder="https://example.com/webhook"
+                                        style={{
+                                            flex: 1,
+                                            padding: '8px 10px',
+                                            background: 'rgba(15, 23, 42, 0.6)',
+                                            border: '1px solid rgba(99, 102, 241, 0.2)',
+                                            borderRadius: '6px',
+                                            color: '#e2e8f0',
+                                            fontSize: '12px',
+                                            outline: 'none',
+                                        }}
+                                    />
+                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                        {(['success', 'error', 'all'] as const).map(event => (
+                                            <button
+                                                key={event}
+                                                onClick={() => {
+                                                    setEditingWebhookEvents(prev => 
+                                                        prev.includes(event) 
+                                                            ? prev.filter(e => e !== event)
+                                                            : [...prev, event]
+                                                    );
+                                                }}
+                                                style={{
+                                                    padding: '6px 10px',
+                                                    background: editingWebhookEvents.includes(event) 
+                                                        ? event === 'success' ? 'rgba(16, 185, 129, 0.3)'
+                                                        : event === 'error' ? 'rgba(239, 68, 68, 0.3)'
+                                                        : 'rgba(99, 102, 241, 0.3)'
+                                                        : 'rgba(99, 102, 241, 0.1)',
+                                                    border: '1px solid rgba(99, 102, 241, 0.2)',
+                                                    borderRadius: '6px',
+                                                    color: editingWebhookEvents.includes(event) ? '#e2e8f0' : '#64748b',
+                                                    cursor: 'pointer',
+                                                    fontSize: '10px',
+                                                }}
+                                            >
+                                                {event === 'success' ? '✓' : event === 'error' ? '✗' : '★'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Unified IDE-Style Layout */}
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
                         flex: 1,
                         background: 'rgba(30, 27, 75, 0.4)',
                         borderRadius: '0 0 12px 12px',
                         overflow: 'hidden',
+                        gap: '1px',
                     }}>
-                        {/* Left Panel: SQL Editor */}
+                        {/* Top Row: SQL Editor + Parameters */}
                         <div style={{
-                            flex: leftPanelWidth,
                             display: 'flex',
-                            flexDirection: 'column',
-                            borderRight: '1px solid rgba(99, 102, 241, 0.2)',
-                            overflow: 'hidden',
+                            flex: 3,
+                            minHeight: '300px',
+                            gap: '1px',
                         }}>
-                        {/* SQL Editor with minimal header - existing code continues below */}
-                        <div style={{
-                            background: 'rgba(30, 27, 75, 0.5)',
-                            borderRadius: '16px',
-                            border: '1px solid rgba(99, 102, 241, 0.2)',
-                            overflow: 'hidden',
-                        }}>
+                            {/* Left: SQL Editor */}
                             <div style={{
-                                padding: '16px 20px',
-                                borderBottom: '1px solid rgba(99, 102, 241, 0.15)',
+                                flex: 6,
                                 display: 'flex',
-                                gap: '16px',
-                                alignItems: 'center',
+                                flexDirection: 'column',
+                                background: 'rgba(30, 27, 75, 0.6)',
+                                overflow: 'hidden',
                             }}>
-                                <input
-                                    type="text"
-                                    placeholder="API 이름 *"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    style={{
-                                        flex: 1,
-                                        padding: '10px 14px',
-                                        background: 'rgba(15, 23, 42, 0.6)',
-                                        border: '1px solid rgba(99, 102, 241, 0.2)',
-                                        borderRadius: '8px',
-                                        color: '#e2e8f0',
-                                        fontSize: '14px',
-                                        outline: 'none',
-                                    }}
-                                />
-                                <select
-                                    value={connectionId}
-                                    onChange={(e) => setConnectionId(e.target.value)}
-                                    style={{
-                                        padding: '10px 14px',
-                                        background: 'rgba(15, 23, 42, 0.6)',
-                                        border: '1px solid rgba(99, 102, 241, 0.2)',
-                                        borderRadius: '8px',
-                                        color: '#e2e8f0',
-                                        fontSize: '14px',
-                                        outline: 'none',
-                                        cursor: 'pointer',
-                                        minWidth: '180px',
-                                    }}
-                                >
-                                    <option value="">연결 선택 *</option>
-                                    {connections.map(c => (
-                                        <option key={c.id} value={c.id}>{c.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* Enhanced Editor Toolbar */}
-                            <div style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                padding: '10px 16px',
-                                background: 'rgba(15, 23, 42, 0.4)',
-                                borderBottom: '1px solid rgba(99, 102, 241, 0.15)',
-                                gap: '12px',
-                                flexWrap: 'wrap',
-                            }}>
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                    {/* Templates Dropdown */}
-                                    <div style={{ position: 'relative' }}>
-                                        <button
-                                            onClick={() => { setShowTemplatesDropdown(!showTemplatesDropdown); setShowSnippetsDropdown(false); }}
-                                            style={{
-                                                padding: '6px 12px',
-                                                background: showTemplatesDropdown ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.15)',
-                                                border: '1px solid rgba(99, 102, 241, 0.3)',
-                                                borderRadius: '6px',
-                                                color: '#a5b4fc',
-                                                cursor: 'pointer',
-                                                fontSize: '12px',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '4px',
-                                            }}
-                                        >
-                                            📝 템플릿 ▾
-                                        </button>
-                                        {showTemplatesDropdown && (
-                                            <div style={{
-                                                position: 'absolute',
-                                                top: '100%',
-                                                left: 0,
-                                                marginTop: '4px',
-                                                width: '280px',
-                                                background: 'rgba(30, 27, 75, 0.98)',
-                                                border: '1px solid rgba(99, 102, 241, 0.3)',
-                                                borderRadius: '10px',
-                                                boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                                                zIndex: 50,
-                                                overflow: 'hidden',
-                                            }}>
-                                                <div style={{ padding: '8px 12px', borderBottom: '1px solid rgba(99, 102, 241, 0.2)', fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>
-                                                    SQL 템플릿 선택
-                                                </div>
-                                                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                                {/* Editor Toolbar */}
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '8px 12px',
+                                    background: 'rgba(15, 23, 42, 0.5)',
+                                    borderBottom: '1px solid rgba(99, 102, 241, 0.2)',
+                                    gap: '8px',
+                                    flexWrap: 'wrap',
+                                }}>
+                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#a5b4fc' }}>📝 SQL 쿼리</span>
+                                        {/* Templates Dropdown */}
+                                        <div style={{ position: 'relative' }}>
+                                            <button
+                                                onClick={() => { setShowTemplatesDropdown(!showTemplatesDropdown); setShowSnippetsDropdown(false); }}
+                                                style={{
+                                                    padding: '4px 10px',
+                                                    background: showTemplatesDropdown ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.15)',
+                                                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                                                    borderRadius: '6px',
+                                                    color: '#a5b4fc',
+                                                    cursor: 'pointer',
+                                                    fontSize: '11px',
+                                                }}
+                                            >
+                                                📋 템플릿
+                                            </button>
+                                            {showTemplatesDropdown && (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: '100%',
+                                                    left: 0,
+                                                    marginTop: '4px',
+                                                    width: '260px',
+                                                    background: 'rgba(30, 27, 75, 0.98)',
+                                                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                                                    borderRadius: '10px',
+                                                    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                                                    zIndex: 50,
+                                                    maxHeight: '300px',
+                                                    overflowY: 'auto',
+                                                }}>
+                                                    <div style={{ padding: '8px 12px', borderBottom: '1px solid rgba(99, 102, 241, 0.2)', fontSize: '11px', color: '#94a3b8' }}>
+                                                        SQL 템플릿
+                                                    </div>
                                                     {SQL_TEMPLATES.map((t, i) => (
                                                         <button
                                                             key={i}
                                                             onClick={() => insertTemplate(t)}
                                                             style={{
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                gap: '10px',
+                                                                display: 'block',
                                                                 width: '100%',
                                                                 padding: '10px 12px',
                                                                 background: 'transparent',
                                                                 border: 'none',
-                                                                borderBottom: '1px solid rgba(99, 102, 241, 0.1)',
+                                                                textAlign: 'left',
                                                                 color: '#e2e8f0',
                                                                 cursor: 'pointer',
-                                                                textAlign: 'left',
                                                                 fontSize: '12px',
-                                                                transition: 'background 0.15s',
                                                             }}
-                                                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.15)'}
-                                                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                         >
-                                                            <span style={{ fontSize: '16px' }}>{t.icon}</span>
-                                                            <div>
-                                                                <div style={{ fontWeight: 500 }}>{t.name}</div>
-                                                                <div style={{ fontSize: '10px', color: '#64748b' }}>{t.desc}</div>
-                                                            </div>
+                                                            {t.name}
                                                         </button>
                                                     ))}
                                                 </div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Snippets Dropdown */}
-                                    <div style={{ position: 'relative' }}>
+                                            )}
+                                        </div>
+                                        {/* AI Assist */}
                                         <button
-                                            onClick={() => { setShowSnippetsDropdown(!showSnippetsDropdown); setShowTemplatesDropdown(false); }}
+                                            onClick={() => setShowAiAssist(!showAiAssist)}
                                             style={{
-                                                padding: '6px 12px',
-                                                background: showSnippetsDropdown ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.15)',
-                                                border: '1px solid rgba(99, 102, 241, 0.3)',
+                                                padding: '4px 10px',
+                                                background: showAiAssist ? 'rgba(168, 85, 247, 0.3)' : 'rgba(168, 85, 247, 0.15)',
+                                                border: 'none',
                                                 borderRadius: '6px',
-                                                color: '#a5b4fc',
+                                                color: '#c084fc',
+                                                cursor: 'pointer',
+                                                fontSize: '11px',
+                                            }}
+                                        >
+                                            ✨ AI
+                                        </button>
+                                        {/* Word Wrap */}
+                                        <button
+                                            onClick={() => setWordWrap(!wordWrap)}
+                                            title={wordWrap ? 'Word Wrap 끄기' : 'Word Wrap 켜기'}
+                                            style={{
+                                                padding: '4px 8px',
+                                                background: wordWrap ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.1)',
+                                                border: 'none',
+                                                borderRadius: '6px',
+                                                color: wordWrap ? '#a5b4fc' : '#64748b',
                                                 cursor: 'pointer',
                                                 fontSize: '12px',
+                                            }}
+                                        >
+                                            ↩️
+                                        </button>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                        {/* Query Complexity */}
+                                        <div style={{
+                                            padding: '3px 8px',
+                                            borderRadius: '4px',
+                                            fontSize: '10px',
+                                            fontWeight: 500,
+                                            background: getQueryComplexity() === 'high' ? 'rgba(239, 68, 68, 0.15)' : getQueryComplexity() === 'medium' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                                            color: getQueryComplexity() === 'high' ? '#f87171' : getQueryComplexity() === 'medium' ? '#fbbf24' : '#10b981',
+                                        }}>
+                                            {getQueryComplexity() === 'high' ? '🔴' : getQueryComplexity() === 'medium' ? '🟡' : '🟢'} {getQueryComplexity().toUpperCase()}
+                                        </div>
+                                        {/* Connection Status */}
+                                        <button
+                                            onClick={testConnection}
+                                            disabled={!connectionId || connectionStatus === 'testing'}
+                                            style={{
+                                                padding: '3px 8px',
+                                                borderRadius: '4px',
+                                                fontSize: '10px',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 gap: '4px',
-                                            }}
-                                        >
-                                            ⚡ 스니펫 ▾
-                                        </button>
-                                        {showSnippetsDropdown && (
-                                            <div style={{
-                                                position: 'absolute',
-                                                top: '100%',
-                                                left: 0,
-                                                marginTop: '4px',
-                                                width: '240px',
-                                                background: 'rgba(30, 27, 75, 0.98)',
-                                                border: '1px solid rgba(99, 102, 241, 0.3)',
-                                                borderRadius: '10px',
-                                                boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                                                zIndex: 50,
-                                                overflow: 'hidden',
-                                            }}>
-                                                <div style={{ padding: '8px 12px', borderBottom: '1px solid rgba(99, 102, 241, 0.2)', fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>
-                                                    SQL 스니펫 추가
-                                                </div>
-                                                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                                                    {SQL_SNIPPETS.map((s, i) => (
-                                                        <button
-                                                            key={i}
-                                                            onClick={() => insertSnippet(s)}
-                                                            style={{
-                                                                display: 'flex',
-                                                                justifyContent: 'space-between',
-                                                                alignItems: 'center',
-                                                                width: '100%',
-                                                                padding: '8px 12px',
-                                                                background: 'transparent',
-                                                                border: 'none',
-                                                                borderBottom: '1px solid rgba(99, 102, 241, 0.1)',
-                                                                color: '#e2e8f0',
-                                                                cursor: 'pointer',
-                                                                textAlign: 'left',
-                                                                fontSize: '12px',
-                                                                transition: 'background 0.15s',
-                                                            }}
-                                                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.15)'}
-                                                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                                        >
-                                                            <span style={{ fontWeight: 500, color: '#a78bfa' }}>{s.name}</span>
-                                                            <span style={{ fontSize: '10px', color: '#64748b' }}>{s.desc}</span>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div style={{ width: '1px', height: '20px', background: 'rgba(99, 102, 241, 0.2)' }} />
-
-                                    {/* Format Button */}
-                                    <button
-                                        onClick={() => { setSql(formatSQL(sql)); showToast('SQL 포맷팅 완료', 'success'); }}
-                                        title="SQL 포맷 (Ctrl+Shift+F)"
-                                        style={{
-                                            padding: '6px 10px',
-                                            background: 'rgba(99, 102, 241, 0.1)',
-                                            border: '1px solid rgba(99, 102, 241, 0.2)',
-                                            borderRadius: '6px',
-                                            color: '#94a3b8',
-                                            cursor: 'pointer',
-                                            fontSize: '14px',
-                                        }}
-                                    >
-                                        ✨
-                                    </button>
-
-                                    {/* Copy Button */}
-                                    <button
-                                        onClick={copySqlToClipboard}
-                                        title="SQL 복사"
-                                        style={{
-                                            padding: '6px 10px',
-                                            background: 'rgba(99, 102, 241, 0.1)',
-                                            border: '1px solid rgba(99, 102, 241, 0.2)',
-                                            borderRadius: '6px',
-                                            color: '#94a3b8',
-                                            cursor: 'pointer',
-                                            fontSize: '14px',
-                                        }}
-                                    >
-                                        📋
-                                    </button>
-
-                                    {/* Clear Button */}
-                                    <button
-                                        onClick={() => { setSql(''); showToast('SQL 초기화됨', 'info'); }}
-                                        title="SQL 초기화"
-                                        style={{
-                                            padding: '6px 10px',
-                                            background: 'rgba(239, 68, 68, 0.1)',
-                                            border: '1px solid rgba(239, 68, 68, 0.2)',
-                                            borderRadius: '6px',
-                                            color: '#f87171',
-                                            cursor: 'pointer',
-                                            fontSize: '14px',
-                                        }}
-                                    >
-                                        🗑️
-                                    </button>
-
-                                    {/* Word Wrap Toggle */}
-                                    <button
-                                        onClick={() => setWordWrap(!wordWrap)}
-                                        title={wordWrap ? 'Word Wrap 끄기' : 'Word Wrap 켜기'}
-                                        style={{
-                                            padding: '6px 10px',
-                                            background: wordWrap ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.1)',
-                                            border: '1px solid rgba(99, 102, 241, 0.2)',
-                                            borderRadius: '6px',
-                                            color: wordWrap ? '#a5b4fc' : '#64748b',
-                                            cursor: 'pointer',
-                                            fontSize: '14px',
-                                        }}
-                                    >
-                                        ↩️
-                                    </button>
-                                </div>
-
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                    {/* Query Complexity Indicator */}
-                                    <div style={{
-                                        padding: '4px 10px',
-                                        borderRadius: '6px',
-                                        fontSize: '11px',
-                                        fontWeight: 500,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        background: getQueryComplexity() === 'high' ? 'rgba(239, 68, 68, 0.15)' : getQueryComplexity() === 'medium' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                                        color: getQueryComplexity() === 'high' ? '#f87171' : getQueryComplexity() === 'medium' ? '#fbbf24' : '#10b981',
-                                    }} title="쿼리 복잡도. 높으면 LIMIT나 인덱스를 고려하세요.">
-                                        {getQueryComplexity() === 'high' ? '🔴' : getQueryComplexity() === 'medium' ? '🟡' : '🟢'}
-                                        {getQueryComplexity().toUpperCase()}
-                                    </div>
-
-                                    {/* AI Assist Button */}
-                                    <button
-                                        onClick={() => setShowAiAssist(!showAiAssist)}
-                                        style={{
-                                            padding: '4px 10px',
-                                            borderRadius: '6px',
-                                            fontSize: '11px',
-                                            fontWeight: 500,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                            background: showAiAssist ? 'rgba(168, 85, 247, 0.3)' : 'rgba(168, 85, 247, 0.15)',
-                                            color: '#c084fc',
-                                            border: showAiAssist ? '1px solid rgba(168, 85, 247, 0.5)' : 'none',
-                                            cursor: 'pointer',
-                                        }}
-                                        title="AI로 SQL 생성"
-                                    >
-                                        ✨ AI Assist
-                                    </button>
-
-                                    {/* Connection Status */}
-                                    <button
-                                        onClick={testConnection}
-                                        disabled={!connectionId || connectionStatus === 'testing'}
-                                        title="연결 테스트"
-                                        style={{
-                                            padding: '4px 10px',
-                                            borderRadius: '6px',
-                                            fontSize: '11px',
-                                            fontWeight: 500,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                            background: connectionStatus === 'connected' ? 'rgba(16, 185, 129, 0.15)' : connectionStatus === 'failed' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(99, 102, 241, 0.1)',
-                                            color: connectionStatus === 'connected' ? '#10b981' : connectionStatus === 'failed' ? '#f87171' : '#94a3b8',
-                                            border: 'none',
-                                            cursor: connectionId ? 'pointer' : 'not-allowed',
-                                        }}
-                                    >
-                                        <span style={{
-                                            width: '6px',
-                                            height: '6px',
-                                            borderRadius: '50%',
-                                            background: connectionStatus === 'connected' ? '#10b981' : connectionStatus === 'failed' ? '#ef4444' : connectionStatus === 'testing' ? '#f59e0b' : '#64748b',
-                                            animation: connectionStatus === 'testing' ? 'pulse 1s infinite' : 'none',
-                                        }} />
-                                        {connectionStatus === 'testing' ? '테스트 중...' : connectionStatus === 'connected' ? '연결됨' : connectionStatus === 'failed' ? '실패' : '연결 테스트'}
-                                    </button>
-
-                                    {/* Keyboard Shortcuts Hint */}
-                                    <div style={{ fontSize: '10px', color: '#64748b' }}>
-                                        F5/Ctrl+Enter 실행 | Ctrl+S 저장
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* AI Assist Panel */}
-                            {showAiAssist && (
-                                <div style={{
-                                    marginBottom: '12px',
-                                    padding: '16px',
-                                    background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(99, 102, 241, 0.1))',
-                                    border: '1px solid rgba(168, 85, 247, 0.3)',
-                                    borderRadius: '12px',
-                                }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                                        <span style={{ fontSize: '16px' }}>✨</span>
-                                        <span style={{ fontWeight: 600, color: '#c084fc' }}>AI SQL 생성</span>
-                                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>
-                                            원하는 쿼리를 자연어로 설명하세요
-                                        </span>
-                                        <div style={{ flex: 1 }} />
-                                        <button
-                                            onClick={() => setShowAiAssist(false)}
-                                            style={{
-                                                padding: '4px 8px',
-                                                background: 'transparent',
+                                                background: connectionStatus === 'connected' ? 'rgba(16, 185, 129, 0.15)' : connectionStatus === 'failed' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(99, 102, 241, 0.1)',
+                                                color: connectionStatus === 'connected' ? '#10b981' : connectionStatus === 'failed' ? '#f87171' : '#94a3b8',
                                                 border: 'none',
-                                                color: '#64748b',
-                                                cursor: 'pointer',
+                                                cursor: connectionId ? 'pointer' : 'not-allowed',
                                             }}
                                         >
-                                            ✕
+                                            <span style={{
+                                                width: '5px', height: '5px', borderRadius: '50%',
+                                                background: connectionStatus === 'connected' ? '#10b981' : connectionStatus === 'failed' ? '#ef4444' : '#64748b',
+                                            }} />
+                                            {connectionStatus === 'connected' ? '연결됨' : connectionStatus === 'failed' ? '실패' : '연결'}
                                         </button>
+                                        <span style={{ fontSize: '9px', color: '#64748b' }}>F5 실행</span>
                                     </div>
-                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                </div>
+
+                                {/* AI Assist Panel (inline) */}
+                                {showAiAssist && (
+                                    <div style={{
+                                        padding: '10px 12px',
+                                        background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(99, 102, 241, 0.1))',
+                                        borderBottom: '1px solid rgba(168, 85, 247, 0.3)',
+                                        display: 'flex',
+                                        gap: '8px',
+                                    }}>
                                         <input
                                             type="text"
                                             value={aiPrompt}
                                             onChange={(e) => setAiPrompt(e.target.value)}
                                             onKeyDown={(e) => e.key === 'Enter' && generateSqlWithAI()}
-                                            placeholder="예: 최근 30일간 사용자별 주문 수와 총액을 조회해줘"
+                                            placeholder="원하는 쿼리를 설명하세요..."
                                             style={{
                                                 flex: 1,
-                                                padding: '10px 14px',
+                                                padding: '8px 12px',
                                                 background: 'rgba(15, 23, 42, 0.6)',
                                                 border: '1px solid rgba(168, 85, 247, 0.2)',
-                                                borderRadius: '8px',
+                                                borderRadius: '6px',
                                                 color: '#e2e8f0',
-                                                fontSize: '13px',
+                                                fontSize: '12px',
                                                 outline: 'none',
                                             }}
                                         />
@@ -2789,561 +2909,203 @@ class Program
                                             onClick={generateSqlWithAI}
                                             disabled={aiLoading || !aiPrompt.trim()}
                                             style={{
-                                                padding: '10px 20px',
-                                                background: aiLoading ? 'rgba(168, 85, 247, 0.3)' : 'linear-gradient(90deg, rgba(168, 85, 247, 0.4), rgba(99, 102, 241, 0.4))',
-                                                border: '1px solid rgba(168, 85, 247, 0.4)',
-                                                borderRadius: '8px',
+                                                padding: '8px 16px',
+                                                background: 'linear-gradient(90deg, rgba(168, 85, 247, 0.4), rgba(99, 102, 241, 0.4))',
+                                                border: 'none',
+                                                borderRadius: '6px',
                                                 color: '#e2e8f0',
-                                                fontSize: '13px',
+                                                fontSize: '12px',
                                                 fontWeight: 600,
                                                 cursor: aiLoading || !aiPrompt.trim() ? 'not-allowed' : 'pointer',
-                                                opacity: aiLoading || !aiPrompt.trim() ? 0.6 : 1,
                                             }}
                                         >
-                                            {aiLoading ? '⏳ 생성 중...' : '🚀 생성'}
+                                            {aiLoading ? '⏳' : '🚀'} 생성
+                                        </button>
+                                        <button
+                                            onClick={() => setShowAiAssist(false)}
+                                            style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '14px' }}
+                                        >
+                                            ✕
                                         </button>
                                     </div>
-                                </div>
-                            )}
+                                )}
 
-                            <div style={{ height: '400px' }}>
-                                <MonacoEditor
-                                    height="100%"
-                                    defaultLanguage="sql"
-                                    theme="vs-dark"
-                                    value={sql}
-                                    onChange={(val) => setSql(val || '')}
-                                    onMount={(editor, monaco) => {
-                                        editorRef.current = editor;
-                                        
-                                        // F5 keybinding for run query
-                                        editor.addAction({
-                                            id: 'run-query',
-                                            label: 'Run Query',
-                                            keybindings: [monaco.KeyCode.F5],
-                                            run: () => {
-                                                if (connectionId && !inlineTesting) {
-                                                    setShowInlineTestPanel(true);
-                                                    runInlineQueryTest();
+                                {/* Monaco Editor */}
+                                <div style={{ flex: 1, minHeight: '200px' }}>
+                                    <MonacoEditor
+                                        height="100%"
+                                        defaultLanguage="sql"
+                                        theme="vs-dark"
+                                        value={sql}
+                                        onChange={(val) => setSql(val || '')}
+                                        onMount={(editor, monaco) => {
+                                            editorRef.current = editor;
+                                            editor.addAction({
+                                                id: 'run-query',
+                                                label: 'Run Query',
+                                                keybindings: [monaco.KeyCode.F5],
+                                                run: () => {
+                                                    if (connectionId && !inlineTesting) {
+                                                        runInlineQueryTest();
+                                                    }
                                                 }
-                                            }
-                                        });
-                                        
-                                        // SQL Autocomplete with schema info
-                                        const sqlKeywords = ['SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'ON', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'BETWEEN', 'IS', 'NULL', 'ORDER', 'BY', 'ASC', 'DESC', 'GROUP', 'HAVING', 'LIMIT', 'OFFSET', 'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'CREATE', 'ALTER', 'DROP', 'TABLE', 'INDEX', 'VIEW', 'AS', 'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MAX', 'MIN', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'UNION', 'ALL', 'EXISTS', 'COALESCE', 'IFNULL', 'CAST'];
-                                        
-                                        monaco.languages.registerCompletionItemProvider('sql', {
-                                            provideCompletionItems: (model: any, position: any) => {
-                                                const word = model.getWordUntilPosition(position);
-                                                const range = {
-                                                    startLineNumber: position.lineNumber,
-                                                    endLineNumber: position.lineNumber,
-                                                    startColumn: word.startColumn,
-                                                    endColumn: word.endColumn,
-                                                };
-                                                
-                                                const suggestions: any[] = [];
-                                                
-                                                // SQL Keywords
-                                                sqlKeywords.forEach(kw => {
-                                                    suggestions.push({
+                                            });
+                                            const sqlKeywords = ['SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'ON', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'ORDER', 'BY', 'ASC', 'DESC', 'GROUP', 'HAVING', 'LIMIT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP', 'AS', 'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MAX', 'MIN', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END'];
+                                            monaco.languages.registerCompletionItemProvider('sql', {
+                                                provideCompletionItems: (model: any, position: any) => {
+                                                    const word = model.getWordUntilPosition(position);
+                                                    const range = {
+                                                        startLineNumber: position.lineNumber,
+                                                        endLineNumber: position.lineNumber,
+                                                        startColumn: word.startColumn,
+                                                        endColumn: word.endColumn,
+                                                    };
+                                                    const suggestions: any[] = sqlKeywords.map(kw => ({
                                                         label: kw,
                                                         kind: monaco.languages.CompletionItemKind.Keyword,
                                                         insertText: kw,
                                                         range,
+                                                    }));
+                                                    schemaInfo.tables.forEach(table => {
+                                                        suggestions.push({ label: table, kind: monaco.languages.CompletionItemKind.Class, insertText: table, detail: 'Table', range });
                                                     });
-                                                });
-                                                
-                                                // Tables from schema
-                                                schemaInfo.tables.forEach(table => {
-                                                    suggestions.push({
-                                                        label: table,
-                                                        kind: monaco.languages.CompletionItemKind.Class,
-                                                        insertText: table,
-                                                        detail: 'Table',
-                                                        range,
-                                                    });
-                                                });
-                                                
-                                                // Columns from schema
-                                                Object.entries(schemaInfo.columns).forEach(([table, cols]) => {
-                                                    cols.forEach(col => {
-                                                        suggestions.push({
-                                                            label: col,
-                                                            kind: monaco.languages.CompletionItemKind.Field,
-                                                            insertText: col,
-                                                            detail: `Column (${table})`,
-                                                            range,
+                                                    Object.entries(schemaInfo.columns).forEach(([table, cols]) => {
+                                                        cols.forEach(col => {
+                                                            suggestions.push({ label: col, kind: monaco.languages.CompletionItemKind.Field, insertText: col, detail: `Column (${table})`, range });
                                                         });
                                                     });
-                                                });
-                                                
-                                                return { suggestions };
-                                            }
-                                        });
-                                    }}
-                                    options={{
-                                        minimap: { enabled: false },
-                                        fontSize: 14,
-                                        padding: { top: 16 },
-                                        scrollBeyondLastLine: false,
-                                        wordWrap: wordWrap ? 'on' : 'off',
-                                        quickSuggestions: true,
-                                        suggestOnTriggerCharacters: true,
-                                    }}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Right: Parameters */}
-                        <div style={{
-                            flex: 40, // Take remaining space 
-                            background: 'rgba(30, 27, 75, 0.5)',
-                            borderRadius: '16px',
-                            border: '1px solid rgba(99, 102, 241, 0.2)',
-                            padding: '20px',
-                            maxHeight: 'calc(100vh - 300px)', // Limit height
-                            overflow: 'auto', // Enable scrolling
-                            display: 'flex',
-                            flexDirection: 'column',
-                        }}>
-                            <h3 style={{ 
-                                fontSize: '14px', 
-                                fontWeight: 600, 
-                                color: '#e2e8f0', 
-                                marginBottom: '16px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                            }}>
-                                📝 파라미터 설정
-                            </h3>
-                            
-                            {params.length > 0 ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                    {params.map((p, idx) => (
-                                        <div 
-                                            key={p.name}
-                                            style={{
-                                                padding: '14px',
-                                                background: 'rgba(15, 23, 42, 0.6)',
-                                                borderRadius: '10px',
-                                                border: '1px solid rgba(99, 102, 241, 0.15)',
-                                            }}
-                                        >
-                                            <div style={{ 
-                                                fontSize: '13px', 
-                                                fontFamily: 'monospace', 
-                                                color: '#a78bfa', 
-                                                marginBottom: '10px',
-                                                fontWeight: 600,
-                                            }}>
-                                                :{p.name}
-                                            </div>
-                                            <div style={{ display: 'flex', gap: '10px' }}>
-                                                <select
-                                                    value={p.type}
-                                                    onChange={(e) => {
-                                                        const newParams = [...params];
-                                                        newParams[idx].type = e.target.value;
-                                                        setParams(newParams);
-                                                    }}
-                                                    style={{
-                                                        flex: 1,
-                                                        padding: '8px 10px',
-                                                        background: 'rgba(30, 27, 75, 0.8)',
-                                                        border: '1px solid rgba(99, 102, 241, 0.2)',
-                                                        borderRadius: '6px',
-                                                        color: '#e2e8f0',
-                                                        fontSize: '12px',
-                                                        outline: 'none',
-                                                    }}
-                                                >
-                                                    <option value="string">String</option>
-                                                    <option value="number">Number</option>
-                                                    <option value="boolean">Boolean</option>
-                                                </select>
-                                                <label style={{ 
-                                                    display: 'flex', 
-                                                    alignItems: 'center', 
-                                                    gap: '6px',
-                                                    fontSize: '12px',
-                                                    color: '#94a3b8',
-                                                    cursor: 'pointer',
-                                                }}>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={p.required}
-                                                        onChange={(e) => {
-                                                            const newParams = [...params];
-                                                            newParams[idx].required = e.target.checked;
-                                                            setParams(newParams);
-                                                        }}
-                                                        style={{ accentColor: '#6366f1' }}
-                                                    />
-                                                    필수
-                                                </label>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div style={{
-                                    padding: '30px',
-                                    textAlign: 'center',
-                                    color: '#64748b',
-                                    fontSize: '13px',
-                                }}>
-                                    <div style={{ fontSize: '28px', marginBottom: '10px', opacity: 0.5 }}>📝</div>
-                                    SQL에서 <code style={{ color: '#a78bfa' }}>:paramName</code><br/>
-                                    형식으로 파라미터 정의
-                                </div>
-                            )}
-
-                            {/* Tips */}
-                            <div style={{
-                                marginTop: '20px',
-                                padding: '14px',
-                                background: 'rgba(99, 102, 241, 0.1)',
-                                borderRadius: '10px',
-                                border: '1px solid rgba(99, 102, 241, 0.2)',
-                            }}>
-                                <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '8px', fontWeight: 500 }}>
-                                    💡 사용법
-                                </div>
-                                <div style={{ fontSize: '11px', color: '#64748b', lineHeight: 1.6 }}>
-                                    • SQL에 <code style={{ color: '#a78bfa' }}>:userId</code> 형식 사용<br/>
-                                    • API 호출 시 파라미터로 전달<br/>
-                                    • 자동 SQL Injection 방지
-                                </div>
-                            </div>
-
-                            {/* Inline Query Test Panel */}
-                            <div style={{
-                                marginTop: '20px',
-                                padding: '16px',
-                                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(6, 182, 212, 0.1))',
-                                borderRadius: '12px',
-                                border: '1px solid rgba(16, 185, 129, 0.25)',
-                            }}>
-                                <div style={{ 
-                                    display: 'flex', 
-                                    justifyContent: 'space-between', 
-                                    alignItems: 'center',
-                                    marginBottom: showInlineTestPanel ? '14px' : 0,
-                                }}>
-                                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        🧪 쿼리 테스트
-                                    </div>
-                                    <button
-                                        onClick={() => setShowInlineTestPanel(!showInlineTestPanel)}
-                                        style={{
-                                            background: 'none',
-                                            border: 'none',
-                                            color: '#10b981',
-                                            cursor: 'pointer',
-                                            fontSize: '12px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
+                                                    return { suggestions };
+                                                }
+                                            });
                                         }}
-                                    >
-                                        {showInlineTestPanel ? '▲ 접기' : '▼ 펼치기'}
+                                        options={{
+                                            minimap: { enabled: false },
+                                            fontSize: 14,
+                                            padding: { top: 12 },
+                                            scrollBeyondLastLine: false,
+                                            wordWrap: wordWrap ? 'on' : 'off',
+                                            quickSuggestions: true,
+                                        }}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Right: Parameters Panel */}
+                            <div style={{
+                                flex: 4,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                background: 'rgba(30, 27, 75, 0.6)',
+                                overflow: 'hidden',
+                            }}>
+                                <div style={{
+                                    padding: '8px 12px',
+                                    background: 'rgba(15, 23, 42, 0.5)',
+                                    borderBottom: '1px solid rgba(99, 102, 241, 0.2)',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                }}>
+                                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#a5b4fc' }}>⚙️ 파라미터</span>
+                                    <span style={{ fontSize: '10px', color: '#64748b' }}>{params.length}개</span>
+                                </div>
+                                <div style={{ flex: 1, padding: '12px', overflow: 'auto' }}>
+                                    {params.length > 0 ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                            {params.map((p, idx) => (
+                                                <div key={p.name} style={{ padding: '10px 12px', background: 'rgba(15, 23, 42, 0.5)', borderRadius: '8px', border: '1px solid rgba(99, 102, 241, 0.15)' }}>
+                                                    <div style={{ fontSize: '12px', fontFamily: 'monospace', color: '#a78bfa', marginBottom: '8px', fontWeight: 600 }}>:{p.name}</div>
+                                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                        <select value={p.type} onChange={(e) => { const newParams = [...params]; newParams[idx].type = e.target.value; setParams(newParams); }} style={{ flex: 1, padding: '6px 8px', background: 'rgba(30, 27, 75, 0.8)', border: '1px solid rgba(99, 102, 241, 0.2)', borderRadius: '4px', color: '#e2e8f0', fontSize: '11px', outline: 'none' }}>
+                                                            <option value="string">String</option>
+                                                            <option value="number">Number</option>
+                                                            <option value="boolean">Boolean</option>
+                                                        </select>
+                                                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#94a3b8', cursor: 'pointer' }}>
+                                                            <input type="checkbox" checked={p.required} onChange={(e) => { const newParams = [...params]; newParams[idx].required = e.target.checked; setParams(newParams); }} style={{ accentColor: '#6366f1' }} />
+                                                            필수
+                                                        </label>
+                                                    </div>
+                                                    <input type={p.type === 'number' ? 'number' : 'text'} value={inlineTestParams[p.name] || ''} onChange={(e) => setInlineTestParams(prev => ({ ...prev, [p.name]: e.target.value }))} placeholder={`테스트 값 (${p.type})`} style={{ width: '100%', marginTop: '8px', padding: '6px 8px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '4px', color: '#e2e8f0', fontSize: '11px', outline: 'none' }} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div style={{ padding: '20px', textAlign: 'center', color: '#64748b', fontSize: '12px' }}>
+                                            <div style={{ fontSize: '24px', marginBottom: '8px', opacity: 0.5 }}>📝</div>
+                                            SQL에서 <code style={{ color: '#a78bfa' }}>:paramName</code> 형식으로<br/>파라미터를 정의하세요
+                                        </div>
+                                    )}
+                                    <button onClick={runInlineQueryTest} disabled={inlineTesting || !connectionId} style={{ width: '100%', marginTop: '12px', padding: '10px', background: inlineTesting ? 'rgba(16, 185, 129, 0.3)' : 'linear-gradient(90deg, #10b981, #06b6d4)', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: inlineTesting || !connectionId ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                        {inlineTesting ? '⏳ 실행 중...' : '▶ 쿼리 실행'}
                                     </button>
                                 </div>
-
-                                {showInlineTestPanel && (
-                                    <>
-                                        {/* Test Parameter Inputs */}
-                                        {params.length > 0 && (
-                                            <div style={{ marginBottom: '12px' }}>
-                                                <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '8px' }}>테스트 파라미터 값 입력:</div>
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                    {params.map(p => (
-                                                        <div key={p.name} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                                            <span style={{ 
-                                                                fontSize: '11px', 
-                                                                color: '#a78bfa', 
-                                                                fontFamily: 'monospace',
-                                                                minWidth: '80px',
-                                                            }}>
-                                                                :{p.name}
-                                                            </span>
-                                                            <input
-                                                                type={p.type === 'number' ? 'number' : 'text'}
-                                                                value={inlineTestParams[p.name] || ''}
-                                                                onChange={(e) => setInlineTestParams(prev => ({
-                                                                    ...prev,
-                                                                    [p.name]: e.target.value
-                                                                }))}
-                                                                placeholder={p.type}
-                                                                style={{
-                                                                    flex: 1,
-                                                                    padding: '6px 10px',
-                                                                    background: 'rgba(15, 23, 42, 0.6)',
-                                                                    border: '1px solid rgba(99, 102, 241, 0.2)',
-                                                                    borderRadius: '6px',
-                                                                    color: '#e2e8f0',
-                                                                    fontSize: '12px',
-                                                                    outline: 'none',
-                                                                }}
-                                                            />
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Run Test Button */}
-                                        <button
-                                            onClick={runInlineQueryTest}
-                                            disabled={inlineTesting || !connectionId}
-                                            style={{
-                                                width: '100%',
-                                                padding: '10px',
-                                                background: inlineTesting ? 'rgba(16, 185, 129, 0.3)' : 'linear-gradient(90deg, #10b981, #06b6d4)',
-                                                border: 'none',
-                                                borderRadius: '8px',
-                                                color: '#fff',
-                                                fontSize: '13px',
-                                                fontWeight: 600,
-                                                cursor: inlineTesting || !connectionId ? 'not-allowed' : 'pointer',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                gap: '6px',
-                                                transition: 'all 0.2s',
-                                            }}
-                                        >
-                                            {inlineTesting ? (
-                                                <>⏳ 실행 중...</>
-                                            ) : (
-                                                <>▶ 쿼리 테스트 실행</>
-                                            )}
-                                        </button>
-
-                                        {/* Test Result */}
-                                        {inlineTestResult && (
-                                            <div style={{
-                                                marginTop: '12px',
-                                                background: inlineTestResult.success ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.1)',
-                                                borderRadius: '10px',
-                                                border: `1px solid ${inlineTestResult.success ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.3)'}`,
-                                                overflow: 'hidden',
-                                                maxHeight: '300px', // Limit height to prevent covering editor
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                            }}>
-                                                {/* Result Header */}
-                                                <div style={{ 
-                                                    display: 'flex', 
-                                                    justifyContent: 'space-between', 
-                                                    alignItems: 'center',
-                                                    padding: '10px 12px',
-                                                    background: inlineTestResult.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.15)',
-                                                    borderBottom: `1px solid ${inlineTestResult.success ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
-                                                }}>
-                                                    <span style={{ 
-                                                        color: inlineTestResult.success ? '#10b981' : '#f87171', 
-                                                        fontWeight: 600,
-                                                        fontSize: '12px',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: '6px',
-                                                    }}>
-                                                        {inlineTestResult.success ? '✓ 실행 성공' : '✗ 실행 실패'}
-                                                    </span>
-                                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                                        {/* Export Buttons */}
-                                                        {inlineTestResult.success && inlineTestResult.data?.length > 0 && (
-                                                            <>
-                                                                <button
-                                                                    onClick={exportResultsCSV}
-                                                                    title="CSV 다운로드"
-                                                                    style={{
-                                                                        padding: '4px 8px',
-                                                                        background: 'rgba(99, 102, 241, 0.2)',
-                                                                        border: 'none',
-                                                                        borderRadius: '4px',
-                                                                        color: '#a5b4fc',
-                                                                        cursor: 'pointer',
-                                                                        fontSize: '10px',
-                                                                    }}
-                                                                >
-                                                                    📥 CSV
-                                                                </button>
-                                                                <button
-                                                                    onClick={exportResultsJSON}
-                                                                    title="JSON 다운로드"
-                                                                    style={{
-                                                                        padding: '4px 8px',
-                                                                        background: 'rgba(99, 102, 241, 0.2)',
-                                                                        border: 'none',
-                                                                        borderRadius: '4px',
-                                                                        color: '#a5b4fc',
-                                                                        cursor: 'pointer',
-                                                                        fontSize: '10px',
-                                                                    }}
-                                                                >
-                                                                    📥 JSON
-                                                                </button>
-                                                                <button
-                                                                    onClick={copyResultsToClipboard}
-                                                                    title="클립보드 복사"
-                                                                    style={{
-                                                                        padding: '4px 8px',
-                                                                        background: 'rgba(99, 102, 241, 0.2)',
-                                                                        border: 'none',
-                                                                        borderRadius: '4px',
-                                                                        color: '#a5b4fc',
-                                                                        cursor: 'pointer',
-                                                                        fontSize: '10px',
-                                                                    }}
-                                                                >
-                                                                    📋 복사
-                                                                </button>
-                                                            </>
-                                                        )}
-                                                        <span style={{ color: '#94a3b8', fontSize: '11px' }}>
-                                                            ⏱ {inlineTestResult.duration}ms
-                                                            {inlineTestResult.rowCount !== undefined && ` · ${inlineTestResult.rowCount} rows`}
-                                                        </span>
-                                                    </div>
-                                                </div>
-
-                                                {/* Error Display */}
-                                                {inlineTestResult.error && (
-                                                    <div style={{
-                                                        padding: '12px',
-                                                        color: '#fca5a5',
-                                                        fontSize: '12px',
-                                                        background: 'rgba(239, 68, 68, 0.1)',
-                                                    }}>
-                                                        <strong>Error:</strong> {inlineTestResult.error}
-                                                    </div>
-                                                )}
-
-                                                {/* Results Table */}
-                                                {inlineTestResult.success && inlineTestResult.data && Array.isArray(inlineTestResult.data) && inlineTestResult.data.length > 0 && (
-                                                    <div style={{ 
-                                                        flex: 1,
-                                                        maxHeight: '200px', 
-                                                        overflow: 'auto',
-                                                    }}>
-                                                        <table style={{ 
-                                                            width: '100%', 
-                                                            borderCollapse: 'collapse',
-                                                            fontSize: '11px',
-                                                        }}>
-                                                            <thead>
-                                                                <tr style={{ 
-                                                                    background: 'rgba(99, 102, 241, 0.1)',
-                                                                    position: 'sticky',
-                                                                    top: 0,
-                                                                }}>
-                                                                    <th style={{
-                                                                        padding: '8px 10px',
-                                                                        textAlign: 'center',
-                                                                        color: '#94a3b8',
-                                                                        fontWeight: 600,
-                                                                        borderBottom: '1px solid rgba(99, 102, 241, 0.2)',
-                                                                        width: '40px',
-                                                                        background: 'rgba(15, 23, 42, 0.8)',
-                                                                    }}>
-                                                                        #
-                                                                    </th>
-                                                                    {Object.keys(inlineTestResult.data[0]).map((key) => (
-                                                                        <th 
-                                                                            key={key}
-                                                                            style={{
-                                                                                padding: '8px 10px',
-                                                                                textAlign: 'left',
-                                                                                color: '#a5b4fc',
-                                                                                fontWeight: 600,
-                                                                                borderBottom: '1px solid rgba(99, 102, 241, 0.2)',
-                                                                                whiteSpace: 'nowrap',
-                                                                                background: 'rgba(15, 23, 42, 0.8)',
-                                                                            }}
-                                                                        >
-                                                                            {key}
-                                                                        </th>
-                                                                    ))}
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                {inlineTestResult.data.slice(0, 100).map((row: any, rowIndex: number) => (
-                                                                    <tr 
-                                                                        key={rowIndex}
-                                                                        style={{ 
-                                                                            background: rowIndex % 2 === 0 ? 'rgba(15, 23, 42, 0.4)' : 'rgba(15, 23, 42, 0.2)',
-                                                                            transition: 'background 0.15s',
-                                                                        }}
-                                                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
-                                                                        onMouseLeave={(e) => e.currentTarget.style.background = rowIndex % 2 === 0 ? 'rgba(15, 23, 42, 0.4)' : 'rgba(15, 23, 42, 0.2)'}
-                                                                    >
-                                                                        <td style={{
-                                                                            padding: '6px 10px',
-                                                                            textAlign: 'center',
-                                                                            color: '#64748b',
-                                                                            borderBottom: '1px solid rgba(99, 102, 241, 0.1)',
-                                                                        }}>
-                                                                            {rowIndex + 1}
-                                                                        </td>
-                                                                        {Object.values(row).map((value: any, colIndex: number) => (
-                                                                            <td 
-                                                                                key={colIndex}
-                                                                                style={{
-                                                                                    padding: '6px 10px',
-                                                                                    color: value === null ? '#64748b' : '#e2e8f0',
-                                                                                    borderBottom: '1px solid rgba(99, 102, 241, 0.1)',
-                                                                                    maxWidth: '200px',
-                                                                                    overflow: 'hidden',
-                                                                                    textOverflow: 'ellipsis',
-                                                                                    whiteSpace: 'nowrap',
-                                                                                    fontFamily: typeof value === 'number' ? 'monospace' : 'inherit',
-                                                                                }}
-                                                                                title={String(value ?? 'null')}
-                                                                            >
-                                                                                {value === null ? <em style={{ opacity: 0.5 }}>null</em> : String(value)}
-                                                                            </td>
-                                                                        ))}
-                                                                    </tr>
-                                                                ))}
-                                                            </tbody>
-                                                        </table>
-                                                        {inlineTestResult.data.length > 100 && (
-                                                            <div style={{ 
-                                                                padding: '8px 12px', 
-                                                                textAlign: 'center', 
-                                                                color: '#94a3b8', 
-                                                                fontSize: '11px',
-                                                                background: 'rgba(99, 102, 241, 0.05)',
-                                                                borderTop: '1px solid rgba(99, 102, 241, 0.1)',
-                                                            }}>
-                                                                Showing 100 of {inlineTestResult.data.length} rows
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                {/* Empty Result */}
-                                                {inlineTestResult.success && (!inlineTestResult.data || !Array.isArray(inlineTestResult.data) || inlineTestResult.data.length === 0) && (
-                                                    <div style={{
-                                                        padding: '20px',
-                                                        textAlign: 'center',
-                                                        color: '#94a3b8',
-                                                        fontSize: '12px',
-                                                    }}>
-                                                        <div style={{ fontSize: '24px', marginBottom: '8px', opacity: 0.5 }}>📭</div>
-                                                        쿼리 실행 완료 (결과 없음)
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </>
-                                )}
                             </div>
                         </div>
+
+                        {/* Bottom: Results Panel */}
+                        <div style={{ flex: 2, minHeight: '180px', background: 'rgba(30, 27, 75, 0.6)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                            <div style={{ padding: '8px 12px', background: 'rgba(15, 23, 42, 0.5)', borderBottom: '1px solid rgba(99, 102, 241, 0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#a5b4fc' }}>📊 실행 결과</span>
+                                    {inlineTestResult && (
+                                        <span style={{ padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 500, background: inlineTestResult.success ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: inlineTestResult.success ? '#10b981' : '#f87171' }}>
+                                            {inlineTestResult.success ? '✓ 성공' : '✗ 실패'} · {inlineTestResult.duration}ms{inlineTestResult.rowCount !== undefined && ` · ${inlineTestResult.rowCount} rows`}
+                                        </span>
+                                    )}
+                                </div>
+                                {inlineTestResult?.success && inlineTestResult.data?.length > 0 && (
+                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                        <button onClick={exportResultsCSV} style={{ padding: '3px 8px', background: 'rgba(99, 102, 241, 0.2)', border: 'none', borderRadius: '4px', color: '#a5b4fc', cursor: 'pointer', fontSize: '10px' }}>📥 CSV</button>
+                                        <button onClick={exportResultsJSON} style={{ padding: '3px 8px', background: 'rgba(99, 102, 241, 0.2)', border: 'none', borderRadius: '4px', color: '#a5b4fc', cursor: 'pointer', fontSize: '10px' }}>📥 JSON</button>
+                                        <button onClick={copyResultsToClipboard} style={{ padding: '3px 8px', background: 'rgba(99, 102, 241, 0.2)', border: 'none', borderRadius: '4px', color: '#a5b4fc', cursor: 'pointer', fontSize: '10px' }}>📋 복사</button>
+                                    </div>
+                                )}
+                            </div>
+                            <div style={{ flex: 1, overflow: 'auto' }}>
+                                {!inlineTestResult ? (
+                                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '12px' }}>
+                                        <div style={{ textAlign: 'center' }}>
+                                            <div style={{ fontSize: '32px', marginBottom: '8px', opacity: 0.4 }}>🔍</div>
+                                            F5 또는 ▶ 버튼을 눌러 쿼리를 실행하세요
+                                        </div>
+                                    </div>
+                                ) : inlineTestResult.error ? (
+                                    <div style={{ padding: '16px', color: '#fca5a5', fontSize: '12px', background: 'rgba(239, 68, 68, 0.1)' }}>
+                                        <strong>Error:</strong> {inlineTestResult.error}
+                                    </div>
+                                ) : inlineTestResult.success && inlineTestResult.data?.length > 0 ? (
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                                        <thead>
+                                            <tr style={{ background: 'rgba(99, 102, 241, 0.1)', position: 'sticky', top: 0 }}>
+                                                <th style={{ padding: '8px 10px', textAlign: 'center', color: '#94a3b8', fontWeight: 600, borderBottom: '1px solid rgba(99, 102, 241, 0.2)', width: '40px', background: 'rgba(15, 23, 42, 0.9)' }}>#</th>
+                                                {Object.keys(inlineTestResult.data[0]).map((key) => (
+                                                    <th key={key} style={{ padding: '8px 10px', textAlign: 'left', color: '#a5b4fc', fontWeight: 600, borderBottom: '1px solid rgba(99, 102, 241, 0.2)', whiteSpace: 'nowrap', background: 'rgba(15, 23, 42, 0.9)' }}>{key}</th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {inlineTestResult.data.slice(0, 100).map((row, rowIndex) => (
+                                                <tr key={rowIndex} style={{ background: rowIndex % 2 === 0 ? 'transparent' : 'rgba(99, 102, 241, 0.03)' }}>
+                                                    <td style={{ padding: '6px 10px', textAlign: 'center', color: '#64748b', borderBottom: '1px solid rgba(99, 102, 241, 0.1)' }}>{rowIndex + 1}</td>
+                                                    {Object.values(row).map((value: any, colIndex: number) => (
+                                                        <td key={colIndex} style={{ padding: '6px 10px', color: value === null ? '#64748b' : '#e2e8f0', borderBottom: '1px solid rgba(99, 102, 241, 0.1)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: typeof value === 'number' ? 'monospace' : 'inherit' }} title={String(value ?? 'null')}>
+                                                            {value === null ? <em style={{ opacity: 0.5 }}>null</em> : String(value)}
+                                                        </td>
+                                                    ))}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                ) : (
+                                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '12px' }}>
+                                        <div style={{ textAlign: 'center' }}>
+                                            <div style={{ fontSize: '24px', marginBottom: '6px', opacity: 0.5 }}>📭</div>
+                                            쿼리 실행 완료 (결과 없음)
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
