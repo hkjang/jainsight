@@ -80,6 +80,48 @@ export class SqlTemplate {
     @Column({ nullable: true })
     ownerId: string; // User ID who created/owns this API
 
+    // === Enhanced Analytics Fields ===
+    @Column({ default: 0 })
+    successCount: number;
+
+    @Column({ default: 0 })
+    errorCount: number;
+
+    @Column({ type: 'float', default: 0 })
+    avgLatency: number; // Average response time in ms
+
+    @Column({ nullable: true })
+    lastErrorAt: Date;
+
+    @Column({ nullable: true, type: 'text' })
+    lastErrorMessage: string;
+
+    // === Tags & Categorization ===
+    @Column('simple-json', { nullable: true })
+    tags: string[]; // Array of tag strings for filtering
+
+    // === Execution Config ===
+    @Column({ nullable: true })
+    timeout: number; // Query execution timeout in ms
+
+    // === Deprecation Fields ===
+    @Column({ nullable: true })
+    deprecatedAt: Date;
+
+    @Column({ nullable: true, type: 'text' })
+    deprecatedMessage: string;
+
+    // === Webhook Integration ===
+    @Column({ nullable: true })
+    webhookUrl: string;
+
+    @Column('simple-json', { nullable: true })
+    webhookEvents: ('success' | 'error' | 'all')[]; // Events to trigger webhook
+
+    // === Security ===
+    @Column('simple-json', { nullable: true })
+    allowedOrigins: string[]; // CORS whitelist
+
     @CreateDateColumn()
     createdAt: Date;
 

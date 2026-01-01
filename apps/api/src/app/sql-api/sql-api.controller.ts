@@ -1,5 +1,5 @@
 
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, NotFoundException, Req } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, NotFoundException, Req } from '@nestjs/common';
 import { SqlApiService } from './sql-api.service';
 import { SqlApiDocService } from './sql-api-doc.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -25,6 +25,26 @@ export class SqlApiController {
     @Get()
     findAll() {
         return this.sqlApiService.findAll();
+    }
+
+    @Get('tags')
+    async getAllTags() {
+        return this.sqlApiService.getAllTags();
+    }
+
+    @Get('search')
+    async searchApis(
+        @Query('q') query: string,
+        @Query('tags') tags?: string,
+        @Query('isActive') isActive?: string,
+        @Query('isDeprecated') isDeprecated?: string
+    ) {
+        const filters = {
+            tags: tags ? tags.split(',') : undefined,
+            isActive: isActive !== undefined ? isActive === 'true' : undefined,
+            isDeprecated: isDeprecated !== undefined ? isDeprecated === 'true' : undefined,
+        };
+        return this.sqlApiService.searchApis(query || '', filters);
     }
 
     @Get(':id')
@@ -57,6 +77,13 @@ export class SqlApiController {
         return this.docService.generateOpenApiSpec(template);
     }
 
+    @Get(':id/postman')
+    async getPostmanCollection(@Param('id') id: string) {
+        const template = await this.sqlApiService.findOne(id);
+        if (!template) throw new NotFoundException('Template not found');
+        return this.docService.generatePostmanCollection(template);
+    }
+
     @Post('execute')
     @UseGuards(JwtAuthGuard) // Internal execution (e.g. Test button)
     executeInternal(@Body() body: { templateId: string; params: any }) {
@@ -79,12 +106,24 @@ export class SqlApiController {
         return this.sqlApiService.execute(id, body.params, body.apiKey);
     }
 
-    // === New Enhanced Endpoints ===
+    // === Statistics & Analytics ===
 
     @Get(':id/stats')
     async getStatistics(@Param('id') id: string) {
         return this.sqlApiService.getStatistics(id);
     }
+
+    @Get(':id/stats/detailed')
+    async getDetailedStatistics(@Param('id') id: string) {
+        return this.sqlApiService.getDetailedStatistics(id);
+    }
+
+    @Get(':id/health')
+    async healthCheck(@Param('id') id: string) {
+        return this.sqlApiService.healthCheck(id);
+    }
+
+    // === API Management ===
 
     @Post(':id/toggle')
     @Roles('admin')
@@ -115,6 +154,68 @@ export class SqlApiController {
         return this.sqlApiService.seed();
     }
 
+    // === Bulk Operations ===
+
+    @Post('bulk/toggle')
+    @Roles('admin')
+    async bulkToggleActive(@Body() body: { ids: string[]; active: boolean }) {
+        return this.sqlApiService.bulkToggleActive(body.ids, body.active);
+    }
+
+    @Delete('bulk')
+    @Roles('admin')
+    async bulkDelete(@Body() body: { ids: string[] }) {
+        return this.sqlApiService.bulkDelete(body.ids);
+    }
+
+    // === Deprecation ===
+
+    @Post(':id/deprecate')
+    @Roles('admin')
+    async deprecate(@Param('id') id: string, @Body() body: { message?: string }) {
+        return this.sqlApiService.deprecate(id, body.message);
+    }
+
+    @Post(':id/undeprecate')
+    @Roles('admin')
+    async undeprecate(@Param('id') id: string) {
+        return this.sqlApiService.undeprecate(id);
+    }
+
+    // === Webhook Management ===
+
+    @Put(':id/webhook')
+    @Roles('admin')
+    async updateWebhook(
+        @Param('id') id: string,
+        @Body() body: { webhookUrl?: string; webhookEvents?: ('success' | 'error' | 'all')[] }
+    ) {
+        return this.sqlApiService.updateWebhook(id, body);
+    }
+
+    @Post(':id/webhook/test')
+    @Roles('admin')
+    async testWebhook(@Param('id') id: string) {
+        return this.sqlApiService.testWebhook(id);
+    }
+
+    // === Import/Export ===
+
+    @Post('export')
+    async exportApis(@Body() body: { ids?: string[] }) {
+        return this.sqlApiService.exportApis(body.ids || []);
+    }
+
+    @Post('import')
+    @Roles('admin')
+    async importApis(
+        @Body() body: { apis: any[]; connectionId: string },
+        @Req() req: any
+    ) {
+        const userId = req.user?.userId || req.user?.sub || req.user?.id;
+        return this.sqlApiService.importApis(body.apis, body.connectionId, userId);
+    }
+
     // === RBAC Sharing Endpoints ===
 
     @Post(':id/share')
@@ -135,4 +236,3 @@ export class SqlApiController {
         return this.sqlApiService.findAllForUser(userId, userGroups);
     }
 }
-

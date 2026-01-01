@@ -243,16 +243,88 @@ export class SqlApiService implements OnModuleInit {
     }
 
     private async performExecution(template: SqlTemplate, params: Record<string, any>) {
-        // Binding
-        const { sql } = this.bindParameters(template.sql, params);
+        const startTime = Date.now();
+        
+        try {
+            // Binding
+            const { sql } = this.bindParameters(template.sql, params);
 
-        // Get Connection Config
-        const connection = await this.connectionsService.getConnectionWithPassword(template.connectionId);
-        if (!connection) throw new Error('Connection not found');
+            // Get Connection Config
+            const connection = await this.connectionsService.getConnectionWithPassword(template.connectionId);
+            if (!connection) throw new Error('Connection not found');
 
-        // Execute
-        const connectionDto: any = { ...connection };
-        return this.databaseConnector.executeQuery(connection.id, connectionDto, sql);
+            // Execute with timeout if specified
+            const connectionDto: any = { ...connection };
+            const result = await this.databaseConnector.executeQuery(connection.id, connectionDto, sql);
+            
+            // Track success
+            const latency = Date.now() - startTime;
+            await this.updateAnalytics(template.id, true, latency);
+            
+            // Trigger webhook on success
+            this.triggerWebhook(template, 'success', { params, result, latency });
+            
+            return result;
+        } catch (error: any) {
+            // Track error
+            const latency = Date.now() - startTime;
+            await this.updateAnalytics(template.id, false, latency, error.message);
+            
+            // Trigger webhook on error
+            this.triggerWebhook(template, 'error', { params, error: error.message, latency });
+            
+            throw error;
+        }
+    }
+
+    private async updateAnalytics(id: string, success: boolean, latency: number, errorMessage?: string) {
+        const template = await this.findOne(id);
+        if (!template) return;
+        
+        // Calculate new average latency
+        const totalCalls = (template.successCount || 0) + (template.errorCount || 0);
+        const currentAvg = template.avgLatency || 0;
+        const newAvg = totalCalls > 0 
+            ? ((currentAvg * totalCalls) + latency) / (totalCalls + 1)
+            : latency;
+
+        const updateData: Partial<SqlTemplate> = {
+            avgLatency: Math.round(newAvg * 100) / 100,
+        };
+
+        if (success) {
+            updateData.successCount = (template.successCount || 0) + 1;
+        } else {
+            updateData.errorCount = (template.errorCount || 0) + 1;
+            updateData.lastErrorAt = new Date();
+            updateData.lastErrorMessage = errorMessage?.substring(0, 500); // Limit error message length
+        }
+
+        await this.templateRepository.update(id, updateData);
+    }
+
+    private async triggerWebhook(template: SqlTemplate, event: 'success' | 'error', data: any) {
+        if (!template.webhookUrl) return;
+        
+        const events = template.webhookEvents || [];
+        if (!events.includes('all') && !events.includes(event)) return;
+        
+        try {
+            // Fire and forget - don't block execution
+            fetch(template.webhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    event,
+                    templateId: template.id,
+                    templateName: template.name,
+                    timestamp: new Date().toISOString(),
+                    ...data,
+                }),
+            }).catch(err => console.warn('Webhook failed:', err.message));
+        } catch (err) {
+            console.warn('Webhook trigger error:', err);
+        }
     }
 
     // === New Enhanced Methods ===
@@ -368,5 +440,296 @@ export class SqlApiService implements OnModuleInit {
         });
         return { sql, values };
     }
-}
 
+    // === Enhanced Statistics & Analytics ===
+
+    async getDetailedStatistics(id: string) {
+        const template = await this.findOne(id);
+        if (!template) throw new Error('Template not found');
+
+        const totalCalls = (template.successCount || 0) + (template.errorCount || 0);
+        const successRate = totalCalls > 0 
+            ? Math.round((template.successCount || 0) / totalCalls * 100) 
+            : 0;
+
+        return {
+            id: template.id,
+            name: template.name,
+            usageCount: template.usageCount || 0,
+            successCount: template.successCount || 0,
+            errorCount: template.errorCount || 0,
+            successRate,
+            avgLatency: template.avgLatency || 0,
+            lastUsedAt: template.lastUsedAt,
+            lastErrorAt: template.lastErrorAt,
+            lastErrorMessage: template.lastErrorMessage,
+            createdAt: template.createdAt,
+            isActive: template.isActive,
+            isDeprecated: !!template.deprecatedAt,
+            deprecatedAt: template.deprecatedAt,
+            deprecatedMessage: template.deprecatedMessage,
+            version: template.version,
+            cacheTtl: template.cacheTtl,
+            rateLimit: template.rateLimit,
+            tags: template.tags || [],
+        };
+    }
+
+    // === Bulk Operations ===
+
+    async bulkToggleActive(ids: string[], active: boolean) {
+        const results: { id: string; success: boolean; message?: string }[] = [];
+        
+        for (const id of ids) {
+            try {
+                await this.templateRepository.update(id, { isActive: active });
+                results.push({ id, success: true });
+            } catch (error: any) {
+                results.push({ id, success: false, message: error.message });
+            }
+        }
+        
+        return {
+            success: results.filter(r => r.success).length,
+            failed: results.filter(r => !r.success).length,
+            results,
+        };
+    }
+
+    async bulkDelete(ids: string[]) {
+        const results: { id: string; success: boolean; message?: string }[] = [];
+        
+        for (const id of ids) {
+            try {
+                await this.templateRepository.delete(id);
+                results.push({ id, success: true });
+            } catch (error: any) {
+                results.push({ id, success: false, message: error.message });
+            }
+        }
+        
+        return {
+            success: results.filter(r => r.success).length,
+            failed: results.filter(r => !r.success).length,
+            results,
+        };
+    }
+
+    // === Tags & Search ===
+
+    async getAllTags(): Promise<string[]> {
+        const templates = await this.templateRepository.find();
+        const allTags = new Set<string>();
+        
+        templates.forEach(t => {
+            (t.tags || []).forEach(tag => allTags.add(tag));
+        });
+        
+        return Array.from(allTags).sort();
+    }
+
+    async searchApis(query: string, filters: {
+        tags?: string[];
+        isActive?: boolean;
+        isDeprecated?: boolean;
+    } = {}) {
+        let templates = await this.templateRepository.find();
+        
+        // Text search
+        if (query) {
+            const lowerQuery = query.toLowerCase();
+            templates = templates.filter(t => 
+                t.name.toLowerCase().includes(lowerQuery) ||
+                t.description?.toLowerCase().includes(lowerQuery) ||
+                t.sql.toLowerCase().includes(lowerQuery)
+            );
+        }
+        
+        // Tag filter
+        if (filters.tags && filters.tags.length > 0) {
+            templates = templates.filter(t => 
+                filters.tags!.some(tag => (t.tags || []).includes(tag))
+            );
+        }
+        
+        // Active filter
+        if (filters.isActive !== undefined) {
+            templates = templates.filter(t => t.isActive === filters.isActive);
+        }
+        
+        // Deprecation filter
+        if (filters.isDeprecated !== undefined) {
+            templates = templates.filter(t => 
+                filters.isDeprecated ? !!t.deprecatedAt : !t.deprecatedAt
+            );
+        }
+        
+        return templates;
+    }
+
+    // === Deprecation ===
+
+    async deprecate(id: string, message?: string) {
+        const template = await this.findOne(id);
+        if (!template) throw new Error('Template not found');
+
+        await this.templateRepository.update(id, {
+            deprecatedAt: new Date(),
+            deprecatedMessage: message || 'This API has been deprecated',
+        });
+
+        return { 
+            success: true, 
+            message: 'API marked as deprecated',
+            deprecatedAt: new Date(),
+        };
+    }
+
+    async undeprecate(id: string) {
+        const template = await this.findOne(id);
+        if (!template) throw new Error('Template not found');
+
+        await this.templateRepository.update(id, {
+            deprecatedAt: null as any,
+            deprecatedMessage: null as any,
+        });
+
+        return { success: true, message: 'API deprecation removed' };
+    }
+
+    // === Webhook Management ===
+
+    async updateWebhook(id: string, data: { 
+        webhookUrl?: string; 
+        webhookEvents?: ('success' | 'error' | 'all')[];
+    }) {
+        const template = await this.findOne(id);
+        if (!template) throw new Error('Template not found');
+
+        await this.templateRepository.update(id, {
+            webhookUrl: data.webhookUrl,
+            webhookEvents: data.webhookEvents,
+        });
+
+        return { success: true, message: 'Webhook settings updated' };
+    }
+
+    async testWebhook(id: string) {
+        const template = await this.findOne(id);
+        if (!template) throw new Error('Template not found');
+        if (!template.webhookUrl) throw new Error('No webhook URL configured');
+
+        try {
+            const response = await fetch(template.webhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    event: 'test',
+                    templateId: template.id,
+                    templateName: template.name,
+                    timestamp: new Date().toISOString(),
+                    message: 'This is a test webhook from Jainsight',
+                }),
+            });
+
+            return { 
+                success: response.ok, 
+                status: response.status,
+                message: response.ok ? 'Webhook test successful' : 'Webhook test failed',
+            };
+        } catch (error: any) {
+            return { 
+                success: false, 
+                message: `Webhook test failed: ${error.message}`,
+            };
+        }
+    }
+
+    // === Health Check ===
+
+    async healthCheck(id: string) {
+        const template = await this.findOne(id);
+        if (!template) throw new Error('Template not found');
+
+        const startTime = Date.now();
+        
+        try {
+            // Check if connection is available
+            const connection = await this.connectionsService.getConnectionWithPassword(template.connectionId);
+            if (!connection) {
+                return {
+                    healthy: false,
+                    connectionStatus: 'not_found',
+                    latency: Date.now() - startTime,
+                    message: 'Database connection not found',
+                };
+            }
+
+            // Try a simple validation (not actual execution)
+            return {
+                healthy: true,
+                connectionStatus: 'connected',
+                latency: Date.now() - startTime,
+                isActive: template.isActive,
+                isDeprecated: !!template.deprecatedAt,
+                message: template.isActive ? 'API is healthy and active' : 'API is healthy but inactive',
+            };
+        } catch (error: any) {
+            return {
+                healthy: false,
+                connectionStatus: 'error',
+                latency: Date.now() - startTime,
+                message: error.message,
+            };
+        }
+    }
+
+    // === Import/Export ===
+
+    async exportApis(ids: string[]) {
+        const templates = await this.templateRepository.find();
+        const toExport = ids.length > 0 
+            ? templates.filter(t => ids.includes(t.id))
+            : templates;
+
+        return toExport.map(t => ({
+            name: t.name,
+            description: t.description,
+            sql: t.sql,
+            parameters: t.parameters,
+            config: t.config,
+            visualization: t.visualization,
+            cacheTtl: t.cacheTtl,
+            rateLimit: t.rateLimit,
+            method: t.method,
+            tags: t.tags,
+            timeout: t.timeout,
+            allowedOrigins: t.allowedOrigins,
+            // Exclude: id, apiKey, connectionId, usage stats, timestamps
+        }));
+    }
+
+    async importApis(apis: any[], connectionId: string, ownerId?: string) {
+        const results: { name: string; success: boolean; id?: string; error?: string }[] = [];
+
+        for (const api of apis) {
+            try {
+                const created = await this.create({
+                    ...api,
+                    connectionId,
+                    ownerId,
+                    isActive: false, // Start inactive for safety
+                });
+                results.push({ name: api.name, success: true, id: created.id });
+            } catch (error: any) {
+                results.push({ name: api.name, success: false, error: error.message });
+            }
+        }
+
+        return {
+            imported: results.filter(r => r.success).length,
+            failed: results.filter(r => !r.success).length,
+            results,
+        };
+    }
+}

@@ -113,6 +113,19 @@ interface ApiTemplate {
     cacheTtl?: number;
     rateLimit?: { requests: number; windowSeconds: number };
     method?: string;
+    // New enhanced fields
+    successCount?: number;
+    errorCount?: number;
+    avgLatency?: number;
+    lastErrorAt?: string;
+    lastErrorMessage?: string;
+    tags?: string[];
+    timeout?: number;
+    deprecatedAt?: string;
+    deprecatedMessage?: string;
+    webhookUrl?: string;
+    webhookEvents?: ('success' | 'error' | 'all')[];
+    allowedOrigins?: string[];
 }
 
 interface TestResult {
@@ -156,7 +169,7 @@ export default function ApiBuilderPage() {
     // Code Snippet Modal State
     const [showSnippetModal, setShowSnippetModal] = useState(false);
     const [snippetApi, setSnippetApi] = useState<ApiTemplate | null>(null);
-    const [snippetType, setSnippetType] = useState<'curl' | 'javascript' | 'python'>('curl');
+    const [snippetType, setSnippetType] = useState<'curl' | 'javascript' | 'python' | 'go' | 'php' | 'csharp'>('curl');
 
     // Favorites State
     const [favoriteApis, setFavoriteApis] = useState<Set<string>>(new Set());
@@ -191,6 +204,33 @@ export default function ApiBuilderPage() {
     const [aiPrompt, setAiPrompt] = useState('');
     const [aiLoading, setAiLoading] = useState(false);
 
+    // === NEW: Bulk Operations State ===
+    const [selectedApis, setSelectedApis] = useState<Set<string>>(new Set());
+    const [bulkActionLoading, setBulkActionLoading] = useState(false);
+
+    // === NEW: Tags State ===
+    const [availableTags, setAvailableTags] = useState<string[]>([]);
+    const [selectedTags, setSelectedTags] = useState<string[]>([]);
+    const [editingTags, setEditingTags] = useState<string[]>([]);
+    const [newTagInput, setNewTagInput] = useState('');
+
+    // === NEW: Deprecation Filter ===
+    const [filterDeprecation, setFilterDeprecation] = useState<'all' | 'active' | 'deprecated'>('all');
+
+    // === NEW: Import/Export State ===
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [showExportModal, setShowExportModal] = useState(false);
+    const [importJson, setImportJson] = useState('');
+    const [importConnectionId, setImportConnectionId] = useState('');
+
+    // === NEW: Webhook Config State (in editor) ===
+    const [editingWebhookUrl, setEditingWebhookUrl] = useState('');
+    const [editingWebhookEvents, setEditingWebhookEvents] = useState<('success' | 'error' | 'all')[]>([]);
+
+    // === NEW: Statistics Modal ===
+    const [showStatsModal, setShowStatsModal] = useState(false);
+    const [statsApi, setStatsApi] = useState<any>(null);
+
     // Monaco Editor ref
     const editorRef = useRef<any>(null);
 
@@ -198,6 +238,7 @@ export default function ApiBuilderPage() {
         fetchTemplates();
         fetchConnections();
         fetchFavorites();
+        fetchTags();
     }, []);
 
     // Auto-detect params from SQL
@@ -802,6 +843,250 @@ export default function ApiBuilderPage() {
         setShowTestModal(true);
     };
 
+    // === NEW: Bulk Operations ===
+    const toggleSelectApi = (id: string) => {
+        setSelectedApis(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+    };
+
+    const selectAllApis = () => {
+        setSelectedApis(new Set(filteredTemplates.map(t => t.id)));
+    };
+
+    const deselectAllApis = () => {
+        setSelectedApis(new Set());
+    };
+
+    const handleBulkToggle = async (active: boolean) => {
+        if (selectedApis.size === 0) {
+            showToast('선택된 API가 없습니다', 'error');
+            return;
+        }
+        
+        setBulkActionLoading(true);
+        const token = localStorage.getItem('token');
+        
+        try {
+            const res = await fetch('/api/sql-api/bulk/toggle', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ ids: Array.from(selectedApis), active })
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                showToast(`${data.success}개 API ${active ? '활성화' : '비활성화'} 완료`, 'success');
+                setSelectedApis(new Set());
+                fetchTemplates();
+            }
+        } catch (e) {
+            showToast('일괄 작업 실패', 'error');
+        } finally {
+            setBulkActionLoading(false);
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedApis.size === 0) {
+            showToast('선택된 API가 없습니다', 'error');
+            return;
+        }
+        
+        if (!confirm(`${selectedApis.size}개의 API를 삭제하시겠습니까?`)) return;
+        
+        setBulkActionLoading(true);
+        const token = localStorage.getItem('token');
+        
+        try {
+            const res = await fetch('/api/sql-api/bulk', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ ids: Array.from(selectedApis) })
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                showToast(`${data.success}개 API 삭제 완료`, 'success');
+                setSelectedApis(new Set());
+                fetchTemplates();
+            }
+        } catch (e) {
+            showToast('일괄 삭제 실패', 'error');
+        } finally {
+            setBulkActionLoading(false);
+        }
+    };
+
+    // === NEW: Tags Functions ===
+    const fetchTags = async () => {
+        const token = localStorage.getItem('token');
+        try {
+            const res = await fetch('/api/sql-api/tags', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setAvailableTags(Array.isArray(data) ? data : []);
+            }
+        } catch (e) {
+            console.error('Failed to fetch tags', e);
+        }
+    };
+
+    const addTag = () => {
+        if (!newTagInput.trim()) return;
+        if (!editingTags.includes(newTagInput.trim())) {
+            setEditingTags([...editingTags, newTagInput.trim()]);
+        }
+        setNewTagInput('');
+    };
+
+    const removeTag = (tag: string) => {
+        setEditingTags(editingTags.filter(t => t !== tag));
+    };
+
+    // === NEW: Deprecation ===
+    const handleDeprecate = async (id: string) => {
+        const message = prompt('Deprecation 메시지를 입력하세요 (선택사항):') || undefined;
+        
+        const token = localStorage.getItem('token');
+        try {
+            const res = await fetch(`/api/sql-api/${id}/deprecate`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ message })
+            });
+            
+            if (res.ok) {
+                showToast('API가 deprecated로 표시되었습니다', 'success');
+                fetchTemplates();
+            }
+        } catch (e) {
+            showToast('Deprecation 실패', 'error');
+        }
+    };
+
+    const handleUndeprecate = async (id: string) => {
+        const token = localStorage.getItem('token');
+        try {
+            const res = await fetch(`/api/sql-api/${id}/undeprecate`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            
+            if (res.ok) {
+                showToast('Deprecation이 제거되었습니다', 'success');
+                fetchTemplates();
+            }
+        } catch (e) {
+            showToast('Deprecation 제거 실패', 'error');
+        }
+    };
+
+    // === NEW: Statistics Modal ===
+    const openStatsModal = async (api: ApiTemplate) => {
+        const token = localStorage.getItem('token');
+        try {
+            const res = await fetch(`/api/sql-api/${api.id}/stats/detailed`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setStatsApi(data);
+                setShowStatsModal(true);
+            }
+        } catch (e) {
+            showToast('통계 조회 실패', 'error');
+        }
+    };
+
+    // === NEW: Export APIs ===
+    const handleExport = async () => {
+        const token = localStorage.getItem('token');
+        const idsToExport = selectedApis.size > 0 ? Array.from(selectedApis) : [];
+        
+        try {
+            const res = await fetch('/api/sql-api/export', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ ids: idsToExport })
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `api_export_${new Date().toISOString().slice(0, 10)}.json`;
+                link.click();
+                showToast(`${data.length}개 API 내보내기 완료`, 'success');
+                setShowExportModal(false);
+            }
+        } catch (e) {
+            showToast('내보내기 실패', 'error');
+        }
+    };
+
+    // === NEW: Import APIs ===
+    const handleImport = async () => {
+        if (!importJson.trim() || !importConnectionId) {
+            showToast('JSON과 연결을 입력해주세요', 'error');
+            return;
+        }
+        
+        let apis;
+        try {
+            apis = JSON.parse(importJson);
+            if (!Array.isArray(apis)) {
+                apis = [apis];
+            }
+        } catch (e) {
+            showToast('유효하지 않은 JSON 형식입니다', 'error');
+            return;
+        }
+        
+        const token = localStorage.getItem('token');
+        try {
+            const res = await fetch('/api/sql-api/import', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ apis, connectionId: importConnectionId })
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                showToast(`${data.imported}개 API 가져오기 완료 (${data.failed}개 실패)`, 'success');
+                setShowImportModal(false);
+                setImportJson('');
+                fetchTemplates();
+            }
+        } catch (e) {
+            showToast('가져오기 실패', 'error');
+        }
+    };
+
     // Run test
     const runTest = async () => {
         if (!testingApi) return;
@@ -834,8 +1119,8 @@ export default function ApiBuilderPage() {
         setShowSnippetModal(true);
     };
 
-    // Generate code snippets
-    const generateSnippet = (api: ApiTemplate, type: 'curl' | 'javascript' | 'python'): string => {
+    // Generate code snippets - Enhanced with more languages
+    const generateSnippet = (api: ApiTemplate, type: 'curl' | 'javascript' | 'python' | 'go' | 'php' | 'csharp'): string => {
         const endpoint = `${typeof window !== 'undefined' ? window.location.origin : ''}/api/sql-api/execute/${api.id}`;
         const params = api.parameters?.reduce((acc, p) => {
             acc[p.name] = p.type === 'number' ? 123 : 'value';
@@ -880,6 +1165,92 @@ response = requests.post(
 
 data = response.json()
 print(data)`;
+        }
+
+        if (type === 'go') {
+            const paramsJson = JSON.stringify({ apiKey: api.apiKey, params }, null, 4);
+            return `package main
+
+import (
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "io"
+    "net/http"
+)
+
+func main() {
+    payload := []byte(\`${paramsJson}\`)
+    
+    resp, err := http.Post(
+        "${endpoint}",
+        "application/json",
+        bytes.NewBuffer(payload),
+    )
+    if err != nil {
+        panic(err)
+    }
+    defer resp.Body.Close()
+    
+    body, _ := io.ReadAll(resp.Body)
+    fmt.Println(string(body))
+}`;
+        }
+
+        if (type === 'php') {
+            return `<?php
+
+$endpoint = '${endpoint}';
+$data = [
+    'apiKey' => '${api.apiKey}',
+    'params' => ${JSON.stringify(params, null, 4).replace(/\n/g, '\n    ')}
+];
+
+$options = [
+    'http' => [
+        'header' => "Content-Type: application/json\\r\\n",
+        'method' => 'POST',
+        'content' => json_encode($data)
+    ]
+];
+
+$context = stream_context_create($options);
+$result = file_get_contents($endpoint, false, $context);
+
+$response = json_decode($result, true);
+print_r($response);`;
+        }
+
+        if (type === 'csharp') {
+            return `using System;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+class Program
+{
+    static async Task Main()
+    {
+        var client = new HttpClient();
+        var payload = new
+        {
+            apiKey = "${api.apiKey}",
+            @params = new ${JSON.stringify(params).replace(/"/g, '')}
+        };
+        
+        var json = JsonSerializer.Serialize(payload);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        
+        var response = await client.PostAsync(
+            "${endpoint}",
+            content
+        );
+        
+        var result = await response.Content.ReadAsStringAsync();
+        Console.WriteLine(result);
+    }
+}`;
         }
 
         return '';
@@ -1162,8 +1533,15 @@ print(data)`;
                         </div>
 
                         {/* Language Tabs */}
-                        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                            {(['curl', 'javascript', 'python'] as const).map(type => (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+                            {([
+                                { type: 'curl', label: '🔗 cURL' },
+                                { type: 'javascript', label: '🟡 JavaScript' },
+                                { type: 'python', label: '🐍 Python' },
+                                { type: 'go', label: '🔵 Go' },
+                                { type: 'php', label: '🐘 PHP' },
+                                { type: 'csharp', label: '💜 C#' },
+                            ] as const).map(({ type, label }) => (
                                 <button
                                     key={type}
                                     onClick={() => setSnippetType(type)}
@@ -1178,7 +1556,7 @@ print(data)`;
                                         fontWeight: 500,
                                     }}
                                 >
-                                    {type === 'curl' ? '🔗 cURL' : type === 'javascript' ? '🟡 JavaScript' : '🐍 Python'}
+                                    {label}
                                 </button>
                             ))}
                         </div>
