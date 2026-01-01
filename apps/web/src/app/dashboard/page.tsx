@@ -47,16 +47,21 @@ export default function DashboardPage() {
         
         try {
             const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
-            const [dashRes, completeRes, notifRes, favRes, sysRes] = await Promise.all([
+            const [dashRes, completeRes, notifRes, favRes, sysRes, auditRes] = await Promise.all([
                 fetch(`${API_URL}/users/${user.id}/dashboard`, { headers }).catch(() => null),
                 fetch(`${API_URL}/users/${user.id}/profile-completion`, { headers }).catch(() => null),
                 fetch(`${API_URL}/users/${user.id}/notifications?limit=1`, { headers }).catch(() => null),
                 fetch(`${API_URL}/users/${user.id}/favorites?limit=5`, { headers }).catch(() => null),
-                fetch(`${API_URL}/dashboard/stats`, { headers }).catch(() => null)
+                fetch(`${API_URL}/dashboard/stats`, { headers }).catch(() => null),
+                fetch(`${API_URL}/audit?limit=5`, { headers }).catch(() => null)
             ]);
 
+            let recentActivity: DashboardData['recentActivity'] = [];
+            
             if (dashRes?.ok) {
-                setData(await dashRes.json());
+                const dashData = await dashRes.json();
+                setData(dashData);
+                recentActivity = dashData.recentActivity || [];
             } else {
                 // 폴백: 사용자 정보가 없으면 기본값 사용
                 setData({
@@ -64,6 +69,24 @@ export default function DashboardPage() {
                     stats: { queriesExecuted: 0, reportsViewed: 0, accountAge: 0 },
                     recentActivity: []
                 });
+            }
+
+            // Audit 로그에서 최근 활동 가져오기 (폴백 또는 보충)
+            if (auditRes?.ok) {
+                const auditData = await auditRes.json();
+                if (Array.isArray(auditData) && auditData.length > 0) {
+                    const auditActivities = auditData.slice(0, 5).map((log: any) => ({
+                        id: log.id,
+                        action: 'query_execute',
+                        details: { query: log.query?.substring(0, 50), connection: log.connectionName },
+                        createdAt: log.executedAt
+                    }));
+                    // 기존 활동이 없으면 Audit 로그 사용
+                    if (recentActivity.length === 0) {
+                        recentActivity = auditActivities;
+                        setData(prev => prev ? { ...prev, recentActivity: auditActivities } : prev);
+                    }
+                }
             }
 
             if (completeRes?.ok) {
@@ -253,21 +276,45 @@ export default function DashboardPage() {
                         <div style={{ padding: '20px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                                 <h3 style={{ fontSize: '16px', fontWeight: '600', color: darkTheme.textPrimary }}>📋 최근 활동</h3>
-                                <a href="/activity" style={{ fontSize: '12px', color: darkTheme.accentBlue, textDecoration: 'none' }}>더보기</a>
+                                <a href="/audit" style={{ fontSize: '12px', color: darkTheme.accentBlue, textDecoration: 'none' }}>더보기</a>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                {data?.recentActivity.slice(0, 4).map((activity) => {
-                                    const info = actionLabels[activity.action] || { label: activity.action, icon: '📌' };
-                                    return (
-                                        <div key={activity.id} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                            <span style={{ fontSize: '16px' }}>{info.icon}</span>
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{ fontSize: '13px', color: darkTheme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.label}</div>
-                                                <div style={{ fontSize: '11px', color: darkTheme.textMuted }}>{formatTimeAgo(activity.createdAt)}</div>
+                                {data?.recentActivity && data.recentActivity.length > 0 ? (
+                                    data.recentActivity.slice(0, 4).map((activity) => {
+                                        const info = actionLabels[activity.action] || { label: activity.action, icon: '📌' };
+                                        return (
+                                            <div key={activity.id} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                <span style={{ fontSize: '16px' }}>{info.icon}</span>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontSize: '13px', color: darkTheme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {info.label}
+                                                        {activity.details?.connection && <span style={{ color: darkTheme.textMuted }}> • {String(activity.details.connection)}</span>}
+                                                    </div>
+                                                    <div style={{ fontSize: '11px', color: darkTheme.textMuted }}>{formatTimeAgo(activity.createdAt)}</div>
+                                                </div>
                                             </div>
+                                        );
+                                    })
+                                ) : (
+                                    <div style={{ textAlign: 'center', padding: '20px 10px' }}>
+                                        <div style={{ fontSize: '32px', marginBottom: '8px', opacity: 0.6 }}>📭</div>
+                                        <div style={{ fontSize: '13px', color: darkTheme.textMuted, marginBottom: '12px' }}>
+                                            아직 활동 기록이 없습니다
                                         </div>
-                                    );
-                                })}
+                                        <a href="/editor" style={{
+                                            display: 'inline-block',
+                                            padding: '8px 16px',
+                                            background: `${darkTheme.accentBlue}20`,
+                                            color: darkTheme.accentBlue,
+                                            borderRadius: '8px',
+                                            fontSize: '12px',
+                                            textDecoration: 'none',
+                                            fontWeight: '500'
+                                        }}>
+                                            🚀 첫 쿼리 실행하기
+                                        </a>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </AnimatedCard>
