@@ -32,11 +32,16 @@ export class CreateConnectionDto {
     database?: string;
 
     @IsOptional()
-    @IsIn(['private', 'team', 'public'])
-    visibility?: 'private' | 'team' | 'public';
+    @IsIn(['private', 'team', 'group', 'public'])
+    visibility?: 'private' | 'team' | 'group' | 'public';
 
     @IsOptional()
     @IsArray()
     sharedWith?: string[];
+
+    @IsOptional()
+    @IsArray()
+    sharedWithGroups?: string[];
 }
+
 

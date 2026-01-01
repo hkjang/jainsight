@@ -4,6 +4,7 @@ import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateCol
 export enum ConnectionVisibility {
     PRIVATE = 'private',   // Only owner can access
     TEAM = 'team',         // Shared with specific users
+    GROUP = 'group',       // Shared with specific groups (RBAC)
     PUBLIC = 'public',     // All authenticated users
 }
 
@@ -46,10 +47,15 @@ export class Connection {
     @Column({ type: 'simple-array', nullable: true })
     sharedWith: string[];
 
+    // Group IDs this connection is shared with (for 'group' visibility - RBAC)
+    @Column({ type: 'simple-array', nullable: true })
+    sharedWithGroups: string[];
+
     @CreateDateColumn()
     createdAt: Date;
 
     @UpdateDateColumn()
     updatedAt: Date;
 }
+
 

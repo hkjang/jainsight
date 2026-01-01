@@ -1,11 +1,12 @@
 
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, Brackets } from 'typeorm';
 import { Connection, ConnectionVisibility } from './entities/connection.entity';
 import { CreateConnectionDto } from './dto/create-connection.dto';
 import { UpdateConnectionDto } from './dto/update-connection.dto';
 import { DatabaseConnectorService } from '../database-connector/database-connector.service';
+import { GroupsService } from '../groups/groups.service';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -21,6 +22,8 @@ export class ConnectionsService {
         @InjectRepository(Connection)
         private connectionsRepository: Repository<Connection>,
         private databaseConnectorService: DatabaseConnectorService,
+        @Inject(forwardRef(() => GroupsService))
+        private groupsService: GroupsService,
     ) { }
 
     private encrypt(text: string): string {
@@ -43,8 +46,8 @@ export class ConnectionsService {
         }
     }
 
-    /* Check if user can access this connection */
-    private canAccess(connection: Connection, userId: string, isAdmin: boolean = false): boolean {
+    /* Check if user can access this connection (sync check for TEAM/PUBLIC) */
+    private canAccessSync(connection: Connection, userId: string, isAdmin: boolean = false): boolean {
         if (isAdmin) return true;
         if (connection.visibility === ConnectionVisibility.PUBLIC) return true;
         if (connection.createdBy === userId) return true;
@@ -53,14 +56,39 @@ export class ConnectionsService {
         return false;
     }
 
+    /* Async check for group-based access (RBAC) */
+    private async canAccessAsync(connection: Connection, userId: string, userGroupIds: string[], isAdmin: boolean = false): Promise<boolean> {
+        // First do sync checks
+        if (this.canAccessSync(connection, userId, isAdmin)) return true;
+        
+        // Check group-based access
+        if (connection.visibility === ConnectionVisibility.GROUP && connection.sharedWithGroups?.length > 0) {
+            // Check if user belongs to any of the shared groups
+            const hasGroupAccess = connection.sharedWithGroups.some(groupId => userGroupIds.includes(groupId));
+            if (hasGroupAccess) return true;
+        }
+        
+        return false;
+    }
+
+    /* Get user's group IDs */
+    private async getUserGroupIds(userId: string): Promise<string[]> {
+        const userGroups = await this.groupsService.getUserGroups(userId);
+        return userGroups.map(ug => ug.groupId);
+    }
+
     /* Exposed for internal services (Query/Schema) to get decrypted password */
     async getConnectionWithPassword(id: string, userId?: string): Promise<Connection | null> {
         const connection = await this.connectionsRepository.findOneBy({ id });
         if (!connection) return null;
         
         // If userId provided, check access (internal calls may not have userId)
-        if (userId && !this.canAccess(connection, userId)) {
-            throw new ForbiddenException('Access denied to this connection');
+        if (userId) {
+            const userGroupIds = await this.getUserGroupIds(userId);
+            const hasAccess = await this.canAccessAsync(connection, userId, userGroupIds);
+            if (!hasAccess) {
+                throw new ForbiddenException('Access denied to this connection');
+            }
         }
         
         if (connection.password) {
@@ -76,6 +104,7 @@ export class ConnectionsService {
             createdBy: userId,
             visibility,
             sharedWith: createConnectionDto.sharedWith || [],
+            sharedWithGroups: createConnectionDto.sharedWithGroups || [],
         });
         if (connection.password) {
             connection.password = this.encrypt(connection.password);
@@ -90,15 +119,26 @@ export class ConnectionsService {
             // Admin sees all
             connections = await this.connectionsRepository.find();
         } else {
-            // Regular user: public + own + shared with them
-            connections = await this.connectionsRepository
-                .createQueryBuilder('conn')
-                .where(new Brackets(qb => {
-                    qb.where('conn.visibility = :public', { public: ConnectionVisibility.PUBLIC })
-                      .orWhere('conn.createdBy = :userId', { userId })
-                      .orWhere('conn.sharedWith LIKE :userIdPattern', { userIdPattern: `%${userId}%` });
-                }))
-                .getMany();
+            // Get user's groups for group-based access
+            const userGroupIds = await this.getUserGroupIds(userId);
+            
+            // Regular user: public + own + shared with them + group shared
+            connections = await this.connectionsRepository.find();
+            
+            // Filter by access permissions
+            connections = connections.filter(conn => {
+                // Public connections
+                if (conn.visibility === ConnectionVisibility.PUBLIC) return true;
+                // Own connections
+                if (conn.createdBy === userId) return true;
+                // Team shared
+                if (conn.visibility === ConnectionVisibility.TEAM && conn.sharedWith?.includes(userId)) return true;
+                // Group shared (RBAC)
+                if (conn.visibility === ConnectionVisibility.GROUP && conn.sharedWithGroups?.length > 0) {
+                    return conn.sharedWithGroups.some(gid => userGroupIds.includes(gid));
+                }
+                return false;
+            });
         }
         
         return connections.map(conn => ({
@@ -113,7 +153,9 @@ export class ConnectionsService {
         if (!connection) {
             throw new NotFoundException('Connection not found');
         }
-        if (!this.canAccess(connection, userId, isAdmin)) {
+        const userGroupIds = await this.getUserGroupIds(userId);
+        const hasAccess = await this.canAccessAsync(connection, userId, userGroupIds, isAdmin);
+        if (!hasAccess) {
             throw new ForbiddenException('Access denied to this connection');
         }
         return {
