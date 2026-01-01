@@ -92,7 +92,10 @@ export class ConnectionsService {
         }
         
         if (connection.password) {
+            const encryptedPassword = connection.password;
             connection.password = this.decrypt(connection.password);
+            // Debug: Check if password decryption is working
+            console.log(`[ConnectionsService] Connection ${connection.name}: encrypted=${encryptedPassword.substring(0, 10)}..., decrypted length=${connection.password?.length}`);
         }
         return connection;
     }
