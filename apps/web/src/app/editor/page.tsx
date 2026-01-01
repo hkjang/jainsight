@@ -1165,6 +1165,29 @@ export default function EditorPage() {
             setRecentConnections(updated);
             localStorage.setItem('editorRecentConnections', JSON.stringify(updated));
             
+            // Auto-test connection status
+            const autoTestConnection = async () => {
+                setConnectionStatus('testing');
+                const token = localStorage.getItem('token');
+                if (!token) return;
+                
+                try {
+                    const res = await fetch('/api/query/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ connectionId: selectedConnection, query: 'SELECT 1' }),
+                    });
+                    if (res.ok) {
+                        setConnectionStatus('connected');
+                    } else {
+                        setConnectionStatus('disconnected');
+                    }
+                } catch (e) {
+                    setConnectionStatus('disconnected');
+                }
+            };
+            autoTestConnection();
+            
             // Auto-fetch schema for autocomplete
             const fetchSchemaForAutocomplete = async () => {
                 const token = localStorage.getItem('token');
