@@ -325,6 +325,7 @@ export default function EditorPage() {
     const [saveName, setSaveName] = useState('');
     const [saveDescription, setSaveDescription] = useState('');
     const [isPublic, setIsPublic] = useState(false);
+    const [saveNameGenerating, setSaveNameGenerating] = useState(false);
     
     // AI State
     const [aiPrompt, setAiPrompt] = useState('');
@@ -1648,13 +1649,21 @@ export default function EditorPage() {
 
     const handleSaveQuery = async () => {
         if (!saveName) return;
+        
+        // 중복 이름 확인
+        const isDuplicate = savedQueries.some(q => q.name.toLowerCase() === saveName.trim().toLowerCase());
+        if (isDuplicate) {
+            showToast('이미 같은 이름의 쿼리가 존재합니다. 다른 이름을 사용해주세요.', 'error');
+            return;
+        }
+        
         const token = localStorage.getItem('token');
         if (!token) return;
         try {
             const res = await fetch('/api/queries', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ name: saveName, description: saveDescription, isPublic, query }),
+                body: JSON.stringify({ name: saveName.trim(), description: saveDescription, isPublic, query }),
             });
             if (res.ok) {
                 setShowSaveModal(false);
@@ -1662,11 +1671,70 @@ export default function EditorPage() {
                 setSaveDescription('');
                 setIsPublic(false);
                 fetchSavedQueries(token);
+                showToast('쿼리가 저장되었습니다', 'success');
+            } else {
+                const errorData = await res.json().catch(() => ({}));
+                if (errorData.message?.includes('duplicate') || errorData.message?.includes('exists')) {
+                    showToast('이미 같은 이름의 쿼리가 존재합니다.', 'error');
+                } else {
+                    showToast(errorData.message || '저장 실패', 'error');
+                }
             }
         } catch (e) {
             console.error('Failed to save query', e);
+            showToast('저장 실패', 'error');
         }
     };
+
+    // AI로 쿼리명과 설명 자동 생성
+    const generateQueryNameAndDescription = useCallback(async (queryText: string) => {
+        if (!queryText.trim() || !selectedConnection) return;
+        
+        setSaveNameGenerating(true);
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setSaveNameGenerating(false);
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/ai/generate-query-name', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ connectionId: selectedConnection, query: queryText }),
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                if (data.name) setSaveName(data.name);
+                if (data.description) setSaveDescription(data.description);
+            } else {
+                // AI 실패 시 쿼리에서 간단히 추출
+                const firstLine = queryText.trim().split('\n')[0].replace(/^--\s*/, '').trim();
+                const keywords = queryText.match(/\b(SELECT|FROM|WHERE|JOIN|INSERT|UPDATE|DELETE)\s+(\w+)/gi);
+                if (keywords && keywords.length > 0) {
+                    const tables = queryText.match(/FROM\s+(\w+)/gi);
+                    const tableName = tables ? tables[0].replace(/FROM\s+/i, '') : '';
+                    setSaveName(tableName ? `${tableName} 조회` : '새 쿼리');
+                } else {
+                    setSaveName(firstLine.substring(0, 50) || '새 쿼리');
+                }
+            }
+        } catch (e) {
+            // 실패 시 기본값
+            const timestamp = new Date().toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            setSaveName(`쿼리 ${timestamp}`);
+        } finally {
+            setSaveNameGenerating(false);
+        }
+    }, [selectedConnection]);
+
+    // 저장 모달이 열릴 때 AI로 이름 생성
+    useEffect(() => {
+        if (showSaveModal && query.trim() && !saveName) {
+            generateQueryNameAndDescription(query);
+        }
+    }, [showSaveModal, query, generateQueryNameAndDescription]);
 
     const handleDeleteQuery = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -2956,23 +3024,113 @@ export default function EditorPage() {
             {/* Save Modal */}
             {showSaveModal && (
                 <div style={styles.modal} onClick={() => setShowSaveModal(false)}>
-                    <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
-                        <h3 style={{ margin: '0 0 16px', fontSize: 18 }}>💾 Save Query</h3>
-                        <div style={{ marginBottom: 12 }}>
-                            <label style={{ display: 'block', fontSize: 13, marginBottom: 4, color: theme.textSecondary }}>Name *</label>
-                            <input type="text" value={saveName} onChange={(e) => setSaveName(e.target.value)} style={{ ...styles.input, width: '100%' }} placeholder="My Query" autoFocus />
+                    <div 
+                        style={styles.modalContent} 
+                        onClick={e => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                            if (e.ctrlKey && e.key === 's') {
+                                e.preventDefault();
+                                const isDuplicate = savedQueries.some(q => q.name.toLowerCase() === saveName.trim().toLowerCase());
+                                if (saveName && !isDuplicate) handleSaveQuery();
+                            }
+                        }}
+                    >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                            <h3 style={{ margin: 0, fontSize: 18 }}>💾 쿼리 저장</h3>
+                            <button 
+                                onClick={() => generateQueryNameAndDescription(query)} 
+                                disabled={saveNameGenerating}
+                                style={{ 
+                                    ...styles.btnIcon, 
+                                    fontSize: 12, 
+                                    color: theme.primary,
+                                    opacity: saveNameGenerating ? 0.5 : 1,
+                                }}
+                                title="AI로 다시 생성"
+                            >
+                                {saveNameGenerating ? '⏳' : '✨'} AI 생성
+                            </button>
                         </div>
                         <div style={{ marginBottom: 12 }}>
-                            <label style={{ display: 'block', fontSize: 13, marginBottom: 4, color: theme.textSecondary }}>Description</label>
-                            <input type="text" value={saveDescription} onChange={(e) => setSaveDescription(e.target.value)} style={{ ...styles.input, width: '100%' }} placeholder="Optional description" />
+                            <label style={{ display: 'block', fontSize: 13, marginBottom: 4, color: theme.textSecondary }}>
+                                이름 *
+                            </label>
+                            <div style={{ position: 'relative' }}>
+                                <input 
+                                    type="text" 
+                                    value={saveName} 
+                                    onChange={(e) => setSaveName(e.target.value)} 
+                                    style={{ 
+                                        ...styles.input, 
+                                        width: '100%',
+                                        paddingRight: saveNameGenerating ? 32 : 12,
+                                        borderColor: saveName && savedQueries.some(q => q.name.toLowerCase() === saveName.trim().toLowerCase()) 
+                                            ? theme.error 
+                                            : undefined,
+                                    }} 
+                                    placeholder={saveNameGenerating ? "AI가 이름을 생성 중..." : "쿼리 이름"} 
+                                    autoFocus 
+                                />
+                                {saveNameGenerating && (
+                                    <span style={{ 
+                                        position: 'absolute', 
+                                        right: 10, 
+                                        top: '50%', 
+                                        transform: 'translateY(-50%)',
+                                        animation: 'spin 1s linear infinite',
+                                    }}>⏳</span>
+                                )}
+                            </div>
+                            {saveName && savedQueries.some(q => q.name.toLowerCase() === saveName.trim().toLowerCase()) && (
+                                <div style={{ 
+                                    marginTop: 4, 
+                                    fontSize: 11, 
+                                    color: theme.error,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                }}>
+                                    ⚠️ 이미 같은 이름의 쿼리가 존재합니다
+                                </div>
+                            )}
+                        </div>
+                        <div style={{ marginBottom: 12 }}>
+                            <label style={{ display: 'block', fontSize: 13, marginBottom: 4, color: theme.textSecondary }}>
+                                설명
+                            </label>
+                            <textarea 
+                                value={saveDescription} 
+                                onChange={(e) => setSaveDescription(e.target.value)} 
+                                style={{ 
+                                    ...styles.input, 
+                                    width: '100%', 
+                                    minHeight: 60, 
+                                    resize: 'vertical',
+                                    fontFamily: 'inherit',
+                                }} 
+                                placeholder={saveNameGenerating ? "AI가 설명을 생성 중..." : "쿼리에 대한 설명 (선택사항)"} 
+                            />
                         </div>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 16 }}>
                             <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
-                            <span style={{ fontSize: 13 }}>Share with team</span>
+                            <span style={{ fontSize: 13 }}>팀과 공유</span>
                         </label>
+                        <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 12, padding: 8, backgroundColor: theme.bgHover, borderRadius: 6 }}>
+                            💡 Ctrl+S를 눌러 바로 저장할 수 있습니다
+                        </div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                            <button onClick={() => setShowSaveModal(false)} style={{ ...styles.btn, ...styles.btnSecondary }}>Cancel</button>
-                            <button onClick={handleSaveQuery} disabled={!saveName} style={{ ...styles.btn, ...styles.btnPrimary, opacity: saveName ? 1 : 0.5 }}>Save</button>
+                            <button onClick={() => setShowSaveModal(false)} style={{ ...styles.btn, ...styles.btnSecondary }}>취소</button>
+                            <button 
+                                onClick={handleSaveQuery} 
+                                disabled={!saveName || saveNameGenerating || savedQueries.some(q => q.name.toLowerCase() === saveName.trim().toLowerCase())} 
+                                style={{ 
+                                    ...styles.btn, 
+                                    ...styles.btnPrimary, 
+                                    opacity: (saveName && !saveNameGenerating && !savedQueries.some(q => q.name.toLowerCase() === saveName.trim().toLowerCase())) ? 1 : 0.5 
+                                }}
+                            >
+                                💾 저장 (Ctrl+S)
+                            </button>
                         </div>
                     </div>
                 </div>

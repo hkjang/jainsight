@@ -249,4 +249,136 @@ export class AiService {
         // 기본: 전체 조회
         return `-- ${matchedTable.koreanName} 조회\nSELECT *\nFROM ${tableName}\nLIMIT 100;`;
     }
+
+    /**
+     * 쿼리명과 설명을 AI 기반으로 자동 생성
+     */
+    async generateQueryName(connectionId: string, query: string): Promise<{ name: string; description: string }> {
+        try {
+            const upperQuery = query.toUpperCase();
+            
+            // SQL에서 테이블명 추출
+            const tableMatch = query.match(/FROM\s+([a-zA-Z_][a-zA-Z0-9_]*)/i);
+            const tableName = tableMatch ? tableMatch[1] : '';
+            
+            // 쿼리 타입 확인
+            let queryType = '조회';
+            if (upperQuery.startsWith('INSERT')) queryType = '삽입';
+            else if (upperQuery.startsWith('UPDATE')) queryType = '수정';
+            else if (upperQuery.startsWith('DELETE')) queryType = '삭제';
+            else if (upperQuery.includes('COUNT(')) queryType = '개수 조회';
+            else if (upperQuery.includes('GROUP BY')) queryType = '그룹별 통계';
+            else if (upperQuery.includes('ORDER BY') && upperQuery.includes('DESC')) queryType = '최신순 조회';
+            else if (upperQuery.includes('SUM(') || upperQuery.includes('AVG(')) queryType = '통계';
+            else if (upperQuery.includes('JOIN')) queryType = '연관 조회';
+            
+            // 특수 조건 확인
+            let condition = '';
+            if (upperQuery.includes('WHERE')) {
+                if (upperQuery.includes('LIKE')) condition = ' (검색)';
+                else if (upperQuery.includes('BETWEEN')) condition = ' (기간)';
+                else if (upperQuery.includes('IN (')) condition = ' (목록)';
+                else condition = ' (조건)';
+            }
+            
+            // 제한 조건 확인
+            const limitMatch = query.match(/LIMIT\s+(\d+)/i);
+            const limitInfo = limitMatch && parseInt(limitMatch[1]) < 100 ? ` TOP ${limitMatch[1]}` : '';
+            
+            // 한글 테이블명 변환
+            const koreanTableName = translateTableName(tableName) || tableName;
+            
+            // 이름 생성
+            const name = tableName 
+                ? `${koreanTableName} ${queryType}${condition}${limitInfo}`.trim()
+                : `쿼리 ${new Date().toLocaleDateString('ko-KR')}`;
+            
+            // 설명 생성
+            const lines = query.trim().split('\n').filter(l => !l.trim().startsWith('--'));
+            const description = `${queryType} 쿼리${tableName ? ` - ${tableName} 테이블` : ''}. ` +
+                `${lines.length > 3 ? `${lines.length}줄 쿼리.` : ''} ` +
+                (upperQuery.includes('JOIN') ? '조인 포함. ' : '') +
+                (upperQuery.includes('WHERE') ? '조건 필터 적용. ' : '');
+            
+            return { name: name.substring(0, 100), description: description.trim() };
+        } catch (error) {
+            this.logger.error('Failed to generate query name', error);
+            return { name: `쿼리 ${new Date().toLocaleDateString('ko-KR')}`, description: '' };
+        }
+    }
+
+    /**
+     * SQL 오류 분석 및 수정 제안
+     */
+    async analyzeError(connectionId: string, query: string, errorMessage: string): Promise<{ cause: string; solution: string; correctedQuery?: string }> {
+        try {
+            const lowerError = errorMessage.toLowerCase();
+            
+            // 컬럼 관련 오류
+            if (lowerError.includes('column') && lowerError.includes('does not exist')) {
+                const columnMatch = errorMessage.match(/column\s+"?([a-zA-Z_][a-zA-Z0-9_]*)"?/i);
+                const columnName = columnMatch ? columnMatch[1] : '알 수 없음';
+                return {
+                    cause: `컬럼 "${columnName}"이(가) 존재하지 않습니다.`,
+                    solution: '스키마 브라우저에서 정확한 컬럼명을 확인하세요. 대소문자 구분에 주의하세요.',
+                };
+            }
+            
+            // 테이블 관련 오류
+            if (lowerError.includes('relation') && lowerError.includes('does not exist')) {
+                const tableMatch = errorMessage.match(/relation\s+"?([a-zA-Z_][a-zA-Z0-9_]*)"?/i);
+                const tableName = tableMatch ? tableMatch[1] : '알 수 없음';
+                return {
+                    cause: `테이블 "${tableName}"이(가) 존재하지 않습니다.`,
+                    solution: '스키마 브라우저에서 정확한 테이블명을 확인하세요. 스키마명(예: public.)이 필요할 수 있습니다.',
+                };
+            }
+            
+            // 문법 오류
+            if (lowerError.includes('syntax error')) {
+                const nearMatch = errorMessage.match(/near\s+"?([^"]+)"?/i) || errorMessage.match(/at or near\s+"?([^"]+)"?/i);
+                const nearText = nearMatch ? nearMatch[1] : '';
+                return {
+                    cause: `SQL 문법 오류${nearText ? `: "${nearText}" 근처` : ''}`,
+                    solution: '괄호, 쉼표, 따옴표가 올바르게 짝이 맞는지 확인하세요. SQL 키워드 철자를 확인하세요.',
+                };
+            }
+            
+            // 권한 오류
+            if (lowerError.includes('permission denied')) {
+                return {
+                    cause: '해당 테이블/작업에 대한 권한이 없습니다.',
+                    solution: '데이터베이스 관리자에게 권한을 요청하세요.',
+                };
+            }
+            
+            // 연결 오류
+            if (lowerError.includes('connection') || lowerError.includes('timeout')) {
+                return {
+                    cause: '데이터베이스 연결 문제가 발생했습니다.',
+                    solution: '네트워크 연결을 확인하고, 연결 설정을 다시 테스트해보세요.',
+                };
+            }
+            
+            // 타입 오류
+            if (lowerError.includes('type') && (lowerError.includes('mismatch') || lowerError.includes('cannot'))) {
+                return {
+                    cause: '데이터 타입이 일치하지 않습니다.',
+                    solution: 'CAST()나 ::type을 사용하여 타입을 변환하세요. 예: CAST(column AS INTEGER)',
+                };
+            }
+            
+            // 기본 응답
+            return {
+                cause: errorMessage,
+                solution: '쿼리를 다시 확인하고, 스키마 브라우저에서 테이블과 컬럼 정보를 확인해보세요.',
+            };
+        } catch (error) {
+            this.logger.error('Failed to analyze error', error);
+            return {
+                cause: errorMessage,
+                solution: '오류를 분석할 수 없습니다. 쿼리를 다시 확인해주세요.',
+            };
+        }
+    }
 }
