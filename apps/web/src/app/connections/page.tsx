@@ -47,6 +47,7 @@ export default function ConnectionsPage() {
     const [showPassword, setShowPassword] = useState(false);
     const [saving, setSaving] = useState(false);
     const [groups, setGroups] = useState<{id: string; name: string}[]>([]);
+    const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'mine' | 'group' | 'public'>('all');
     const router = useRouter();
 
     const fetchConnections = useCallback(async () => {
@@ -230,9 +231,20 @@ export default function ConnectionsPage() {
                 conn.host.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 conn.database.toLowerCase().includes(searchTerm.toLowerCase());
             const matchesType = !selectedType || conn.type.toLowerCase() === selectedType;
-            return matchesSearch && matchesType;
+            
+            // Visibility filter
+            let matchesVisibility = true;
+            if (visibilityFilter === 'mine') {
+                matchesVisibility = conn.isOwner === true;
+            } else if (visibilityFilter === 'group') {
+                matchesVisibility = conn.visibility === 'group';
+            } else if (visibilityFilter === 'public') {
+                matchesVisibility = conn.visibility === 'public';
+            }
+            
+            return matchesSearch && matchesType && matchesVisibility;
         });
-    }, [connections, searchTerm, selectedType]);
+    }, [connections, searchTerm, selectedType, visibilityFilter]);
 
     // Group by type for stats
     const stats = useMemo(() => {
@@ -483,6 +495,43 @@ export default function ConnectionsPage() {
                             </button>
                         ))}
                     </div>
+                    
+                    {/* Visibility Filter */}
+                    <div style={{ display: 'flex', gap: '6px', marginLeft: 'auto' }}>
+                        {[
+                            { id: 'all', label: '전체', icon: '📋' },
+                            { id: 'mine', label: '내 연결', icon: '👤' },
+                            { id: 'group', label: '그룹', icon: '👥' },
+                            { id: 'public', label: '공개', icon: '🌐' },
+                        ].map(opt => (
+                            <button
+                                key={opt.id}
+                                onClick={() => setVisibilityFilter(opt.id as 'all' | 'mine' | 'group' | 'public')}
+                                style={{
+                                    padding: '8px 12px',
+                                    background: visibilityFilter === opt.id 
+                                        ? (opt.id === 'mine' ? 'rgba(139, 92, 246, 0.2)' : opt.id === 'group' ? 'rgba(16, 185, 129, 0.2)' : opt.id === 'public' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(99, 102, 241, 0.2)')
+                                        : 'transparent',
+                                    border: visibilityFilter === opt.id 
+                                        ? (opt.id === 'mine' ? '1px solid #8b5cf6' : opt.id === 'group' ? '1px solid #10b981' : opt.id === 'public' ? '1px solid #f59e0b' : '1px solid #6366f1')
+                                        : '1px solid rgba(99, 102, 241, 0.2)',
+                                    borderRadius: '6px',
+                                    color: visibilityFilter === opt.id 
+                                        ? (opt.id === 'mine' ? '#c4b5fd' : opt.id === 'group' ? '#34d399' : opt.id === 'public' ? '#fbbf24' : '#a5b4fc')
+                                        : '#64748b',
+                                    cursor: 'pointer',
+                                    fontSize: '12px',
+                                    fontWeight: 500,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    transition: 'all 0.2s',
+                                }}
+                            >
+                                {opt.icon} {opt.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             )}
 
@@ -677,6 +726,20 @@ export default function ConnectionsPage() {
                                         {conn.createdAt && (
                                             <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                 <span>📅</span> {new Date(conn.createdAt).toLocaleDateString('ko-KR')}
+                                            </span>
+                                        )}
+                                        {conn.visibility === 'group' && conn.sharedWithGroups && conn.sharedWithGroups.length > 0 && (
+                                            <span style={{ 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                gap: '4px',
+                                                padding: '2px 8px',
+                                                background: 'rgba(16, 185, 129, 0.1)',
+                                                borderRadius: '4px',
+                                                color: '#34d399',
+                                                fontSize: '11px',
+                                            }}>
+                                                <span>👥</span> {conn.sharedWithGroups.length}개 그룹 공유
                                             </span>
                                         )}
                                     </div>
