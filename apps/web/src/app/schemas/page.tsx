@@ -335,6 +335,10 @@ export default function SchemaExplorerPage() {
     const [editingColumn, setEditingColumn] = useState<string | null>(null);
     const [editingValue, setEditingValue] = useState('');
 
+    // 테이블 번역 수동 수정 상태
+    const [editingTable, setEditingTable] = useState<string | null>(null);
+    const [editingTableValue, setEditingTableValue] = useState('');
+
     // 컬럼 번역 저장
     const saveColumnTranslation = async (columnName: string) => {
         const token = localStorage.getItem('token');
@@ -359,6 +363,32 @@ export default function SchemaExplorerPage() {
             console.error('Failed to save column translation', e);
         }
         setEditingColumn(null);
+    };
+
+    // 테이블 번역 저장
+    const saveTableTranslation = async (tableName: string) => {
+        const token = localStorage.getItem('token');
+        if (!token || !selectedConnection || !editingTableValue.trim()) {
+            setEditingTable(null);
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/schema/${selectedConnection}/translations/${tableName}`, {
+                method: 'PATCH',
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ koreanName: editingTableValue.trim() })
+            });
+            if (res.ok) {
+                fetchTranslations(selectedConnection);
+            }
+        } catch (e) {
+            console.error('Failed to save table translation', e);
+        }
+        setEditingTable(null);
     };
 
     // 테이블 한글명 가져오기 (저장된 번역 우선, 없으면 사전 번역)
@@ -698,18 +728,59 @@ export default function SchemaExplorerPage() {
                                                 }}>
                                                     {table.name}
                                                 </span>
-                                                <span style={{
-                                                    fontSize: '11px',
-                                                    color: tableTranslations[table.name]?.isAiGenerated ? '#22c55e' : '#6366f1',
-                                                    display: 'block',
-                                                    marginTop: '2px',
-                                                }}>
-                                                    {getTableKoreanName(table.name) !== table.name ? (
+                                                <span 
+                                                    style={{
+                                                        fontSize: '11px',
+                                                        color: tableTranslations[table.name]?.isAiGenerated ? '#22c55e' : '#6366f1',
+                                                        display: 'block',
+                                                        marginTop: '2px',
+                                                        cursor: 'pointer',
+                                                    }}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setEditingTable(table.name);
+                                                        setEditingTableValue(getTableKoreanName(table.name));
+                                                    }}
+                                                    title="클릭하여 한글명 수정"
+                                                >
+                                                    {editingTable === table.name ? (
+                                                        <input
+                                                            type="text"
+                                                            value={editingTableValue}
+                                                            onChange={(e) => setEditingTableValue(e.target.value)}
+                                                            onBlur={() => saveTableTranslation(table.name)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') saveTableTranslation(table.name);
+                                                                if (e.key === 'Escape') setEditingTable(null);
+                                                            }}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            autoFocus
+                                                            style={{
+                                                                padding: '2px 6px',
+                                                                fontSize: '11px',
+                                                                background: 'rgba(99, 102, 241, 0.2)',
+                                                                border: '1px solid rgba(99, 102, 241, 0.4)',
+                                                                borderRadius: '4px',
+                                                                color: '#e2e8f0',
+                                                                width: '100%',
+                                                                outline: 'none',
+                                                            }}
+                                                        />
+                                                    ) : (
                                                         <>
-                                                            {getTableKoreanName(table.name)}
-                                                            {tableTranslations[table.name]?.isAiGenerated && ' 🤖'}
+                                                            {getTableKoreanName(table.name) !== table.name ? (
+                                                                <>
+                                                                    {getTableKoreanName(table.name)}
+                                                                    {tableTranslations[table.name]?.isAiGenerated && ' 🤖'}
+                                                                    <span style={{ fontSize: '9px', opacity: 0.5, marginLeft: '4px' }}>✏️</span>
+                                                                </>
+                                                            ) : (
+                                                                <span style={{ opacity: 0.5 }}>
+                                                                    한글명 추가 ✏️
+                                                                </span>
+                                                            )}
                                                         </>
-                                                    ) : ''}
+                                                    )}
                                                 </span>
                                             </div>
                                             <span style={{
