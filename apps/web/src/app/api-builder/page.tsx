@@ -1881,7 +1881,14 @@ class Program
                                                                 {favoriteApis.has(t.id) ? '⭐' : '☆'}
                                                             </button>
                                                             <div>
-                                                                <div style={{ color: '#e2e8f0', fontWeight: 500, fontSize: '13px' }}>{t.name}</div>
+                                                                <div 
+                                                                    onClick={() => handleEditApi(t)}
+                                                                    style={{ color: '#e2e8f0', fontWeight: 500, fontSize: '13px', cursor: 'pointer' }}
+                                                                    onMouseEnter={(e) => (e.target as HTMLElement).style.color = '#a5b4fc'}
+                                                                    onMouseLeave={(e) => (e.target as HTMLElement).style.color = '#e2e8f0'}
+                                                                >
+                                                                    {t.name}
+                                                                </div>
                                                                 {t.description && <div style={{ color: '#64748b', fontSize: '11px', marginTop: '2px' }}>{t.description.slice(0, 40)}...</div>}
                                                             </div>
                                                         </div>
