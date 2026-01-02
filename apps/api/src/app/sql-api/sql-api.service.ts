@@ -2,7 +2,7 @@
 import { Injectable, Inject, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { SqlTemplate } from './entities/sql-template.entity';
+import { SqlTemplate, GroupPermission } from './entities/sql-template.entity';
 import { v4 as uuidv4 } from 'uuid';
 import { DatabaseConnectorService } from '../database-connector/database-connector.service';
 import { ConnectionsService } from '../connections/connections.service';
@@ -118,32 +118,87 @@ export class SqlApiService implements OnModuleInit {
         return this.templateRepository.find();
     }
 
-    // RBAC-aware findAll - returns APIs user can access
+    // Get APIs that have permissions for a specific group
+    async getApisByGroup(groupId: string) {
+        const allTemplates = await this.templateRepository.find();
+        
+        return allTemplates
+            .filter(template => {
+                if (template.visibility !== 'group') return false;
+                if (!template.groupPermissions) return false;
+                return template.groupPermissions.some(gp => gp.groupId === groupId);
+            })
+            .map(template => {
+                const permission = template.groupPermissions?.find(gp => gp.groupId === groupId);
+                return {
+                    id: template.id,
+                    name: template.name,
+                    description: template.description,
+                    isActive: template.isActive,
+                    canView: permission?.canView || false,
+                    canEdit: permission?.canEdit || false,
+                    canExecute: permission?.canExecute || false,
+                };
+            });
+    }
+
+    // RBAC-aware findAll - returns APIs user can access based on permissions
     async findAllForUser(userId: string, userGroups: string[] = []) {
         const allTemplates = await this.templateRepository.find();
         
         return allTemplates.filter(template => {
-            // Owner can always see their own APIs
-            if (template.ownerId === userId) return true;
-            if (template.createdBy === userId) return true;
-            
-            // Public APIs are visible to all
-            if (template.visibility === 'public') return true;
-            
-            // Group-shared APIs: check if user is in any of the shared groups
-            if (template.visibility === 'group' && template.sharedWithGroups) {
-                return template.sharedWithGroups.some(groupId => userGroups.includes(groupId));
-            }
-            
-            // Private APIs: only owner can see
-            return false;
+            return this.hasPermission(template, userId, userGroups, 'view');
         });
     }
 
-    // Update API sharing settings
+    // Check if user has specific permission on a template
+    hasPermission(
+        template: SqlTemplate, 
+        userId: string, 
+        userGroups: string[], 
+        action: 'view' | 'edit' | 'execute'
+    ): boolean {
+        // Owner has all permissions
+        if (template.ownerId === userId || template.createdBy === userId) {
+            return true;
+        }
+        
+        // Public APIs: view and execute for all, no edit
+        if (template.visibility === 'public') {
+            return action !== 'edit';
+        }
+        
+        // Group-shared APIs: check group permissions
+        if (template.visibility === 'group' && template.groupPermissions) {
+            for (const gp of template.groupPermissions) {
+                if (userGroups.includes(gp.groupId)) {
+                    if (action === 'view' && gp.canView) return true;
+                    if (action === 'edit' && gp.canEdit) return true;
+                    if (action === 'execute' && gp.canExecute) return true;
+                }
+            }
+        }
+        
+        // Private APIs: only owner (already checked above)
+        return false;
+    }
+
+    // Check access for a specific template and action
+    async checkAccess(
+        templateId: string, 
+        userId: string, 
+        userGroups: string[], 
+        action: 'view' | 'edit' | 'execute'
+    ): Promise<boolean> {
+        const template = await this.findOne(templateId);
+        if (!template) return false;
+        return this.hasPermission(template, userId, userGroups, action);
+    }
+
+    // Update API sharing settings with group permissions
     async updateSharing(id: string, data: { 
         visibility: 'private' | 'group' | 'public';
-        sharedWithGroups?: string[];
+        groupPermissions?: GroupPermission[];
     }, userId: string) {
         const template = await this.findOne(id);
         if (!template) throw new Error('Template not found');
@@ -155,7 +210,7 @@ export class SqlApiService implements OnModuleInit {
         
         await this.templateRepository.update(id, {
             visibility: data.visibility,
-            sharedWithGroups: data.sharedWithGroups || [],
+            groupPermissions: data.groupPermissions || [],
         });
         
         return this.findOne(id);

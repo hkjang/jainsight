@@ -1,6 +1,15 @@
 
 import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
+// Group permission structure for RBAC
+export interface GroupPermission {
+    groupId: string;
+    groupName?: string; // Optional: for display purposes
+    canView: boolean;   // Can see the API in list and view details
+    canEdit: boolean;   // Can modify SQL, parameters, settings
+    canExecute: boolean; // Can call/test the API
+}
+
 @Entity()
 export class SqlTemplate {
     @PrimaryGeneratedColumn('uuid')
@@ -75,7 +84,7 @@ export class SqlTemplate {
     visibility: 'private' | 'group' | 'public'; // private = owner only, group = shared with specific groups, public = all users
 
     @Column('simple-json', { nullable: true })
-    sharedWithGroups: string[]; // Array of group IDs
+    groupPermissions: GroupPermission[]; // Array of group permissions with view/edit/execute flags
 
     @Column({ nullable: true })
     ownerId: string; // User ID who created/owns this API

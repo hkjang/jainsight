@@ -73,6 +73,21 @@ export default function GroupsAdminPage() {
     const [showConnectionsModal, setShowConnectionsModal] = useState(false);
     const [connectionGroup, setConnectionGroup] = useState<Group | null>(null);
     
+    // API permissions state
+    interface GroupApi {
+        id: string;
+        name: string;
+        description?: string;
+        isActive: boolean;
+        canView: boolean;
+        canEdit: boolean;
+        canExecute: boolean;
+    }
+    const [showApisModal, setShowApisModal] = useState(false);
+    const [apisGroup, setApisGroup] = useState<Group | null>(null);
+    const [groupApis, setGroupApis] = useState<GroupApi[]>([]);
+    const [loadingApis, setLoadingApis] = useState(false);
+    
     const [newGroupName, setNewGroupName] = useState('');
     const [newGroupType, setNewGroupType] = useState<'organization' | 'project' | 'task'>('project');
     const [newGroupDescription, setNewGroupDescription] = useState('');
@@ -153,6 +168,28 @@ export default function GroupsAdminPage() {
         setConnectionGroup(group);
         await fetchConnections();
         setShowConnectionsModal(true);
+    };
+
+    const openApisModal = async (group: Group) => {
+        setApisGroup(group);
+        setLoadingApis(true);
+        setShowApisModal(true);
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${API_URL}/sql-api/by-group/${group.id}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+                setGroupApis(await response.json());
+            } else {
+                setGroupApis([]);
+            }
+        } catch (error) {
+            console.error('Failed to fetch group APIs:', error);
+            setGroupApis([]);
+        } finally {
+            setLoadingApis(false);
+        }
     };
 
     const toggleConnectionSharing = async (connectionId: string, groupId: string, isShared: boolean) => {
@@ -342,6 +379,7 @@ export default function GroupsAdminPage() {
                         <button onClick={() => handleOpenEditModal(group)} style={{ padding: '4px 12px', background: `${darkTheme.accentBlue}20`, color: darkTheme.accentBlue, border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>✏️</button>
                         <button onClick={() => handleOpenMembers(group)} style={{ padding: '4px 12px', background: `${darkTheme.accentPurple}20`, color: darkTheme.accentPurple, border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>멤버</button>
                         <button onClick={() => openConnectionsModal(group)} style={{ padding: '4px 12px', background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>🔌 연결</button>
+                        <button onClick={() => openApisModal(group)} style={{ padding: '4px 12px', background: 'rgba(251, 191, 36, 0.2)', color: '#fbbf24', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>🔗 API</button>
                         <button onClick={() => handleDeleteGroup(group.id)} style={{ padding: '4px 12px', background: `${darkTheme.accentRed}20`, color: darkTheme.accentRed, border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>삭제</button>
                     </div>
                 </div>
@@ -627,6 +665,73 @@ export default function GroupsAdminPage() {
 
                         <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: `1px solid ${darkTheme.border}`, display: 'flex', justifyContent: 'flex-end' }}>
                             <button style={darkStyles.buttonSecondary} onClick={() => setShowConnectionsModal(false)}>닫기</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Group APIs Modal */}
+            {showApisModal && apisGroup && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+                    <div style={{ background: darkTheme.bgPrimary, border: `1px solid ${darkTheme.border}`, borderRadius: '16px', padding: '24px', width: '600px', maxWidth: '95vw', maxHeight: '80vh', overflow: 'auto' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                            <div>
+                                <h3 style={{ color: darkTheme.textPrimary, margin: 0, fontSize: '18px' }}>🔗 API 권한 현황</h3>
+                                <p style={{ color: darkTheme.textSecondary, margin: '4px 0 0 0', fontSize: '13px' }}>
+                                    <span style={{ color: '#fbbf24', fontWeight: 600 }}>{apisGroup.name}</span> 그룹에 공유된 API 목록
+                                </p>
+                            </div>
+                            <button onClick={() => setShowApisModal(false)} style={{ background: 'none', border: 'none', color: darkTheme.textSecondary, cursor: 'pointer', fontSize: '20px' }}>✕</button>
+                        </div>
+
+                        {loadingApis ? (
+                            <div style={{ textAlign: 'center', padding: '40px', color: darkTheme.textSecondary }}>
+                                로딩 중...
+                            </div>
+                        ) : groupApis.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '40px', color: darkTheme.textSecondary }}>
+                                <div style={{ fontSize: '40px', marginBottom: '12px' }}>🔗</div>
+                                <p>이 그룹에 공유된 API가 없습니다.</p>
+                                <a href="/api-builder" style={{ color: '#fbbf24' }}>API Builder에서 공유 설정 →</a>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {groupApis.map(api => (
+                                    <div key={api.id} style={{
+                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                        padding: '14px 16px', borderRadius: '10px',
+                                        background: darkTheme.bgCard,
+                                        border: `1px solid ${darkTheme.border}`,
+                                    }}>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <span style={{ fontWeight: 600, color: darkTheme.textPrimary, fontSize: '14px' }}>{api.name}</span>
+                                                {!api.isActive && (
+                                                    <span style={{ padding: '2px 6px', background: 'rgba(239, 68, 68, 0.2)', color: '#f87171', fontSize: '10px', borderRadius: '4px' }}>비활성</span>
+                                                )}
+                                            </div>
+                                            {api.description && (
+                                                <div style={{ fontSize: '12px', color: darkTheme.textMuted, marginTop: '4px' }}>{api.description}</div>
+                                            )}
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                            {api.canView && (
+                                                <span style={{ padding: '4px 8px', background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontSize: '11px', borderRadius: '4px' }}>👁 보기</span>
+                                            )}
+                                            {api.canEdit && (
+                                                <span style={{ padding: '4px 8px', background: 'rgba(139, 92, 246, 0.2)', color: '#a78bfa', fontSize: '11px', borderRadius: '4px' }}>✏️ 수정</span>
+                                            )}
+                                            {api.canExecute && (
+                                                <span style={{ padding: '4px 8px', background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontSize: '11px', borderRadius: '4px' }}>▶ 실행</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: `1px solid ${darkTheme.border}`, display: 'flex', justifyContent: 'flex-end' }}>
+                            <button style={darkStyles.buttonSecondary} onClick={() => setShowApisModal(false)}>닫기</button>
                         </div>
                     </div>
                 </div>

@@ -32,6 +32,11 @@ export class SqlApiController {
         return this.sqlApiService.getAllTags();
     }
 
+    @Get('by-group/:groupId')
+    async getApisByGroup(@Param('groupId') groupId: string) {
+        return this.sqlApiService.getApisByGroup(groupId);
+    }
+
     @Get('search')
     async searchApis(
         @Query('q') query: string,

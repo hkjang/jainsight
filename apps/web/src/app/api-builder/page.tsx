@@ -96,6 +96,14 @@ const formatSQL = (sql: string): string => {
 };
 
 
+interface GroupPermission {
+    groupId: string;
+    groupName?: string;
+    canView: boolean;
+    canEdit: boolean;
+    canExecute: boolean;
+}
+
 interface ApiTemplate {
     id: string;
     name: string;
@@ -113,6 +121,10 @@ interface ApiTemplate {
     cacheTtl?: number;
     rateLimit?: { requests: number; windowSeconds: number };
     method?: string;
+    // RBAC fields
+    visibility?: 'private' | 'group' | 'public';
+    groupPermissions?: GroupPermission[];
+    ownerId?: string;
     // New enhanced fields
     successCount?: number;
     errorCount?: number;
@@ -241,6 +253,10 @@ export default function ApiBuilderPage() {
     const [userApiKeys, setUserApiKeys] = useState<any[]>([]);
     const [selectedApiKeyForSnippet, setSelectedApiKeyForSnippet] = useState<string>('');
 
+    // === RBAC Group Permissions ===
+    const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name: string }>>([]);
+    const [editingGroupPermissions, setEditingGroupPermissions] = useState<GroupPermission[]>([]);
+
     // Monaco Editor ref
     const editorRef = useRef<any>(null);
     const schemaInfoRef = useRef(schemaInfo);
@@ -251,6 +267,7 @@ export default function ApiBuilderPage() {
         fetchFavorites();
         fetchTags();
         fetchUserApiKeys();
+        fetchAvailableGroups();
     }, []);
 
     // Auto-detect params from SQL
@@ -500,6 +517,23 @@ export default function ApiBuilderPage() {
         }
     };
 
+    const fetchAvailableGroups = async () => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        try {
+            const res = await fetch('/api/groups', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setAvailableGroups(data.map((g: any) => ({ id: g.id, name: g.name })));
+            }
+        } catch (e) {
+            console.error('Failed to fetch groups', e);
+        }
+    };
+
     const fetchSchemaInfo = async () => {
         const token = localStorage.getItem('token');
         if (!token || !connectionId) return;
@@ -622,6 +656,8 @@ export default function ApiBuilderPage() {
                     cacheTtl: cacheTtl || null,
                     isActive,
                     visibility,
+                    // RBAC Group Permissions
+                    groupPermissions: visibility === 'group' ? editingGroupPermissions : null,
                     // New fields
                     tags: editingTags.length > 0 ? editingTags : null,
                     timeout: queryTimeout,
@@ -698,6 +734,8 @@ export default function ApiBuilderPage() {
         setEditingWebhookUrl('');
         setEditingWebhookEvents([]);
         setShowAdvancedConfig(false);
+        // Reset RBAC group permissions
+        setEditingGroupPermissions([]);
     };
 
     const handleEditApi = (api: ApiTemplate) => {
@@ -717,6 +755,8 @@ export default function ApiBuilderPage() {
         setEditingWebhookUrl(api.webhookUrl || '');
         setEditingWebhookEvents(api.webhookEvents || []);
         setShowAdvancedConfig(false);
+        // Load RBAC group permissions
+        setEditingGroupPermissions(api.groupPermissions || []);
         setView('editor');
     };
 
@@ -2433,6 +2473,205 @@ class Program
                             <option value="group">👥 그룹 공유</option>
                             <option value="public">🌐 전체 공개</option>
                         </select>
+
+                        {/* Group Permission Settings (shown when visibility is 'group') */}
+                        {visibility === 'group' && (
+                            <div style={{ position: 'relative' }}>
+                                <button
+                                    onClick={() => {
+                                        // Initialize permissions from current template if not set
+                                        const currentTemplate = templates.find(t => t.id === editingApiId);
+                                        if (editingGroupPermissions.length === 0 && currentTemplate?.groupPermissions) {
+                                            setEditingGroupPermissions(currentTemplate.groupPermissions);
+                                        }
+                                        const panel = document.getElementById('group-permissions-panel');
+                                        if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+                                    }}
+                                    style={{
+                                        padding: '8px 12px',
+                                        background: 'rgba(251, 191, 36, 0.15)',
+                                        border: '1px solid rgba(251, 191, 36, 0.3)',
+                                        borderRadius: '8px',
+                                        color: '#fbbf24',
+                                        fontSize: '12px',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                    }}
+                                >
+                                    ⚙️ 권한 설정 ({editingGroupPermissions.length})
+                                </button>
+                                
+                                {/* Group Permissions Popup Panel */}
+                                <div
+                                    id="group-permissions-panel"
+                                    style={{
+                                        display: 'none',
+                                        position: 'absolute',
+                                        top: '100%',
+                                        left: 0,
+                                        marginTop: '8px',
+                                        width: '360px',
+                                        background: 'rgba(30, 27, 75, 0.98)',
+                                        border: '1px solid rgba(251, 191, 36, 0.3)',
+                                        borderRadius: '12px',
+                                        padding: '16px',
+                                        zIndex: 100,
+                                        boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                                    }}
+                                >
+                                    <div style={{ marginBottom: '12px', fontWeight: 600, color: '#fbbf24', fontSize: '14px' }}>
+                                        👥 그룹별 권한 설정
+                                    </div>
+                                    
+                                    {/* Add Group */}
+                                    <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                                        <select
+                                            id="add-group-select"
+                                            style={{
+                                                flex: 1,
+                                                padding: '8px',
+                                                background: 'rgba(15, 23, 42, 0.6)',
+                                                border: '1px solid rgba(99, 102, 241, 0.2)',
+                                                borderRadius: '6px',
+                                                color: '#e2e8f0',
+                                                fontSize: '12px',
+                                            }}
+                                        >
+                                            <option value="">그룹 선택...</option>
+                                            {availableGroups
+                                                .filter(g => !editingGroupPermissions.find(p => p.groupId === g.id))
+                                                .map(g => (
+                                                    <option key={g.id} value={g.id}>{g.name}</option>
+                                                ))}
+                                        </select>
+                                        <button
+                                            onClick={() => {
+                                                const select = document.getElementById('add-group-select') as HTMLSelectElement;
+                                                const groupId = select?.value;
+                                                const group = availableGroups.find(g => g.id === groupId);
+                                                if (groupId && group) {
+                                                    setEditingGroupPermissions([
+                                                        ...editingGroupPermissions,
+                                                        { groupId, groupName: group.name, canView: true, canEdit: false, canExecute: true }
+                                                    ]);
+                                                    select.value = '';
+                                                }
+                                            }}
+                                            style={{
+                                                padding: '8px 12px',
+                                                background: 'rgba(99, 102, 241, 0.2)',
+                                                border: '1px solid rgba(99, 102, 241, 0.3)',
+                                                borderRadius: '6px',
+                                                color: '#a5b4fc',
+                                                fontSize: '12px',
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            + 추가
+                                        </button>
+                                    </div>
+                                    
+                                    {/* Group List with Permissions */}
+                                    <div style={{ maxHeight: '200px', overflow: 'auto' }}>
+                                        {editingGroupPermissions.length === 0 ? (
+                                            <div style={{ color: '#64748b', fontSize: '12px', textAlign: 'center', padding: '16px' }}>
+                                                그룹을 추가하여 권한을 설정하세요
+                                            </div>
+                                        ) : (
+                                            editingGroupPermissions.map((gp, idx) => (
+                                                <div key={gp.groupId} style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '8px',
+                                                    padding: '8px',
+                                                    background: 'rgba(99, 102, 241, 0.05)',
+                                                    borderRadius: '6px',
+                                                    marginBottom: '6px',
+                                                }}>
+                                                    <span style={{ flex: 1, fontSize: '12px', color: '#e2e8f0' }}>
+                                                        {availableGroups.find(g => g.id === gp.groupId)?.name || gp.groupName || gp.groupId.slice(0, 8)}
+                                                    </span>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#94a3b8' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={gp.canView}
+                                                            onChange={(e) => {
+                                                                const updated = [...editingGroupPermissions];
+                                                                updated[idx] = { ...updated[idx], canView: e.target.checked };
+                                                                setEditingGroupPermissions(updated);
+                                                            }}
+                                                        />
+                                                        보기
+                                                    </label>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#94a3b8' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={gp.canEdit}
+                                                            onChange={(e) => {
+                                                                const updated = [...editingGroupPermissions];
+                                                                updated[idx] = { ...updated[idx], canEdit: e.target.checked };
+                                                                setEditingGroupPermissions(updated);
+                                                            }}
+                                                        />
+                                                        수정
+                                                    </label>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#94a3b8' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={gp.canExecute}
+                                                            onChange={(e) => {
+                                                                const updated = [...editingGroupPermissions];
+                                                                updated[idx] = { ...updated[idx], canExecute: e.target.checked };
+                                                                setEditingGroupPermissions(updated);
+                                                            }}
+                                                        />
+                                                        실행
+                                                    </label>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingGroupPermissions(editingGroupPermissions.filter((_, i) => i !== idx));
+                                                        }}
+                                                        style={{
+                                                            padding: '4px 8px',
+                                                            background: 'rgba(239, 68, 68, 0.15)',
+                                                            border: 'none',
+                                                            borderRadius: '4px',
+                                                            color: '#f87171',
+                                                            fontSize: '10px',
+                                                            cursor: 'pointer',
+                                                        }}
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                    
+                                    <button
+                                        onClick={() => {
+                                            const panel = document.getElementById('group-permissions-panel');
+                                            if (panel) panel.style.display = 'none';
+                                        }}
+                                        style={{
+                                            marginTop: '12px',
+                                            width: '100%',
+                                            padding: '8px',
+                                            background: 'rgba(99, 102, 241, 0.2)',
+                                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                                            borderRadius: '6px',
+                                            color: '#a5b4fc',
+                                            fontSize: '12px',
+                                            cursor: 'pointer',
+                                        }}
+                                    >
+                                        확인
+                                    </button>
+                                </div>
+                            </div>
+                        )}
 
                         <div style={{ flex: 1 }} />
 
