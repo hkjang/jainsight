@@ -51,8 +51,8 @@ export class ApiKeysController {
     // ======== Admin/General Endpoints ========
 
     @Get()
-    async getAllApiKeys(): Promise<ApiKey[]> {
-        return this.apiKeysService.getAllApiKeys();
+    async getAllApiKeys(): Promise<(ApiKey & { userName?: string; userEmail?: string })[]> {
+        return this.apiKeysService.getAllApiKeysWithUsers();
     }
 
     @Get('stats')

@@ -10,6 +10,8 @@ interface ApiKey {
     name: string;
     keyPrefix: string;
     userId: string;
+    userName?: string;
+    userEmail?: string;
     scopes: string[];
     allowedIps?: string[];
     rateLimit: number;
@@ -329,6 +331,7 @@ export default function ApiKeysAdminPage() {
                     <thead>
                         <tr style={{ background: darkTheme.bgSecondary }}>
                             <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: darkTheme.textMuted }}>API 키</th>
+                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: darkTheme.textMuted }}>사용자</th>
                             <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: darkTheme.textMuted }}>Scope</th>
                             <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: darkTheme.textMuted }}>Rate Limit</th>
                             <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: darkTheme.textMuted }}>사용량</th>
@@ -348,6 +351,12 @@ export default function ApiKeysAdminPage() {
                                             <div style={{ fontSize: '10px', color: darkTheme.textMuted, marginTop: '4px' }}>
                                                 마지막 사용: {new Date(key.lastUsedAt).toLocaleDateString('ko-KR')}
                                             </div>
+                                        )}
+                                    </td>
+                                    <td style={{ padding: '16px' }}>
+                                        <div style={{ fontWeight: '500', color: darkTheme.textPrimary, fontSize: '13px' }}>{key.userName || key.userId}</div>
+                                        {key.userEmail && (
+                                            <div style={{ fontSize: '11px', color: darkTheme.textMuted }}>{key.userEmail}</div>
                                         )}
                                     </td>
                                     <td style={{ padding: '16px' }}>
@@ -555,6 +564,13 @@ export default function ApiKeysAdminPage() {
 
                         {/* Key Info */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                            <div>
+                                <div style={{ fontSize: '12px', color: darkTheme.textMuted, marginBottom: '4px' }}>사용자</div>
+                                <div style={{ fontSize: '16px', fontWeight: '500', color: darkTheme.textPrimary }}>{selectedKey.userName || selectedKey.userId}</div>
+                                {selectedKey.userEmail && (
+                                    <div style={{ fontSize: '12px', color: darkTheme.textMuted }}>{selectedKey.userEmail}</div>
+                                )}
+                            </div>
                             <div>
                                 <div style={{ fontSize: '12px', color: darkTheme.textMuted, marginBottom: '4px' }}>Rate Limit</div>
                                 <div style={{ fontSize: '16px', fontWeight: '500', color: darkTheme.textPrimary }}>{selectedKey.rateLimit} 요청/분</div>

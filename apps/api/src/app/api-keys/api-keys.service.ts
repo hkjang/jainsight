@@ -1,9 +1,10 @@
 
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, LessThan, In } from 'typeorm';
 import { ApiKey } from './entities/api-key.entity';
 import { ApiKeyUsage } from './entities/api-key-usage.entity';
+import { User } from '../users/entities/user.entity';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 
@@ -14,6 +15,8 @@ export class ApiKeysService {
         private apiKeysRepository: Repository<ApiKey>,
         @InjectRepository(ApiKeyUsage)
         private usageRepository: Repository<ApiKeyUsage>,
+        @InjectRepository(User)
+        private usersRepository: Repository<User>,
     ) { }
 
     // Key Generation
@@ -94,6 +97,34 @@ export class ApiKeysService {
     async getAllApiKeys(): Promise<ApiKey[]> {
         return this.apiKeysRepository.find({
             order: { createdAt: 'DESC' }
+        });
+    }
+
+    // Get all API keys with user info (for admin)
+    async getAllApiKeysWithUsers(): Promise<(ApiKey & { userName?: string; userEmail?: string })[]> {
+        const apiKeys = await this.apiKeysRepository.find({
+            order: { createdAt: 'DESC' }
+        });
+
+        // Get unique user IDs
+        const userIds = [...new Set(apiKeys.map(k => k.userId).filter(Boolean))];
+        
+        // Fetch users in batch
+        const users = userIds.length > 0 
+            ? await this.usersRepository.find({ where: { id: In(userIds) } })
+            : [];
+        
+        // Create userId -> user map
+        const userMap = new Map(users.map(u => [u.id, u]));
+
+        // Merge user info into API keys
+        return apiKeys.map(key => {
+            const user = userMap.get(key.userId);
+            return {
+                ...key,
+                userName: user?.name || key.userId,
+                userEmail: user?.email
+            };
         });
     }
 
