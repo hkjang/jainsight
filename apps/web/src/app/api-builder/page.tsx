@@ -239,6 +239,7 @@ export default function ApiBuilderPage() {
 
     // Monaco Editor ref
     const editorRef = useRef<any>(null);
+    const schemaInfoRef = useRef(schemaInfo);
 
     useEffect(() => {
         fetchTemplates();
@@ -478,17 +479,33 @@ export default function ApiBuilderPage() {
         if (!token || !connectionId) return;
 
         try {
-            const res = await fetch(`/api/schema/${connectionId}`, {
+            // Fetch tables first
+            const tablesRes = await fetch(`/api/schema/${connectionId}/tables`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            if (res.ok) {
-                const data = await res.json();
-                const tables = data.map((t: any) => t.tableName || t.name);
+            if (tablesRes.ok) {
+                const tablesData = await tablesRes.json();
+                const tableNames = tablesData.map((t: any) => t.tableName || t.table_name || t.name || t);
                 const columns: Record<string, string[]> = {};
-                data.forEach((t: any) => {
-                    columns[t.tableName || t.name] = (t.columns || []).map((c: any) => c.columnName || c.name);
-                });
-                setSchemaInfo({ tables, columns });
+                
+                // Fetch columns for each table (limit to first 20 tables for performance)
+                const tablesToFetch = tableNames.slice(0, 20);
+                await Promise.all(tablesToFetch.map(async (tableName: string) => {
+                    try {
+                        const colRes = await fetch(`/api/schema/${connectionId}/tables/${tableName}/columns`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        });
+                        if (colRes.ok) {
+                            const colData = await colRes.json();
+                            columns[tableName] = colData.map((c: any) => c.columnName || c.column_name || c.name || c);
+                        }
+                    } catch (e) {
+                        console.warn(`Failed to fetch columns for ${tableName}`, e);
+                    }
+                }));
+                
+                setSchemaInfo({ tables: tableNames, columns });
+                schemaInfoRef.current = { tables: tableNames, columns };
             }
         } catch (e) {
             console.error('Failed to fetch schema', e);
@@ -729,11 +746,14 @@ export default function ApiBuilderPage() {
 
     // Run inline query test (directly test SQL from editor)
     const runInlineQueryTest = async () => {
+        // Get current SQL directly from editor to ensure we have the latest value
+        const currentSql = editorRef.current?.getValue() || sql;
+        
         if (!connectionId) {
             showToast('연결을 먼저 선택해주세요', 'error');
             return;
         }
-        if (!sql.trim()) {
+        if (!currentSql.trim()) {
             showToast('SQL 쿼리를 입력해주세요', 'error');
             return;
         }
@@ -746,7 +766,7 @@ export default function ApiBuilderPage() {
 
         try {
             // Replace parameters in SQL with test values
-            let processedSql = sql;
+            let processedSql = currentSql;
             params.forEach(p => {
                 const value = inlineTestParams[p.name];
                 if (value !== undefined && value !== '') {
@@ -2875,7 +2895,7 @@ class Program
                                             }} />
                                             {connectionStatus === 'connected' ? '연결됨' : connectionStatus === 'failed' ? '실패' : '연결'}
                                         </button>
-                                        <span style={{ fontSize: '9px', color: '#64748b' }}>F5 실행</span>
+                                        <span style={{ fontSize: '9px', color: '#64748b' }}>Ctrl+Enter / F5</span>
                                     </div>
                                 </div>
 
@@ -2943,7 +2963,10 @@ class Program
                                             editor.addAction({
                                                 id: 'run-query',
                                                 label: 'Run Query',
-                                                keybindings: [monaco.KeyCode.F5],
+                                                keybindings: [
+                                                    monaco.KeyCode.F5,
+                                                    monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter
+                                                ],
                                                 run: () => {
                                                     if (connectionId && !inlineTesting) {
                                                         runInlineQueryTest();
@@ -2966,10 +2989,11 @@ class Program
                                                         insertText: kw,
                                                         range,
                                                     }));
-                                                    schemaInfo.tables.forEach(table => {
+                                                    const currentSchema = schemaInfoRef.current;
+                                                    currentSchema.tables.forEach(table => {
                                                         suggestions.push({ label: table, kind: monaco.languages.CompletionItemKind.Class, insertText: table, detail: 'Table', range });
                                                     });
-                                                    Object.entries(schemaInfo.columns).forEach(([table, cols]) => {
+                                                    Object.entries(currentSchema.columns).forEach(([table, cols]) => {
                                                         cols.forEach(col => {
                                                             suggestions.push({ label: col, kind: monaco.languages.CompletionItemKind.Field, insertText: col, detail: `Column (${table})`, range });
                                                         });
@@ -3067,7 +3091,7 @@ class Program
                                     <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '12px' }}>
                                         <div style={{ textAlign: 'center' }}>
                                             <div style={{ fontSize: '32px', marginBottom: '8px', opacity: 0.4 }}>🔍</div>
-                                            F5 또는 ▶ 버튼을 눌러 쿼리를 실행하세요
+                                            Ctrl+Enter 또는 ▶ 버튼을 눌러 쿼리를 실행하세요
                                         </div>
                                     </div>
                                 ) : inlineTestResult.error ? (
