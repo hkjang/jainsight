@@ -76,8 +76,10 @@ export class ApiKeysService {
         if (!apiKey.scopes || apiKey.scopes.length === 0) return true;
         
         for (const scope of apiKey.scopes) {
-            if (scope === 'query:*') return true;
-            if (queryId && scope === `query:${queryId}`) return true;
+            // Allow all SQL API access
+            if (scope === 'sql-api:*' || scope === 'query:*') return true;
+            // Allow specific template access
+            if (queryId && (scope === `sql-api:${queryId}` || scope === `query:${queryId}`)) return true;
         }
         
         return false;

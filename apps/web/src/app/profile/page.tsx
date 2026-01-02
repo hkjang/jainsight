@@ -443,6 +443,40 @@ export default function ProfilePage() {
                                 ))}
                             </div>
                         )}
+
+                        {/* API Usage Example */}
+                        {apiKeys.length > 0 && (
+                            <div style={{
+                                marginTop: '20px',
+                                padding: '16px',
+                                background: `${darkTheme.accentBlue}10`,
+                                border: `1px solid ${darkTheme.accentBlue}30`,
+                                borderRadius: '8px',
+                            }}>
+                                <div style={{ fontSize: '13px', fontWeight: '600', color: darkTheme.textPrimary, marginBottom: '8px' }}>
+                                    💡 API 호출 예시
+                                </div>
+                                <pre style={{
+                                    background: darkTheme.bgCard,
+                                    padding: '12px',
+                                    borderRadius: '6px',
+                                    fontSize: '11px',
+                                    color: darkTheme.textSecondary,
+                                    overflow: 'auto',
+                                    margin: 0,
+                                }}>
+{`curl -X POST '/api/sql-api/execute/{템플릿ID}' \\
+  -H 'Content-Type: application/json' \\
+  -d '{
+    "apiKey": "${apiKeys[0]?.keyPrefix || 'jai_xxx...'}",
+    "params": { "id": 123 }
+  }'`}
+                                </pre>
+                                <p style={{ fontSize: '11px', color: darkTheme.textMuted, marginTop: '8px', marginBottom: 0 }}>
+                                    API Builder에서 생성한 SQL API를 위의 개인 키로 호출할 수 있습니다.
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </AnimatedCard>
             </div>

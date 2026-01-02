@@ -10,6 +10,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { Connection } from '../connections/entities/connection.entity';
 import { User } from '../users/entities/user.entity';
+import { ApiKeysService } from '../api-keys/api-keys.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -23,6 +24,7 @@ export class SqlApiService implements OnModuleInit {
         private userRepository: Repository<User>, // Inject User Repo
         private databaseConnector: DatabaseConnectorService,
         private connectionsService: ConnectionsService,
+        private apiKeysService: ApiKeysService,
         @Inject(CACHE_MANAGER) private cacheManager: Cache
     ) { }
 
@@ -192,9 +194,26 @@ export class SqlApiService implements OnModuleInit {
             throw new Error('API is currently disabled');
         }
 
-        // Security Check
-        if (apiKey && template.apiKey !== apiKey) {
-            throw new Error('Invalid API Key');
+        // Security Check - Support both user API keys and legacy template keys
+        if (apiKey) {
+            // First try user API key (jai_xxx format)
+            if (apiKey.startsWith('jai_')) {
+                const validKey = await this.apiKeysService.validateApiKey(apiKey);
+                if (!validKey) {
+                    throw new Error('Invalid API Key');
+                }
+                // Optionally check scope for this template
+                const hasScope = await this.apiKeysService.checkScope(validKey, templateId);
+                if (!hasScope) {
+                    throw new Error('API Key does not have access to this template');
+                }
+            } else {
+                // Legacy: template-specific apiKey (deprecated)
+                if (template.apiKey !== apiKey) {
+                    throw new Error('Invalid API Key');
+                }
+                console.warn(`[SQL-API] Legacy template apiKey used for template ${templateId}. Please use user API keys instead.`);
+            }
         }
 
         // Validation
@@ -436,7 +455,20 @@ export class SqlApiService implements OnModuleInit {
         const sql = originalSql.replace(/:(\w+)/g, (match, paramName) => {
             const val = params[paramName];
             values.push(val);
-            return '?'; // Default to '?' binding - In a real app, this depends on DB type
+            
+            // Directly insert value into SQL since our DB connector doesn't support parameterized queries
+            if (val === undefined || val === null) {
+                return 'NULL';
+            }
+            if (typeof val === 'number') {
+                return String(val);
+            }
+            if (typeof val === 'boolean') {
+                return val ? 'TRUE' : 'FALSE';
+            }
+            // String: escape single quotes by doubling them
+            const escaped = String(val).replace(/'/g, "''");
+            return `'${escaped}'`;
         });
         return { sql, values };
     }

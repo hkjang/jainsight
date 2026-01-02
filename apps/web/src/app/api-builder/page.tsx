@@ -237,6 +237,10 @@ export default function ApiBuilderPage() {
     const [showStatsModal, setShowStatsModal] = useState(false);
     const [statsApi, setStatsApi] = useState<any>(null);
 
+    // === User API Keys (for code snippets) ===
+    const [userApiKeys, setUserApiKeys] = useState<any[]>([]);
+    const [selectedApiKeyForSnippet, setSelectedApiKeyForSnippet] = useState<string>('');
+
     // Monaco Editor ref
     const editorRef = useRef<any>(null);
     const schemaInfoRef = useRef(schemaInfo);
@@ -246,6 +250,7 @@ export default function ApiBuilderPage() {
         fetchConnections();
         fetchFavorites();
         fetchTags();
+        fetchUserApiKeys();
     }, []);
 
     // Auto-detect params from SQL
@@ -471,6 +476,27 @@ export default function ApiBuilderPage() {
             }
         } catch (e) {
             console.error('Failed to fetch favorites', e);
+        }
+    };
+
+    const fetchUserApiKeys = async () => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        try {
+            const res = await fetch('/api/api-keys/my', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setUserApiKeys(data);
+                // Set first key as default for snippets
+                if (data.length > 0 && !selectedApiKeyForSnippet) {
+                    setSelectedApiKeyForSnippet(data[0].keyPrefix);
+                }
+            }
+        } catch (e) {
+            console.error('Failed to fetch user API keys', e);
         }
     };
 
@@ -1173,12 +1199,18 @@ export default function ApiBuilderPage() {
             acc[p.name] = p.type === 'number' ? 123 : 'value';
             return acc;
         }, {} as Record<string, any>) || {};
+        // Use placeholder API key - actual key must be copied from profile
+        const hasUserKeys = userApiKeys.length > 0;
+        const apiKeyToUse = hasUserKeys ? 'jai_YOUR_API_KEY' : api.apiKey;
+        const apiKeyNote = hasUserKeys 
+            ? ' // 프로필 > API 키 관리에서 복사한 키를 입력하세요'
+            : ' // ⚠️ 프로필에서 개인 API 키를 생성하세요';
 
         if (type === 'curl') {
             return `curl -X POST '${endpoint}' \\
   -H 'Content-Type: application/json' \\
   -d '{
-    "apiKey": "${api.apiKey}",
+    "apiKey": "${apiKeyToUse}",${apiKeyNote}
     "params": ${JSON.stringify(params, null, 4).replace(/\n/g, '\n    ')}
   }'`;
         }
@@ -1190,7 +1222,7 @@ export default function ApiBuilderPage() {
         'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-        apiKey: '${api.apiKey}',
+        apiKey: '${apiKeyToUse}',${apiKeyNote}
         params: ${JSON.stringify(params, null, 8).replace(/\n/g, '\n        ')}
     })
 });
@@ -1205,7 +1237,7 @@ console.log(data);`;
 response = requests.post(
     '${endpoint}',
     json={
-        'apiKey': '${api.apiKey}',
+        'apiKey': '${apiKeyToUse}',${apiKeyNote.replace('//', '#')}
         'params': ${JSON.stringify(params, null, 8).replace(/\n/g, '\n        ')}
     }
 )
@@ -1215,7 +1247,7 @@ print(data)`;
         }
 
         if (type === 'go') {
-            const paramsJson = JSON.stringify({ apiKey: api.apiKey, params }, null, 4);
+            const paramsJson = JSON.stringify({ apiKey: apiKeyToUse, params }, null, 4);
             return `package main
 
 import (
@@ -1249,7 +1281,7 @@ func main() {
 
 $endpoint = '${endpoint}';
 $data = [
-    'apiKey' => '${api.apiKey}',
+    'apiKey' => '${apiKeyToUse}',${apiKeyNote.replace('//', '//')}
     'params' => ${JSON.stringify(params, null, 4).replace(/\n/g, '\n    ')}
 ];
 
@@ -1282,7 +1314,7 @@ class Program
         var client = new HttpClient();
         var payload = new
         {
-            apiKey = "${api.apiKey}",
+            apiKey = "${apiKeyToUse}",${apiKeyNote}
             @params = new ${JSON.stringify(params).replace(/"/g, '')}
         };
         
@@ -1606,6 +1638,26 @@ class Program
                                     {label}
                                 </button>
                             ))}
+                        </div>
+
+                        {/* API Key Notice */}
+                        <div style={{
+                            padding: '10px 14px',
+                            background: 'rgba(99, 102, 241, 0.1)',
+                            border: '1px solid rgba(99, 102, 241, 0.2)',
+                            borderRadius: '8px',
+                            marginBottom: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                        }}>
+                            <span style={{ fontSize: '14px' }}>🔑</span>
+                            <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+                                {userApiKeys.length > 0 
+                                    ? <>API 키: <a href="/profile" style={{ color: '#a5b4fc' }}>프로필 → API 키 관리</a>에서 복사</>
+                                    : <><a href="/profile" style={{ color: '#a5b4fc' }}>프로필</a>에서 개인 API 키를 먼저 생성하세요</>
+                                }
+                            </span>
                         </div>
 
                         {/* Code Block */}
